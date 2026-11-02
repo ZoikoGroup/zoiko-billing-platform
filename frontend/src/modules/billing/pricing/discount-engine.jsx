@@ -3,7 +3,7 @@ import {
   Percent, Search, Plus, RefreshCw, X, Pencil,
 } from "lucide-react";
 import HRPage from "../../../components/HRPage";
-import { Button, Modal } from "../../../components/billing-ui";
+import { DataTable, Button, Modal } from "../../../components/billing-ui";
 import { discountApi } from "../../../service/billingService";
 import { loadGlobalBillingConfig } from "../../../service/billingConfigCache";
 import { formatDisplayDate, formatDisplayCurrency } from "../../../utils/billing-helpers";
@@ -392,28 +392,22 @@ export default function DiscountEnginePage() {
         {error && <ErrorState message={error} onRetry={() => fetchData()} />}
         {loading ? <Spinner /> : !data.items?.length ? <EmptyState message="No discounts found" /> : (
           <div className="bg-white rounded-3xl border overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
-                <tr><th className="text-left px-4 py-3">Name / Code</th><th className="text-left px-4 py-3">Type</th><th className="text-left px-4 py-3">Value</th><th className="text-left px-4 py-3">Status</th><th className="text-left px-4 py-3">Valid Period</th><th className="text-center px-4 py-3">Used</th><th className="text-right px-4 py-3">Actions</th></tr>
-              </thead>
-              <tbody className="divide-y">
-                {data.items.map(item => (
-                  <tr key={item.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-3"><div className="font-medium text-sm">{item.name}</div>{item.code && <div className="text-xs text-slate-500">{item.code}</div>}</td>
-                    <td className="px-4 py-3 text-sm capitalize">{item.discount_type?.replace("_", " ")}</td>
-                    <td className="px-4 py-3 text-sm">{item.value_type === "percentage" ? `${item.discount_value}%` : formatDisplayCurrency(item.discount_value)}</td>
-                    <td className="px-4 py-3"><StatusBadge status={item.status} /></td>
-                    <td className="px-4 py-3 text-sm">{formatDisplayDate(item.valid_from)}{item.valid_to ? ` — ${formatDisplayDate(item.valid_to)}` : ""}</td>
-                    <td className="px-4 py-3 text-center text-sm">{item.usage_count ?? 0}{item.usage_limit ? `/${item.usage_limit}` : ""}</td>
-                    <td className="px-4 py-3 text-right">
-                      <button onClick={() => setViewItem(item)} className="text-brand-600 hover:text-brand-700 text-sm mr-3">View</button>
+            <DataTable
+              stickyHeader={false}
+              data={data.items}
+              rowKey={(item) => item.id}
+              columns={[
+                { key: "name_code", label: "Name / Code", render: (item) => <><div className="font-medium text-sm">{item.name}</div>{item.code && <div className="text-xs text-slate-500">{item.code}</div>}</> },
+                { key: "type", label: "Type", render: (item) => <span className="text-sm capitalize">{item.discount_type?.replace("_", " ")}</span> },
+                { key: "value", label: "Value", render: (item) => <span className="text-sm">{item.value_type === "percentage" ? `${item.discount_value}%` : formatDisplayCurrency(item.discount_value)}</span> },
+                { key: "status", label: "Status", render: (item) => <><StatusBadge status={item.status} /></> },
+                { key: "valid_period", label: "Valid Period", render: (item) => <span className="text-sm">{formatDisplayDate(item.valid_from)}{item.valid_to ? ` — ${formatDisplayDate(item.valid_to)}` : ""}</span> },
+                { key: "used", label: "Used", align: "center", render: (item) => <span className="text-sm">{item.usage_count ?? 0}{item.usage_limit ? `/${item.usage_limit}` : ""}</span> },
+                { key: "actions", label: "Actions", align: "right", mobileRole: "actions", render: (item) => <><button onClick={() => setViewItem(item)} className="text-brand-600 hover:text-brand-700 text-sm mr-3">View</button>
                       <button onClick={() => { setEditItem(item); setShowForm(true); }} className="text-blue-600 hover:text-blue-800 text-sm mr-3"><Pencil size={14} className="inline" /> Edit</button>
-                      <button onClick={async () => { try { await discountApi.deactivate(item.id); fetchData(); } catch (e) { setError(e.message); } }} className="text-red-500 hover:text-red-700 text-sm">Deactivate</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      <button onClick={async () => { try { await discountApi.deactivate(item.id); fetchData(); } catch (e) { setError(e.message); } }} className="text-red-500 hover:text-red-700 text-sm">Deactivate</button></> },
+              ]}
+            />
           </div>
         )}
 

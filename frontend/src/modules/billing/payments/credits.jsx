@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Receipt, Search, Filter, X, RefreshCw,
   CheckCircle, XCircle, Clock, FileText, Loader2, Send } from "lucide-react"
 import HRPage from "../../../components/HRPage";
-import { Button, Modal } from "../../../components/billing-ui";
+import { DataTable, Button, Modal } from "../../../components/billing-ui";
 import { creditNoteApi } from "../../../service/billingService";
 import { formatDisplayDate, formatDisplayCurrency, extractArray } from "../../../utils/billing-helpers";
 import useLatestRequest from "../utils/useLatestRequest";
@@ -257,41 +257,24 @@ export default function CreditsPage() {
             <p className="text-xs text-slate-500">{hasActiveFilters ? "Try adjusting your filters." : "No credit notes have been issued yet."}</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-100">
-                  <th scope="col" className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase tracking-wider">Credit Note</th>
-                  <th scope="col" className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase tracking-wider">Customer</th>
-                  <th scope="col" className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase tracking-wider">Type</th>
-                  <th scope="col" className="text-right py-3 px-4 font-medium text-slate-500 text-xs uppercase tracking-wider">Total</th>
-                  <th scope="col" className="text-right py-3 px-4 font-medium text-slate-500 text-xs uppercase tracking-wider">Remaining</th>
-                  <th scope="col" className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase tracking-wider">Status</th>
-                  <th scope="col" className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase tracking-wider">Date</th>
-                  <th scope="col" className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase tracking-wider">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {credits.map((c) => (
-                  <tr key={c.id} className="border-b border-slate-50 hover:bg-slate-50">
-                    <td className="py-3 px-4 font-medium text-slate-900">{c.credit_note_number || `#${c.id}`}</td>
-                    <td className="py-3 px-4 text-slate-600">{c.customer_name || `Customer #${c.customer_id}`}</td>
-                    <td className="py-3 px-4">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">
+          <DataTable
+            stickyHeader={false}
+            data={credits}
+            rowKey={(c) => c.id}
+            columns={[
+              { key: "credit_note", label: "Credit Note", render: (c) => <span className="font-medium text-slate-900">{c.credit_note_number || `#${c.id}`}</span> },
+              { key: "customer", label: "Customer", render: (c) => <span className="text-slate-600">{c.customer_name || `Customer #${c.customer_id}`}</span> },
+              { key: "type", label: "Type", render: (c) => <><span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">
                         {c.credit_note_type ? c.credit_note_type.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()) : "—"}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-right font-medium text-slate-900">{formatDisplayCurrency(c.total_amount, c.currency)}</td>
-                    <td className="py-3 px-4 text-right font-medium text-slate-900">{formatDisplayCurrency(c.remaining_amount || 0, c.currency)}</td>
-                    <td className="py-3 px-4">
-                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${getStatusStyle(c.status)}`}>
+                      </span></> },
+              { key: "total", label: "Total", align: "right", render: (c) => <span className="font-medium text-slate-900">{formatDisplayCurrency(c.total_amount, c.currency)}</span> },
+              { key: "remaining", label: "Remaining", align: "right", render: (c) => <span className="font-medium text-slate-900">{formatDisplayCurrency(c.remaining_amount || 0, c.currency)}</span> },
+              { key: "status", label: "Status", render: (c) => <><span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${getStatusStyle(c.status)}`}>
                         {c.status === "issued" ? <CheckCircle size={10} /> : c.status === "voided" ? <XCircle size={10} /> : <Clock size={10} />}
                         {c.status ? c.status.charAt(0).toUpperCase() + c.status.slice(1) : "Unknown"}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-slate-500 whitespace-nowrap">{formatDisplayDate(c.issue_date || c.created_at)}</td>
-                    <td className="py-3 px-4">
-                      <div className="flex items-center gap-1">
+                      </span></> },
+              { key: "date", label: "Date", render: (c) => <span className="text-slate-500 whitespace-nowrap">{formatDisplayDate(c.issue_date || c.created_at)}</span> },
+              { key: "actions", label: "Actions", mobileRole: "actions", render: (c) => <><div className="flex items-center gap-1">
                         <button onClick={() => navigate(`/billing/credit-notes/${c.id}`)}
                           className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-brand-600 bg-brand-50 rounded-lg hover:bg-brand-100">
                           <FileText className="h-3.5 w-3.5" /> View
@@ -314,13 +297,9 @@ export default function CreditsPage() {
                             <XCircle className="h-3 w-3" /> Void
                           </button>
                         )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                      </div></> },
+            ]}
+          />
         )}
 
         {!loading && !error && totalPages > 1 && (

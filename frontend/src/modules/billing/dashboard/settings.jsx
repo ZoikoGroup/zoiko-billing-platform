@@ -16,7 +16,7 @@ import { formatNumber, getEffectiveLocale } from "../../../utils/locale";
 import { formatLastUpdated, DashboardHeader, ErrorState } from "../../../components/billing-shared";
 import { TAX_ROUNDING_NOT_APPLIED_NOTICE } from "../tax/tax-helpers";
 import useLatestRequest from "../utils/useLatestRequest";
-import { SettingsSaveBar, OverflowMenu, useUnsavedChangesGuard } from "../../../components/billing-ui";
+import { SettingsSaveBar, OverflowMenu, DataTable, useUnsavedChangesGuard } from "../../../components/billing-ui";
 import useMediaQuery, { BELOW_SM } from "../../../hooks/useMediaQuery";
 
 const TABS = [
@@ -3032,46 +3032,29 @@ function AdministrationPanel() {
         ) : numberingDiag?.error ? (
           <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700"><AlertCircle size={14} /> {numberingDiag.error}</div>
         ) : numberingDiag && numberingDiag.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="bg-slate-50">
-                  <th className="text-left px-3 py-2 font-semibold text-slate-500">Entity</th>
-                  <th className="text-left px-3 py-2 font-semibold text-slate-500">Prefix</th>
-                  <th className="text-left px-3 py-2 font-semibold text-slate-500">Format</th>
-                  <th className="text-left px-3 py-2 font-semibold text-slate-500">Reset</th>
-                  <th className="text-center px-3 py-2 font-semibold text-slate-500">Valid</th>
-                  <th className="text-left px-3 py-2 font-semibold text-slate-500">Next #</th>
-                  <th className="text-left px-3 py-2 font-semibold text-slate-500">Warnings</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {numberingDiag.map((item, i) => (
-                  <tr key={item.entity || i} className="hover:bg-slate-50">
-                    <td className="px-3 py-2 font-medium text-slate-800 capitalize">{item.entity}</td>
-                    <td className="px-3 py-2 text-slate-600 font-mono">{item.prefix}</td>
-                    <td className="px-3 py-2 text-slate-600 font-mono text-[11px]">{item.format}</td>
-                    <td className="px-3 py-2 text-slate-600">{item.sequence_reset}</td>
-                    <td className="px-3 py-2 text-center">
-                      {item.valid ? (
-                        <CheckCircle size={14} className="text-green-500 inline" />
-                      ) : (
-                        <AlertCircle size={14} className="text-red-500 inline" />
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-slate-600 font-mono">{item.next_number ?? "—"}</td>
-                    <td className="px-3 py-2">
-                      {item.warnings?.length > 0 ? (
-                        <span className="text-amber-600 text-[11px]">{item.warnings.join("; ")}</span>
-                      ) : item.suggestion ? (
-                        <span className="text-blue-600 text-[11px]">{item.suggestion}</span>
-                      ) : "—"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            dense
+            stickyHeader={false}
+            data={numberingDiag}
+            rowKey={(item, i) => item.entity || i}
+            columns={[
+              { key: "entity", label: "Entity", render: (item) => <span className="font-medium text-slate-800 capitalize">{item.entity}</span> },
+              { key: "prefix", label: "Prefix", render: (item) => <span className="text-slate-600 font-mono">{item.prefix}</span> },
+              { key: "format", label: "Format", render: (item) => <span className="text-slate-600 font-mono text-[11px]">{item.format}</span> },
+              { key: "sequence_reset", label: "Reset", render: (item) => <span className="text-slate-600">{item.sequence_reset}</span> },
+              { key: "valid", label: "Valid", mobileRole: "badge", render: (item) => (item.valid ? (
+                <CheckCircle size={14} className="text-green-500 inline" />
+              ) : (
+                <AlertCircle size={14} className="text-red-500 inline" />
+              )) },
+              { key: "next_number", label: "Next #", render: (item) => <span className="text-slate-600 font-mono">{item.next_number ?? "—"}</span> },
+              { key: "warnings", label: "Warnings", render: (item) => (item.warnings?.length > 0 ? (
+                <span className="text-amber-600 text-[11px]">{item.warnings.join("; ")}</span>
+              ) : item.suggestion ? (
+                <span className="text-blue-600 text-[11px]">{item.suggestion}</span>
+              ) : "—") },
+            ]}
+          />
         ) : (
           <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-500 text-center">Click "Load" to check numbering configuration</div>
         )}
@@ -3092,40 +3075,25 @@ function AdministrationPanel() {
         ) : taxDiag?.error ? (
           <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700"><AlertCircle size={14} /> {taxDiag.error}</div>
         ) : taxDiag && taxDiag.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="bg-slate-50">
-                  <th className="text-left px-3 py-2 font-semibold text-slate-500">Field</th>
-                  <th className="text-left px-3 py-2 font-semibold text-slate-500">Value</th>
-                  <th className="text-center px-3 py-2 font-semibold text-slate-500">Valid</th>
-                  <th className="text-left px-3 py-2 font-semibold text-slate-500">Suggestion</th>
-                  <th className="text-left px-3 py-2 font-semibold text-slate-500">Warnings</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {taxDiag.map((item, i) => (
-                  <tr key={item.field || i} className="hover:bg-slate-50">
-                    <td className="px-3 py-2 font-medium text-slate-800">{item.field}</td>
-                    <td className="px-3 py-2 text-slate-600 font-mono max-w-[120px] truncate" title={String(item.value ?? "")}>{String(item.value ?? "—")}</td>
-                    <td className="px-3 py-2 text-center">
-                      {item.valid ? (
-                        <CheckCircle size={14} className="text-green-500 inline" />
-                      ) : (
-                        <AlertCircle size={14} className="text-red-500 inline" />
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-slate-600 text-[11px] max-w-[160px]">{item.suggestion || "—"}</td>
-                    <td className="px-3 py-2">
-                      {item.warnings?.length > 0 ? (
-                        <span className="text-amber-600 text-[11px]">{item.warnings.join("; ")}</span>
-                      ) : "—"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            dense
+            stickyHeader={false}
+            data={taxDiag}
+            rowKey={(item, i) => item.field || i}
+            columns={[
+              { key: "field", label: "Field", render: (item) => <span className="font-medium text-slate-800">{item.field}</span> },
+              { key: "value", label: "Value", render: (item) => <span className="block text-slate-600 font-mono max-w-[120px] truncate" title={String(item.value ?? "")}>{String(item.value ?? "—")}</span> },
+              { key: "valid", label: "Valid", mobileRole: "badge", render: (item) => (item.valid ? (
+                <CheckCircle size={14} className="text-green-500 inline" />
+              ) : (
+                <AlertCircle size={14} className="text-red-500 inline" />
+              )) },
+              { key: "suggestion", label: "Suggestion", render: (item) => <span className="block text-slate-600 text-[11px] max-w-[160px]">{item.suggestion || "—"}</span> },
+              { key: "warnings", label: "Warnings", render: (item) => (item.warnings?.length > 0 ? (
+                <span className="text-amber-600 text-[11px]">{item.warnings.join("; ")}</span>
+              ) : "—") },
+            ]}
+          />
         ) : (
           <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-500 text-center">Click "Load" to check tax configuration</div>
         )}

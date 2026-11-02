@@ -220,42 +220,24 @@ function RunDetailModal({ run, onClose, onRefreshRun, onNotify, orgById }) {
           <EmptyState icon={ShieldCheck} title="No exceptions on this run" message="Every internal ledger invariant checked out clean." />
         ) : (
           <div className="overflow-x-auto rounded-2xl border border-slate-200 sm:max-h-[420px] sm:overflow-y-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="sticky top-0 bg-slate-50">
-                <tr className="text-[10px] uppercase tracking-wider text-slate-500">
-                  <th className="px-3 py-2">Kind</th>
-                  <th className="px-3 py-2">Org</th>
-                  <th className="px-3 py-2">Record type</th>
-                  <th className="px-3 py-2">Detail</th>
-                  <th className="px-3 py-2">Status</th>
-                  <th className="px-3 py-2">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {run.exceptions.map((exc) => (
-                  <tr key={exc.id} className="border-t border-slate-100">
-                    <td className="px-3 py-2 font-medium text-slate-700">{EXCEPTION_KIND_LABELS[exc.kind] || exc.kind}</td>
-                    <td className="px-3 py-2 text-slate-600">
-                      {exc.organization_id != null ? (
+            <DataTable
+              stickyHeader={false}
+              data={run.exceptions}
+              rowKey={(exc) => exc.id}
+              columns={[
+                { key: "kind", label: "Kind", render: (exc) => <span className="font-medium text-slate-700">{EXCEPTION_KIND_LABELS[exc.kind] || exc.kind}</span> },
+                { key: "org", label: "Org", render: (exc) => <span className="text-slate-600">{exc.organization_id != null ? (
                         <OrganizationLink
                           organizationId={exc.organization_id}
                           name={exc.organization_name || orgLabel(orgById[exc.organization_id])}
                         />
-                      ) : "—"}
-                    </td>
-                    <td className="px-3 py-2 capitalize text-slate-600">
-                      {String(exc.entity_type || "").replaceAll("_", " ")}
-                    </td>
-                    <td className="px-3 py-2 text-slate-500">
-                      <pre className="max-w-[260px] whitespace-pre-wrap break-words text-[10px]">
+                      ) : "—"}</span> },
+                { key: "record_type", label: "Record type", render: (exc) => <span className="capitalize text-slate-600">{String(exc.entity_type || "").replaceAll("_", " ")}</span> },
+                { key: "detail", label: "Detail", render: (exc) => <span className="text-slate-500"><pre className="max-w-[260px] whitespace-pre-wrap break-words text-[10px]">
                         {JSON.stringify(exc.detail, null, 2)}
-                      </pre>
-                    </td>
-                    <td className="px-3 py-2">
-                      <StatusBadge status={exc.status} options={RECONCILIATION_EXCEPTION_STATUS_OPTIONS} />
-                    </td>
-                    <td className="px-3 py-2">
-                      {exc.status === "RESOLVED" ? (
+                      </pre></span> },
+                { key: "status", label: "Status", render: (exc) => <><StatusBadge status={exc.status} options={RECONCILIATION_EXCEPTION_STATUS_OPTIONS} /></> },
+                { key: "actions", label: "Actions", mobileRole: "actions", render: (exc) => <>{exc.status === "RESOLVED" ? (
                         <span className="text-slate-400">{exc.resolution_note}</span>
                       ) : (
                         <div className="flex items-center gap-1.5">
@@ -268,12 +250,9 @@ function RunDetailModal({ run, onClose, onRefreshRun, onNotify, orgById }) {
                             Resolve
                           </Button>
                         </div>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      )}</> },
+              ]}
+            />
           </div>
         )}
 

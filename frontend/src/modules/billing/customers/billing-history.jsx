@@ -7,6 +7,7 @@ import HRPage from "../../../components/HRPage";
 import { invoiceApi, paymentApi } from "../../../service/billingService";
 import { formatDisplayCurrency, formatDisplayDate } from "../../../utils/billing-helpers";
 import { Pagination } from "../../../components/billing-shared";
+import { DataTable } from "../../../components/billing-ui";
 import useLatestRequest from "../utils/useLatestRequest";
 
 const ITEMS_PER_PAGE = 10;
@@ -222,11 +223,6 @@ export default function BillingHistoryPage() {
     URL.revokeObjectURL(url);
   };
 
-  const SortHeader = ({ label }) => (
-    <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
-      <div className="flex items-center gap-1">{label}</div>
-    </th>
-  );
 
   if (loading) {
     return (
@@ -375,85 +371,48 @@ export default function BillingHistoryPage() {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          {activeTab === "invoices" ? (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-100">
-                  <SortHeader label="Invoice #" />
-                  <SortHeader label="Customer" />
-                  <SortHeader label="Amount" />
-                  <SortHeader label="Status" />
-                  <SortHeader label="Due Date" />
-                  <SortHeader label="Paid Date" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {invoices.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="px-4 py-16 text-center">
-                      <div className="flex flex-col items-center">
-                        <FileText size={40} className="text-slate-300 mb-3" />
-                        <p className="text-slate-500 font-medium">No invoices found</p>
-                        <p className="text-slate-500 text-sm mt-1">{hasActiveFilters ? "No invoices match your filters" : "No invoices have been created yet"}</p>
-                        {hasActiveFilters && (
-                          <button onClick={clearFilters} className="mt-3 text-sm font-medium text-brand-600 hover:text-brand-700">Clear filters</button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ) : invoices.map((inv) => (
-                  <tr key={inv.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-4 py-4 font-medium text-slate-800 whitespace-nowrap">{inv.invoice_number || inv.id || "—"}</td>
-                    <td className="px-4 py-4 text-slate-600">{inv.customer_name || inv.customer?.display_name || "—"}</td>
-                    <td className="px-4 py-4 font-medium text-slate-800 whitespace-nowrap">{formatDisplayCurrency(inv.total_amount ?? inv.total)}</td>
-                    <td className="px-4 py-4"><InvoiceStatusBadge status={inv.status} /></td>
-                    <td className="px-4 py-4 text-slate-500">{formatDisplayDate(inv.due_date)}</td>
-                    <td className="px-4 py-4 text-slate-500">{formatDisplayDate(inv.paid_at)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-100">
-                  <SortHeader label="Receipt #" />
-                  <SortHeader label="Customer" />
-                  <SortHeader label="Amount" />
-                  <SortHeader label="Method" />
-                  <SortHeader label="Status" />
-                  <SortHeader label="Date" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {payments.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="px-4 py-16 text-center">
-                      <div className="flex flex-col items-center">
-                        <CreditCard size={40} className="text-slate-300 mb-3" />
-                        <p className="text-slate-500 font-medium">No payments found</p>
-                        <p className="text-slate-500 text-sm mt-1">{hasActiveFilters ? "No payments match your filters" : "No payments have been recorded yet"}</p>
-                        {hasActiveFilters && (
-                          <button onClick={clearFilters} className="mt-3 text-sm font-medium text-brand-600 hover:text-brand-700">Clear filters</button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ) : payments.map((pmt) => (
-                  <tr key={pmt.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-4 py-4 font-medium text-slate-800 whitespace-nowrap">{pmt.payment_number || pmt.id || "—"}</td>
-                    <td className="px-4 py-4 text-slate-600">{pmt.customer_name || pmt.customer?.display_name || (pmt.customer_id ? `Customer #${pmt.customer_id}` : "—")}</td>
-                    <td className="px-4 py-4 font-medium text-slate-800 whitespace-nowrap">{formatDisplayCurrency(pmt.amount)}</td>
-                    <td className="px-4 py-4 text-slate-600 capitalize">{pmt.payment_method || pmt.method || "—"}</td>
-                    <td className="px-4 py-4"><PaymentStatusBadge status={pmt.status} /></td>
-                    <td className="px-4 py-4 text-slate-500">{formatDisplayDate(pmt.created_at || pmt.date)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
+        {/* Shared table: rows become cards on phones (6 columns). */}
+        {activeTab === "invoices" ? (
+          <DataTable
+            stickyHeader={false}
+            data={invoices}
+            rowKey={(inv) => inv.id}
+            emptyIcon={FileText}
+            emptyTitle="No invoices found"
+            emptyMessage={hasActiveFilters ? "No invoices match your filters" : "No invoices have been created yet"}
+            emptyAction={hasActiveFilters ? (
+              <button onClick={clearFilters} className="mt-3 text-sm font-medium text-brand-600 hover:text-brand-700">Clear filters</button>
+            ) : null}
+            columns={[
+              { key: "invoice_number", label: "Invoice #", render: (inv) => <span className="font-medium text-slate-800 whitespace-nowrap">{inv.invoice_number || inv.id || "—"}</span> },
+              { key: "customer", label: "Customer", render: (inv) => <span className="text-slate-600">{inv.customer_name || inv.customer?.display_name || "—"}</span> },
+              { key: "amount", label: "Amount", mobileRole: "amount", render: (inv) => <span className="font-medium text-slate-800 whitespace-nowrap">{formatDisplayCurrency(inv.total_amount ?? inv.total)}</span> },
+              { key: "status", label: "Status", render: (inv) => <InvoiceStatusBadge status={inv.status} /> },
+              { key: "due_date", label: "Due Date", render: (inv) => <span className="text-slate-500">{formatDisplayDate(inv.due_date)}</span> },
+              { key: "paid_at", label: "Paid Date", render: (inv) => <span className="text-slate-500">{formatDisplayDate(inv.paid_at)}</span> },
+            ]}
+          />
+        ) : (
+          <DataTable
+            stickyHeader={false}
+            data={payments}
+            rowKey={(pmt) => pmt.id}
+            emptyIcon={CreditCard}
+            emptyTitle="No payments found"
+            emptyMessage={hasActiveFilters ? "No payments match your filters" : "No payments have been recorded yet"}
+            emptyAction={hasActiveFilters ? (
+              <button onClick={clearFilters} className="mt-3 text-sm font-medium text-brand-600 hover:text-brand-700">Clear filters</button>
+            ) : null}
+            columns={[
+              { key: "payment_number", label: "Receipt #", render: (pmt) => <span className="font-medium text-slate-800 whitespace-nowrap">{pmt.payment_number || pmt.id || "—"}</span> },
+              { key: "customer", label: "Customer", render: (pmt) => <span className="text-slate-600">{pmt.customer_name || pmt.customer?.display_name || (pmt.customer_id ? `Customer #${pmt.customer_id}` : "—")}</span> },
+              { key: "amount", label: "Amount", mobileRole: "amount", render: (pmt) => <span className="font-medium text-slate-800 whitespace-nowrap">{formatDisplayCurrency(pmt.amount)}</span> },
+              { key: "method", label: "Method", render: (pmt) => <span className="text-slate-600 capitalize">{pmt.payment_method || pmt.method || "—"}</span> },
+              { key: "status", label: "Status", render: (pmt) => <PaymentStatusBadge status={pmt.status} /> },
+              { key: "date", label: "Date", render: (pmt) => <span className="text-slate-500">{formatDisplayDate(pmt.created_at || pmt.date)}</span> },
+            ]}
+          />
+        )}
 
         <Pagination page={safePage} totalPages={totalPages} onPageChange={setCurrentPage}>
           {total} total record(s)

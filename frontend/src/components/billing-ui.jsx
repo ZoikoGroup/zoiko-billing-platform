@@ -603,8 +603,12 @@ function DataTableCards({
   emptyMessage,
   EmptyIcon,
   emptyAction,
+  sortKey,
+  sortDir,
+  onSort,
 }) {
   const roles = useMemo(() => resolveCardRoles(columns), [columns]);
+  const sortableCols = columns.filter((col) => col.sortable);
   const byRole = (role) => columns.filter((col) => roles[col.key] === role);
   const cell = (col, row, idx) => (col.render ? col.render(row, idx) : row[col.key]);
   const titleCols = byRole("title");
@@ -655,6 +659,35 @@ function DataTableCards({
           />
           Select all
         </label>
+      )}
+      {/* Cards have no header row, so sortable columns get a sort menu and a
+          direction toggle that call the same onSort as the table headers. */}
+      {onSort && sortableCols.length > 0 && (
+        <div className="flex items-center justify-end gap-2 border-b border-slate-100 px-4 py-2 text-sm text-slate-500">
+          <label className="flex items-center gap-2">
+            <span>Sort</span>
+            <select
+              value={sortKey ?? ""}
+              onChange={(e) => { if (e.target.value) onSort(e.target.value); }}
+              aria-label="Sort by"
+              className="min-h-11 rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-700"
+            >
+              {!sortableCols.some((col) => col.key === sortKey) && <option value="">Default</option>}
+              {sortableCols.map((col) => (
+                <option key={col.key} value={col.key}>{typeof col.label === "string" ? col.label : col.key}</option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            onClick={() => { if (sortKey) onSort(sortKey); }}
+            disabled={!sortableCols.some((col) => col.key === sortKey)}
+            aria-label={sortDir === "asc" ? "Sort descending" : "Sort ascending"}
+            className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 disabled:opacity-40"
+          >
+            {sortDir === "asc" ? <ArrowUp size={16} /> : <ArrowDown size={16} />}
+          </button>
+        </div>
       )}
       <ul className="divide-y divide-slate-100">
         {data.map((row, idx) => {
@@ -828,6 +861,9 @@ export function DataTable({
           emptyMessage={emptyMessage}
           EmptyIcon={EmptyIcon}
           emptyAction={emptyAction}
+          sortKey={sortKey}
+          sortDir={sortDir}
+          onSort={onSort}
         />
       ) : (
         <div

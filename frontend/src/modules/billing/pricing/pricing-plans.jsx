@@ -9,6 +9,7 @@ import { getCurrencySelectOptions } from "../../../utils/currency";
 import { formatDisplayDate, formatDisplayCurrency, extractArray } from "../../../utils/billing-helpers";
 import { Spinner, Pagination, ProductSelector } from "../../../components/billing-shared";
 import useLatestRequest from "../utils/useLatestRequest";
+import useMediaQuery, { BELOW_SM } from "../../../hooks/useMediaQuery";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -103,6 +104,7 @@ export default function PricingPlansPage() {
 
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [selectAll, setSelectAll] = useState(false);
+  const isPhone = useMediaQuery(BELOW_SM);
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -995,6 +997,129 @@ export default function PricingPlansPage() {
           </div>
         )}
 
+        {/* Phones: one card per plan instead of a 9-column table swiped
+            sideways. Same selection, sort and row-action handlers. */}
+        {isPhone ? (
+          <div>
+            <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-2">
+              <label className="flex min-h-11 items-center gap-2 text-sm text-slate-600">
+                <input type="checkbox" checked={selectAll} onChange={(e) => handleSelectAll(e.target.checked)}
+                  aria-label="Select all pricing plans"
+                  className="h-5 w-5 rounded border-slate-300 text-brand-600 focus:ring-brand/30" />
+                Select all
+              </label>
+              <label className="flex items-center gap-2 text-sm text-slate-500">
+                <span>Sort</span>
+                <select
+                  value={`${sortField}:${sortDir}`}
+                  onChange={(e) => { const [field, dir] = e.target.value.split(":"); setSortField(field); setSortDir(dir); setCurrentPage(1); }}
+                  className="min-h-11 rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-700"
+                  aria-label="Sort by"
+                >
+                  {![["name", "asc"], ["name", "desc"], ["price", "asc"], ["price", "desc"], ["status", "asc"], ["status", "desc"]].some(([f, d]) => f === sortField && d === sortDir) && (
+                    <option value={`${sortField}:${sortDir}`}>Default</option>
+                  )}
+                  <option value="name:asc">Name A–Z</option>
+                  <option value="name:desc">Name Z–A</option>
+                  <option value="price:asc">Price low–high</option>
+                  <option value="price:desc">Price high–low</option>
+                  <option value="status:asc">Status A–Z</option>
+                  <option value="status:desc">Status Z–A</option>
+                </select>
+              </label>
+            </div>
+            {plans.length === 0 ? (
+              <div className="px-4 py-16 text-center">
+                <div className="flex flex-col items-center">
+                  <Tag size={40} className="text-slate-300 mb-3" />
+                  <p className="text-slate-500 font-medium">No pricing plans found</p>
+                  <p className="text-slate-500 text-sm mt-1">{hasActiveFilters ? "Try adjusting your search or filters" : "Add your first pricing plan to get started"}</p>
+                  {hasActiveFilters && (
+                    <button type="button" onClick={clearFilters}
+                      className="mt-3 inline-flex min-h-11 items-center gap-1 rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-brand-600 hover:bg-brand-50">
+                      <X size={14} /> Clear filters
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <ul className="divide-y divide-slate-100">
+                {plans.map((plan) => {
+                  const isTieredModel = MODEL_DYNAMIC_FIELDS[plan.plan_type || plan.pricing_model]?.showTiers;
+                  return (
+                    <li key={plan.id} className={`px-4 py-3 ${selectedIds.has(plan.id) ? "bg-brand-50/50" : ""}`}>
+                      <div className="flex items-start gap-3">
+                        <input type="checkbox" checked={selectedIds.has(plan.id)} onChange={() => handleSelectOne(plan.id)}
+                          aria-label={`Select ${plan.name || "pricing plan"}`}
+                          className="mt-3 h-5 w-5 shrink-0 rounded border-slate-300 text-brand-600 focus:ring-brand/30" />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex min-h-11 min-w-0 items-center gap-3">
+                              <div className="h-9 w-9 shrink-0 rounded-full bg-gradient-to-br from-brand to-brand-hover text-white flex items-center justify-center text-sm font-bold">
+                                {(plan.name || "?").charAt(0).toUpperCase()}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="truncate font-medium text-slate-800">{plan.name || "Unnamed"}</p>
+                                <p className="text-xs text-slate-500">{plan.trial_days ? `${plan.trial_days}d trial` : plan.setup_fee ? `${formatDisplayCurrency(plan.setup_fee)} setup` : "—"}</p>
+                              </div>
+                            </div>
+                            <div className="shrink-0 pt-2.5"><StatusBadge status={(plan.is_active ?? plan.status === "active") ? "active" : "inactive"} /></div>
+                          </div>
+                          <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                            <div><dt className="text-slate-500">Price</dt><dd className="font-medium text-slate-800 text-sm">{formatDisplayCurrency(plan.unit_price ?? plan.price ?? 0, plan.currency)}</dd></div>
+                            <div><dt className="text-slate-500">Period</dt><dd className="capitalize text-slate-600">{(plan.billing_period || plan.billing_frequency)?.replace(/_/g, " ") || "—"}</dd></div>
+                            <div><dt className="text-slate-500">Model</dt><dd><ModelBadge model={plan.pricing_model || plan.plan_type} /></dd></div>
+                            <div className="min-w-0"><dt className="text-slate-500">Product</dt><dd>
+                              <button onClick={() => navigate(`/billing/products/${plan.product_id}`)} className="min-h-11 truncate text-left text-brand-600 hover:text-brand-700 text-xs font-medium hover:underline">
+                                {plan.product_name || plan.product?.name || `Product #${plan.product_id}`}
+                              </button>
+                            </dd></div>
+                            <div className="col-span-2"><dt className="text-slate-500">Effective</dt><dd className="text-slate-500">
+                              {plan.effective_from ? (
+                                <span className="flex items-center gap-1"><Calendar size={11} />{formatDisplayDate(plan.effective_from)}{plan.effective_to ? ` → ${formatDisplayDate(plan.effective_to)}` : " → ∞"}</span>
+                              ) : "—"}
+                            </dd></div>
+                          </dl>
+                          <div className="mt-1 flex flex-wrap items-center justify-end gap-1 [&_button]:inline-flex [&_button]:h-11 [&_button]:w-11 [&_button]:items-center [&_button]:justify-center">
+                      <button onClick={() => handlePreview(plan)}
+                        className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-brand-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30" title="Preview Pricing" aria-label={`Preview pricing for ${plan.name || "plan"}`}>
+                        <Eye size={16} />
+                      </button>
+                      <button onClick={() => handleDuplicate(plan)}
+                        className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-emerald-700 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30" title="Duplicate Plan" aria-label={`Duplicate ${plan.name || "plan"}`}>
+                        <Copy size={16} />
+                      </button>
+                      {isTieredModel && (
+                        <button onClick={() => navigate(`/billing/pricing/tier-management?plan_id=${plan.id}`)}
+                          className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-amber-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30" title="Manage Tiers" aria-label={`Manage tiers for ${plan.name || "plan"}`}>
+                          <Layers size={16} />
+                        </button>
+                      )}
+                      {(plan.is_active ?? plan.status === "active") ? (
+                        <button onClick={() => handleDeactivate(plan.id)}
+                          className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-red-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30" title="Deactivate" aria-label={`Deactivate ${plan.name || "plan"}`}>
+                          <Clock size={16} />
+                        </button>
+                      ) : (
+                        <button onClick={() => handleActivate(plan.id)}
+                          className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-emerald-700 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30" title="Activate" aria-label={`Activate ${plan.name || "plan"}`}>
+                          <CheckCircle size={16} />
+                        </button>
+                      )}
+                      <button onClick={() => { setEditPlan({ ...plan }); if (plan.product_id) loadProductDefaults(plan.product_id); setShowEditModal(true); }}
+                        className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-blue-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30" title="Edit" aria-label={`Edit ${plan.name || "plan"}`}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+                      </button>
+                          </div>
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -1104,6 +1229,7 @@ export default function PricingPlansPage() {
             </tbody>
           </table>
         </div>
+        )}
 
         <Pagination page={safePage} totalPages={totalPages} onPageChange={setCurrentPage}>
           {total} total plan(s)

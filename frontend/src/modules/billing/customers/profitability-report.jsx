@@ -10,6 +10,7 @@ import { useCurrency } from "../utils/CurrencyContext";
 import { formatCurrency } from "../../../utils/locale";
 import { Spinner, EmptyState, ExportMenu, DateRangeFilter, useDateRange } from "../../../components/billing-shared";
 import { downloadCSV, downloadExcel, downloadJSON, filterByDateRange } from "../../../utils/export-helpers";
+import { DataTable } from "../../../components/billing-ui";
 
 const COLORS = ["var(--color-accent-invoicing)", "#FF9B4D", "#FFC9A6", "#f59e0b", "#10b981", "#ef4444", "#3b82f6", "#ec4899", "#14b8a6", "#f97316"];
 const DEFAULT_MARGIN = 0.3;
@@ -194,38 +195,26 @@ export default function CustomerProfitabilityReport() {
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-semibold text-slate-800">Customer Profitability Details</h3>
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-200">
-                      <th className="text-left py-3 px-3 text-xs font-semibold text-slate-500 uppercase">Customer</th>
-                      <th className="text-right py-3 px-3 text-xs font-semibold text-slate-500 uppercase">Revenue</th>
-                      <th className="text-right py-3 px-3 text-xs font-semibold text-slate-500 uppercase">Est. Costs</th>
-                      <th className="text-right py-3 px-3 text-xs font-semibold text-slate-500 uppercase">Profit</th>
-                      <th className="text-right py-3 px-3 text-xs font-semibold text-slate-500 uppercase">Margin %</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {profitabilityData.map((c) => (
-                      <tr key={c.id} className="border-b border-slate-50 hover:bg-slate-50">
-                        <td className="py-3 px-3 font-medium text-slate-800">{c.name}</td>
-                        <td className="py-3 px-3 text-right text-slate-700">{formatCurrency(c.revenue, baseCurrency)}</td>
-                        <td className="py-3 px-3 text-right text-slate-500">{formatCurrency(c.costs, baseCurrency)}</td>
-                        <td className="py-3 px-3 text-right font-medium text-slate-800">{formatCurrency(c.profit, baseCurrency)}</td>
-                        <td className="py-3 px-3 text-right">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
-                            c.margin >= 50 ? "bg-emerald-100 text-emerald-700" :
-                            c.margin >= 20 ? "bg-amber-100 text-amber-700" :
-                            "bg-red-100 text-red-700"
-                          }`}>
-                            {c.margin.toFixed(1)}%
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <DataTable
+                stickyHeader={false}
+                data={profitabilityData}
+                rowKey={(c) => c.id}
+                columns={[
+                  { key: "name", label: "Customer", render: (c) => <span className="font-medium text-slate-800">{c.name}</span> },
+                  { key: "revenue", label: "Revenue", numeric: true, render: (c) => <span className="text-slate-700">{formatCurrency(c.revenue, baseCurrency)}</span> },
+                  { key: "costs", label: "Est. Costs", numeric: true, render: (c) => <span className="text-slate-500">{formatCurrency(c.costs, baseCurrency)}</span> },
+                  { key: "profit", label: "Profit", numeric: true, render: (c) => <span className="font-medium text-slate-800">{formatCurrency(c.profit, baseCurrency)}</span> },
+                  { key: "margin", label: "Margin %", numeric: true, mobileRole: "badge", render: (c) => (
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
+                      c.margin >= 50 ? "bg-emerald-100 text-emerald-700" :
+                      c.margin >= 20 ? "bg-amber-100 text-amber-700" :
+                      "bg-red-100 text-red-700"
+                    }`}>
+                      {c.margin.toFixed(1)}%
+                    </span>
+                  ) },
+                ]}
+              />
             </div>
           </>
         )}

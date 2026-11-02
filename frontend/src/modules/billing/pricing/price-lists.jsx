@@ -7,6 +7,7 @@ import { formatDisplayDate } from "../../../utils/billing-helpers";
 import { getCurrencySelectOptions } from "../../../utils/currency";
 import { Spinner, EmptyState, ErrorState } from "../../../components/billing-shared";
 import useLatestRequest from "../utils/useLatestRequest";
+import { DataTable } from "../../../components/billing-ui";
 
 const CURRENCY_OPTIONS = getCurrencySelectOptions();
 
@@ -143,30 +144,24 @@ export default function PriceListsPage() {
         {loading ? <Spinner /> : !data.items?.length ? <EmptyState message="No price lists found" /> : (
           <>
             <div className="bg-white rounded-3xl border overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
-                  <tr><th className="text-left px-4 py-3">Name / Code</th><th className="text-left px-4 py-3">Currency</th><th className="text-left px-4 py-3">Status</th><th className="text-left px-4 py-3">Default</th><th className="text-left px-4 py-3">Effective</th><th className="text-right px-4 py-3">Actions</th></tr>
-                </thead>
-                <tbody className="divide-y">
-                  {data.items.map(item => (
-                    <tr key={item.id} className="hover:bg-slate-50">
-                      <td className="px-4 py-3"><div className="font-medium text-sm">{item.name}</div><div className="text-xs text-slate-500">{item.code}</div></td>
-                      <td className="px-4 py-3 text-sm">{item.currency}</td>
-                      <td className="px-4 py-3"><StatusBadge status={item.status} isActive={item.is_active} /></td>
-                      <td className="px-4 py-3">{item.is_default ? <CheckCircle size={16} className="text-green-500" /> : "—"}</td>
-                      <td className="px-4 py-3 text-sm">{formatDisplayDate(item.effective_from)}{item.effective_to ? ` — ${formatDisplayDate(item.effective_to)}` : ""}</td>
-                      <td className="px-4 py-3 text-right">
-                        <button onClick={() => handleEdit(item)} className="text-brand-600 hover:text-brand-700 text-sm mr-3">Edit</button>
+              <DataTable
+                stickyHeader={false}
+                data={data.items}
+                rowKey={(item) => item.id}
+                columns={[
+                  { key: "name_code", label: "Name / Code", render: (item) => <><div className="font-medium text-sm">{item.name}</div><div className="text-xs text-slate-500">{item.code}</div></> },
+                  { key: "currency", label: "Currency", render: (item) => <span className="text-sm">{item.currency}</span> },
+                  { key: "status", label: "Status", render: (item) => <><StatusBadge status={item.status} isActive={item.is_active} /></> },
+                  { key: "default", label: "Default", render: (item) => <>{item.is_default ? <CheckCircle size={16} className="text-green-500" /> : "—"}</> },
+                  { key: "effective", label: "Effective", render: (item) => <span className="text-sm">{formatDisplayDate(item.effective_from)}{item.effective_to ? ` — ${formatDisplayDate(item.effective_to)}` : ""}</span> },
+                  { key: "actions", label: "Actions", align: "right", mobileRole: "actions", render: (item) => <><button onClick={() => handleEdit(item)} className="text-brand-600 hover:text-brand-700 text-sm mr-3">Edit</button>
                         {item.is_active ? (
                           <button onClick={() => handleDeactivate(item.id)} className="text-red-500 hover:text-red-700 text-sm">Deactivate</button>
                         ) : (
                           <button onClick={() => handleActivate(item.id)} className="text-green-600 hover:text-green-800 text-sm">Activate</button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                        )}</> },
+                ]}
+              />
             </div>
             {data.pages > 1 && (
               <div className="flex justify-center gap-2">

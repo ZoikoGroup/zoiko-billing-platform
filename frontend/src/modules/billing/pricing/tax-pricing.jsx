@@ -3,7 +3,7 @@ import {
   DollarSign, Search, Plus, RefreshCw, CheckCircle, X, Pencil, Layers,
 } from "lucide-react";
 import HRPage from "../../../components/HRPage";
-import { Button, Modal } from "../../../components/billing-ui";
+import { DataTable, Button, Modal } from "../../../components/billing-ui";
 import { taxPricingApi } from "../../../service/billingService";
 import { formatDisplayDate, extractArray } from "../../../utils/billing-helpers";
 import { Spinner, EmptyState, ErrorState } from "../../../components/billing-shared";
@@ -326,27 +326,21 @@ function TaxGroupsModal({ show, onClose, taxPricingApi, allTaxItems, onError }) 
 
         {loading ? <Spinner /> : !groups.length ? <EmptyState message="No tax groups found" /> : (
           <div className="bg-white rounded-3xl border overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
-                <tr><th className="text-left px-4 py-3">Name</th><th className="text-left px-4 py-3">Code</th><th className="text-left px-4 py-3">Country</th><th className="text-center px-4 py-3">Default</th><th className="text-center px-4 py-3">Active</th><th className="text-right px-4 py-3">Actions</th></tr>
-              </thead>
-              <tbody className="divide-y">
-                {groups.map(g => (
-                  <tr key={g.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-3 text-sm font-medium">{g.name}</td>
-                    <td className="px-4 py-3 text-sm">{g.code}</td>
-                    <td className="px-4 py-3 text-sm">{g.country || "—"}</td>
-                    <td className="px-4 py-3 text-center">{g.is_default ? <CheckCircle size={16} className="text-green-500 mx-auto" /> : "—"}</td>
-                    <td className="px-4 py-3 text-center">{g.is_active ? <CheckCircle size={16} className="text-green-500 mx-auto" /> : "—"}</td>
-                    <td className="px-4 py-3 text-right space-x-2">
-                      <button onClick={() => fetchMembers(g)} className="text-brand-600 hover:text-brand-700 text-xs">Members</button>
+            <DataTable
+              stickyHeader={false}
+              data={groups}
+              rowKey={(g) => g.id}
+              columns={[
+                { key: "name", label: "Name", render: (g) => <span className="text-sm font-medium">{g.name}</span> },
+                { key: "code", label: "Code", render: (g) => <span className="text-sm">{g.code}</span> },
+                { key: "country", label: "Country", render: (g) => <span className="text-sm">{g.country || "—"}</span> },
+                { key: "default", label: "Default", align: "center", render: (g) => <>{g.is_default ? <CheckCircle size={16} className="text-green-500 mx-auto" /> : "—"}</> },
+                { key: "active", label: "Active", align: "center", render: (g) => <>{g.is_active ? <CheckCircle size={16} className="text-green-500 mx-auto" /> : "—"}</> },
+                { key: "actions", label: "Actions", align: "right", mobileRole: "actions", render: (g) => <span className="space-x-2"><button onClick={() => fetchMembers(g)} className="text-brand-600 hover:text-brand-700 text-xs">Members</button>
                       <button onClick={() => { setEditGroup(g); setGroupForm({ name: g.name, code: g.code, description: g.description || "", country: g.country || "", is_default: g.is_default ?? false, is_active: g.is_active ?? true }); setShowCreateEdit(true); }} className="text-blue-600 hover:text-blue-800 text-xs"><Pencil size={12} className="inline" /> Edit</button>
-                      <button onClick={() => handleDeleteGroup(g.id)} className="text-red-500 hover:text-red-700 text-xs">Delete</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      <button onClick={() => handleDeleteGroup(g.id)} className="text-red-500 hover:text-red-700 text-xs">Delete</button></span> },
+              ]}
+            />
           </div>
         )}
       </Modal>
@@ -485,29 +479,23 @@ export default function TaxPricingPage() {
         {error && <ErrorState message={error} onRetry={() => fetchData()} />}
         {loading ? <Spinner /> : !data.items?.length ? <EmptyState message="No tax pricing found" /> : (
           <div className="bg-white rounded-3xl border overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
-                <tr><th className="text-left px-4 py-3">Name / Code</th><th className="text-left px-4 py-3">Type</th><th className="text-right px-4 py-3">Rate</th><th className="text-left px-4 py-3">Jurisdiction</th><th className="text-left px-4 py-3">Pricing</th><th className="text-left px-4 py-3">Effective</th><th className="text-center px-4 py-3">Default</th><th className="text-right px-4 py-3">Actions</th></tr>
-              </thead>
-              <tbody className="divide-y">
-                {data.items.map(item => (
-                  <tr key={item.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-3"><div className="font-medium text-sm">{item.name}</div><div className="text-xs text-slate-500">{item.code}</div></td>
-                    <td className="px-4 py-3 text-sm capitalize">{item.tax_type}</td>
-                    <td className="px-4 py-3 text-sm text-right">{item.rate}%</td>
-                    <td className="px-4 py-3 text-sm">{item.country || "—"}{item.region ? ` / ${item.region}` : ""}</td>
-                    <td className="px-4 py-3 text-sm capitalize">{item.pricing_type}</td>
-                    <td className="px-4 py-3 text-sm">{formatDisplayDate(item.effective_from)}{item.effective_to ? ` — ${formatDisplayDate(item.effective_to)}` : ""}</td>
-                    <td className="px-4 py-3 text-center">{item.is_default ? <CheckCircle size={16} className="text-green-500 mx-auto" /> : "—"}</td>
-                    <td className="px-4 py-3 text-right">
-                      <button onClick={() => setViewItem(item)} className="text-brand-600 hover:text-brand-700 text-sm mr-3">View</button>
+            <DataTable
+              stickyHeader={false}
+              data={data.items}
+              rowKey={(item) => item.id}
+              columns={[
+                { key: "name_code", label: "Name / Code", render: (item) => <><div className="font-medium text-sm">{item.name}</div><div className="text-xs text-slate-500">{item.code}</div></> },
+                { key: "type", label: "Type", render: (item) => <span className="text-sm capitalize">{item.tax_type}</span> },
+                { key: "rate", label: "Rate", align: "right", render: (item) => <span className="text-sm">{item.rate}%</span> },
+                { key: "jurisdiction", label: "Jurisdiction", render: (item) => <span className="text-sm">{item.country || "—"}{item.region ? ` / ${item.region}` : ""}</span> },
+                { key: "pricing", label: "Pricing", render: (item) => <span className="text-sm capitalize">{item.pricing_type}</span> },
+                { key: "effective", label: "Effective", render: (item) => <span className="text-sm">{formatDisplayDate(item.effective_from)}{item.effective_to ? ` — ${formatDisplayDate(item.effective_to)}` : ""}</span> },
+                { key: "default", label: "Default", align: "center", render: (item) => <>{item.is_default ? <CheckCircle size={16} className="text-green-500 mx-auto" /> : "—"}</> },
+                { key: "actions", label: "Actions", align: "right", mobileRole: "actions", render: (item) => <><button onClick={() => setViewItem(item)} className="text-brand-600 hover:text-brand-700 text-sm mr-3">View</button>
                       <button onClick={() => { setEditItem(item); setShowForm(true); }} className="text-blue-600 hover:text-blue-800 text-sm mr-3"><Pencil size={14} className="inline" /> Edit</button>
-                      <button onClick={async () => { try { await taxPricingApi.deactivate(item.id); fetchData(); } catch (e) { setError(e.message); } }} className="text-red-500 hover:text-red-700 text-sm">Deactivate</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      <button onClick={async () => { try { await taxPricingApi.deactivate(item.id); fetchData(); } catch (e) { setError(e.message); } }} className="text-red-500 hover:text-red-700 text-sm">Deactivate</button></> },
+              ]}
+            />
           </div>
         )}
 

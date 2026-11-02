@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { BarChart3, RefreshCw, Zap, DollarSign, Activity, Calendar, Search, Plus, X, AlertCircle, CheckCircle, Settings2, FlaskConical, Download, Gauge } from "lucide-react";
 import HRPage from "../../../components/HRPage";
-import { Button, Modal } from "../../../components/billing-ui";
+import { DataTable, Button, Modal } from "../../../components/billing-ui";
 import { productApi } from "../../../service/billingService";
 import { formatDisplayDate, formatDisplayCurrency, extractArray } from "../../../utils/billing-helpers";
 import { useCurrency } from "../utils/CurrencyContext";
@@ -342,24 +342,12 @@ export default function UsageBillingPage() {
             )}
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-100">
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Meter</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Meter Type</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Unit</th>
-                  <th className="px-6 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Unit Price</th>
-                  <th className="px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Billing Model</th>
-                  <th className="px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
-                  <th className="px-6 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {mergedProducts.map((product) => (
-                  <tr key={product.id} className="hover:bg-slate-50/70 transition-colors group">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
+          <DataTable
+            stickyHeader={false}
+            data={mergedProducts}
+            rowKey={(product) => product.id}
+            columns={[
+              { key: "meter", label: "Meter", render: (product) => <><div className="flex items-center gap-3">
                         <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center shrink-0 shadow-sm">
                           <Gauge className="h-4 w-4 text-white" />
                         </div>
@@ -370,23 +358,17 @@ export default function UsageBillingPage() {
                           </button>
                           {product.code && <p className="text-xs text-slate-500 font-mono">{product.code}</p>}
                         </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-violet-100 text-violet-700">
+                      </div></> },
+              { key: "meter_type", label: "Meter Type", render: (product) => <><span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-violet-100 text-violet-700">
                         {meterTypeFor(product)}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-slate-600">{product.unit_label || "—"}</td>
-                    <td className="px-6 py-4 text-right font-semibold text-slate-800 whitespace-nowrap">{formatCurrency(product.default_price || 0, product.currency || baseCurrency)}</td>
-                    <td className="px-6 py-4 text-center">
-                      <span className="inline-flex items-center gap-1 text-xs text-slate-500">
+                      </span></> },
+              { key: "unit", label: "Unit", render: (product) => <span className="text-sm text-slate-600">{product.unit_label || "—"}</span> },
+              { key: "unit_price", label: "Unit Price", align: "right", render: (product) => <span className="font-semibold text-slate-800 whitespace-nowrap">{formatCurrency(product.default_price || 0, product.currency || baseCurrency)}</span> },
+              { key: "billing_model", label: "Billing Model", align: "center", render: (product) => <><span className="inline-flex items-center gap-1 text-xs text-slate-500">
                         <Zap size={12} className="text-brand" /> {product.is_subscribable ? "Subscribable" : "Pay-as-you-go"}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-center"><StatusPill status={product.status} /></td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center justify-end gap-1">
+                      </span></> },
+              { key: "status", label: "Status", align: "center", render: (product) => <><StatusPill status={product.status} /></> },
+              { key: "actions", label: "Actions", align: "right", mobileRole: "actions", render: (product) => <><div className="flex items-center justify-end gap-1">
                         <button onClick={() => openTest(product)} aria-label={`Test ${product.name}`}
                           className="p-2 rounded-lg hover:bg-violet-50 text-slate-500 hover:text-violet-600 transition-colors" title="Test API Event">
                           <FlaskConical size={16} />
@@ -401,13 +383,9 @@ export default function UsageBillingPage() {
                             <X size={16} />
                           </button>
                         )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                      </div></> },
+            ]}
+          />
         )}
 
         <div className="px-6 py-3 border-t border-slate-100 bg-slate-50/50 flex flex-wrap items-center justify-between gap-2">
