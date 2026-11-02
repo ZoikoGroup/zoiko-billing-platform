@@ -3,7 +3,7 @@ import {
   DollarSign, Search, Plus, RefreshCw, CheckCircle, Clock, X, Pencil,
 } from "lucide-react";
 import HRPage from "../../../components/HRPage";
-import { Button, Modal } from "../../../components/billing-ui";
+import { DataTable, Button, Modal } from "../../../components/billing-ui";
 import { currencyPricingApi, productApi } from "../../../service/billingService";
 import { loadGlobalBillingConfig } from "../../../service/billingConfigCache";
 import { formatDisplayCurrency } from "../../../utils/billing-helpers";
@@ -210,31 +210,23 @@ export default function CurrencyPricingPage() {
         {error && <ErrorState message={error} onRetry={() => fetchData()} />}
         {loading ? <Spinner /> : !data.items?.length ? <EmptyState message="No currency pricing found" /> : (
           <div className="bg-white rounded-3xl border overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
-                <tr><th className="text-left px-4 py-3">Product</th><th className="text-left px-4 py-3">Currency</th><th className="text-right px-4 py-3">Price</th><th className="text-right px-4 py-3">Cost Price</th><th className="text-left px-4 py-3">Conversion</th><th className="text-right px-4 py-3">Rate</th><th className="text-center px-4 py-3">Active</th><th className="text-right px-4 py-3">Actions</th></tr>
-              </thead>
-              <tbody className="divide-y">
-                {data.items.map(item => (
-                  <tr key={item.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-3 text-sm">
-                      <div className="font-medium">{productMap[item.product_id] || `Product ${item.product_id}`}</div>
-                      <div className="text-xs text-slate-500">ID: {item.product_id}</div>
-                    </td>
-                    <td className="px-4 py-3 text-sm font-medium">{item.currency}</td>
-                    <td className="px-4 py-3 text-sm text-right">{formatDisplayCurrency(item.price, item.currency)}</td>
-                    <td className="px-4 py-3 text-sm text-right">{item.cost_price ? formatDisplayCurrency(item.cost_price, item.currency) : "—"}</td>
-                    <td className="px-4 py-3 text-sm capitalize">{item.conversion_type}</td>
-                    <td className="px-4 py-3 text-sm text-right">{item.exchange_rate ?? "—"}</td>
-                    <td className="px-4 py-3 text-center">{item.is_active ? <CheckCircle size={16} className="text-green-500 mx-auto" /> : <Clock size={16} className="text-slate-500 mx-auto" />}</td>
-                    <td className="px-4 py-3 text-right">
-                      <button onClick={() => { setEditItem(item); setShowForm(true); }} className="text-blue-600 hover:text-blue-800 text-sm mr-3"><Pencil size={14} className="inline" /> Edit</button>
-                      <button onClick={() => handleDeactivate(item.id)} className="text-red-500 hover:text-red-700 text-sm">Deactivate</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <DataTable
+              stickyHeader={false}
+              data={data.items}
+              rowKey={(item) => item.id}
+              columns={[
+                { key: "product", label: "Product", render: (item) => <span className="text-sm"><div className="font-medium">{productMap[item.product_id] || `Product ${item.product_id}`}</div>
+                      <div className="text-xs text-slate-500">ID: {item.product_id}</div></span> },
+                { key: "currency", label: "Currency", render: (item) => <span className="text-sm font-medium">{item.currency}</span> },
+                { key: "price", label: "Price", align: "right", render: (item) => <span className="text-sm">{formatDisplayCurrency(item.price, item.currency)}</span> },
+                { key: "cost_price", label: "Cost Price", align: "right", render: (item) => <span className="text-sm">{item.cost_price ? formatDisplayCurrency(item.cost_price, item.currency) : "—"}</span> },
+                { key: "conversion", label: "Conversion", render: (item) => <span className="text-sm capitalize">{item.conversion_type}</span> },
+                { key: "rate", label: "Rate", align: "right", render: (item) => <span className="text-sm">{item.exchange_rate ?? "—"}</span> },
+                { key: "active", label: "Active", align: "center", render: (item) => <>{item.is_active ? <CheckCircle size={16} className="text-green-500 mx-auto" /> : <Clock size={16} className="text-slate-500 mx-auto" />}</> },
+                { key: "actions", label: "Actions", align: "right", mobileRole: "actions", render: (item) => <><button onClick={() => { setEditItem(item); setShowForm(true); }} className="text-blue-600 hover:text-blue-800 text-sm mr-3"><Pencil size={14} className="inline" /> Edit</button>
+                      <button onClick={() => handleDeactivate(item.id)} className="text-red-500 hover:text-red-700 text-sm">Deactivate</button></> },
+              ]}
+            />
           </div>
         )}
 
