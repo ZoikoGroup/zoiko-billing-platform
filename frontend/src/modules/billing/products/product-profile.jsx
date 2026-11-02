@@ -9,6 +9,7 @@ import { formatDisplayCurrency, formatDisplayDate } from '../../../utils/billing
 import { useCurrency } from '../utils/CurrencyContext';
 import { auditApi } from '../../../service/billingService';
 import { Spinner as SharedSpinner, ErrorState as SharedErrorState, EmptyState as SharedEmptyState, StatusBadge as SharedStatusBadge } from '../../../components/billing-shared';
+import { DataTable } from "../../../components/billing-ui";
 
 const PRODUCT_STATUS_BADGE_OPTIONS = [
   { value: 'active', label: 'active', color: 'bg-green-100 text-green-700' },
@@ -448,42 +449,24 @@ export default function ProductProfilePage() {
           ) : pricingPlans.length === 0 ? (
             <EmptyState icon={DollarSign} title="No pricing plans" message="Create a pricing plan for this product. Product defaults will be used as fallback." />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-100">
-                    <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase">Plan</th>
-                    <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase">Model</th>
-                    <th className="text-right py-3 px-3 font-medium text-slate-500 text-xs uppercase">Price</th>
-                    <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase">Period</th>
-                    <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase">Effective</th>
-                    <th className="text-center py-3 px-3 font-medium text-slate-500 text-xs uppercase">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pricingPlans.map((plan) => (
-                    <tr key={plan.id} className="border-b border-slate-50 hover:bg-slate-50 cursor-pointer" onClick={() => navigate(`/billing/pricing?product_id=${id}`)}>
-                      <td className="py-3 px-3 font-medium text-slate-900">{plan.name}</td>
-                      <td className="py-3 px-3 text-slate-500 capitalize">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+            <DataTable
+              stickyHeader={false}
+              data={pricingPlans}
+              rowKey={(plan) => plan.id}
+              onRowClick={(plan) => navigate(`/billing/pricing?product_id=${id}`)}
+              columns={[
+                { key: "plan", label: "Plan", render: (plan) => <span className="font-medium text-slate-900">{plan.name}</span> },
+                { key: "model", label: "Model", render: (plan) => <span className="text-slate-500 capitalize"><span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
                           {plan.pricing_model?.replace('_', ' ') || 'flat'}
-                        </span>
-                      </td>
-                      <td className="py-3 px-3 text-right font-medium text-slate-900">{formatDisplayCurrency(plan.unit_price || plan.flat_fee || 0)}</td>
-                      <td className="py-3 px-3 text-slate-500 capitalize">{plan.billing_period?.replace('_', ' ')}</td>
-                      <td className="py-3 px-3 text-xs text-slate-500">
-                        {plan.effective_from ? `${plan.effective_from.slice(0, 10)}${plan.effective_to ? ` → ${plan.effective_to.slice(0, 10)}` : ' → ∞'}` : '—'}
-                      </td>
-                      <td className="py-3 px-3 text-center">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                        </span></span> },
+                { key: "price", label: "Price", align: "right", render: (plan) => <span className="font-medium text-slate-900">{formatDisplayCurrency(plan.unit_price || plan.flat_fee || 0)}</span> },
+                { key: "period", label: "Period", render: (plan) => <span className="text-slate-500 capitalize">{plan.billing_period?.replace('_', ' ')}</span> },
+                { key: "effective", label: "Effective", render: (plan) => <span className="text-xs text-slate-500">{plan.effective_from ? `${plan.effective_from.slice(0, 10)}${plan.effective_to ? ` → ${plan.effective_to.slice(0, 10)}` : ' → ∞'}` : '—'}</span> },
+                { key: "status", label: "Status", align: "center", render: (plan) => <><span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                           plan.status === 'active' || plan.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'
-                        }`}>{plan.status === 'active' || plan.is_active ? 'Active' : 'Inactive'}</span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                        }`}>{plan.status === 'active' || plan.is_active ? 'Active' : 'Inactive'}</span></> },
+              ]}
+            />
           )}
         </div>
       )}
@@ -576,41 +559,28 @@ export default function ProductProfilePage() {
           ) : contracts.length === 0 ? (
             <EmptyState icon={FileText} title="No contracts" message="This product has no contracts." />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead><tr className="border-b border-slate-100">
-                  <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase">Contract</th>
-                  <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase">Customer</th>
-                  <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase">Start</th>
-                  <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase">End</th>
-                  <th className="text-center py-3 px-3 font-medium text-slate-500 text-xs uppercase">Status</th>
-                </tr></thead>
-                <tbody>
-                  {contracts.map((c) => (
-                    <tr key={c.id} className="border-b border-slate-50 hover:bg-slate-50 cursor-pointer" onClick={() => navigate(`/billing/contracts/${c.id}`)}>
-                      <td className="py-3 px-3 font-medium text-slate-900">{c.contract_number || c.number || c.id}</td>
-                      <td className="py-3 px-3 text-slate-500">
-                        {c.customer_id ? (
+            <DataTable
+              stickyHeader={false}
+              data={contracts}
+              rowKey={(c) => c.id}
+              onRowClick={(c) => navigate(`/billing/contracts/${c.id}`)}
+              columns={[
+                { key: "contract", label: "Contract", render: (c) => <span className="font-medium text-slate-900">{c.contract_number || c.number || c.id}</span> },
+                { key: "customer", label: "Customer", render: (c) => <span className="text-slate-500">{c.customer_id ? (
                           <button onClick={(e) => { e.stopPropagation(); navigate(`/billing/customers/${c.customer_id}`); }} className="text-brand-600 hover:underline">
                             {c.customer_name || `Customer #${c.customer_id}`}
                           </button>
-                        ) : (c.customer_name || '—')}
-                      </td>
-                      <td className="py-3 px-3 text-slate-500">{formatDisplayDate(c.start_date)}</td>
-                      <td className="py-3 px-3 text-slate-500">{c.end_date ? formatDisplayDate(c.end_date) : '—'}</td>
-                      <td className="py-3 px-3 text-center">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                        ) : (c.customer_name || '—')}</span> },
+                { key: "start", label: "Start", render: (c) => <span className="text-slate-500">{formatDisplayDate(c.start_date)}</span> },
+                { key: "end", label: "End", render: (c) => <span className="text-slate-500">{c.end_date ? formatDisplayDate(c.end_date) : '—'}</span> },
+                { key: "status", label: "Status", align: "center", render: (c) => <><span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                           c.status === 'active' ? 'bg-emerald-100 text-emerald-700' :
                           c.status === 'draft' ? 'bg-slate-100 text-slate-600' :
                           c.status === 'expired' ? 'bg-amber-100 text-amber-700' :
                           c.status === 'terminated' || c.status === 'cancelled' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'
-                        }`}>{c.status ? c.status.charAt(0).toUpperCase() + c.status.slice(1) : 'Unknown'}</span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                        }`}>{c.status ? c.status.charAt(0).toUpperCase() + c.status.slice(1) : 'Unknown'}</span></> },
+              ]}
+            />
           )}
         </div>
       )}
@@ -623,40 +593,27 @@ export default function ProductProfilePage() {
           ) : subscriptions.length === 0 ? (
             <EmptyState icon={CreditCard} title="No subscriptions" message="This product has no subscriptions." />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead><tr className="border-b border-slate-100">
-                  <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase">Subscription</th>
-                  <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase">Customer</th>
-                  <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase">Start</th>
-                  <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase">Period</th>
-                  <th className="text-center py-3 px-3 font-medium text-slate-500 text-xs uppercase">Status</th>
-                </tr></thead>
-                <tbody>
-                  {subscriptions.map((s) => (
-                    <tr key={s.id} className="border-b border-slate-50 hover:bg-slate-50 cursor-pointer" onClick={() => navigate(`/billing/subscriptions/${s.id}`)}>
-                      <td className="py-3 px-3 font-medium text-slate-900">{s.subscription_number || s.number || s.id}</td>
-                      <td className="py-3 px-3 text-slate-500">
-                        {s.customer_id ? (
+            <DataTable
+              stickyHeader={false}
+              data={subscriptions}
+              rowKey={(s) => s.id}
+              onRowClick={(s) => navigate(`/billing/subscriptions/${s.id}`)}
+              columns={[
+                { key: "subscription", label: "Subscription", render: (s) => <span className="font-medium text-slate-900">{s.subscription_number || s.number || s.id}</span> },
+                { key: "customer", label: "Customer", render: (s) => <span className="text-slate-500">{s.customer_id ? (
                           <button onClick={(e) => { e.stopPropagation(); navigate(`/billing/customers/${s.customer_id}`); }} className="text-brand-600 hover:underline">
                             {s.customer_name || `Customer #${s.customer_id}`}
                           </button>
-                        ) : (s.customer_name || '—')}
-                      </td>
-                      <td className="py-3 px-3 text-slate-500">{formatDisplayDate(s.start_date || s.created_at)}</td>
-                      <td className="py-3 px-3 text-slate-500 capitalize">{s.billing_period?.replace('_', ' ') || '—'}</td>
-                      <td className="py-3 px-3 text-center">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                        ) : (s.customer_name || '—')}</span> },
+                { key: "start", label: "Start", render: (s) => <span className="text-slate-500">{formatDisplayDate(s.start_date || s.created_at)}</span> },
+                { key: "period", label: "Period", render: (s) => <span className="text-slate-500 capitalize">{s.billing_period?.replace('_', ' ') || '—'}</span> },
+                { key: "status", label: "Status", align: "center", render: (s) => <><span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                           s.status === 'active' ? 'bg-emerald-100 text-emerald-700' :
                           s.status === 'paused' ? 'bg-amber-100 text-amber-700' :
                           s.status === 'cancelled' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'
-                        }`}>{s.status ? s.status.charAt(0).toUpperCase() + s.status.slice(1) : 'Unknown'}</span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                        }`}>{s.status ? s.status.charAt(0).toUpperCase() + s.status.slice(1) : 'Unknown'}</span></> },
+              ]}
+            />
           )}
         </div>
       )}

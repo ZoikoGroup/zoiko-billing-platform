@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, Repeat, RefreshCw, AlertCircle, Loader2, Play, XCircle, FileText, FileText as FileTextIcon, DollarSign, DollarSign as DollarSignIcon, CreditCard, Calendar, Receipt, Shield as ShieldIcon, Activity, Package, Building2, Clock, FileEdit, History, RotateCcw as RotateCcwIcon, CheckCircle, PauseCircle, AlertTriangle } from "lucide-react";
 import HRPage from "../../../components/HRPage";
-import { Button, Modal } from "../../../components/billing-ui";
+import { DataTable, Button, Modal } from "../../../components/billing-ui";
 import { subscriptionApi, contractApi, customerApi, invoiceApi, paymentApi, auditApi } from "../../../service/billingService";
 import { formatDisplayCurrency, formatDisplayDate, extractArray } from "../../../utils/billing-helpers";
 import { useTerminology } from "../utils/TerminologyContext";
@@ -487,40 +487,26 @@ export default function SubscriptionDetailPage() {
           <p className="text-sm">No invoices generated yet</p>
         </div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-slate-200">
-            <thead>
-              <tr className="text-xs font-medium text-slate-500 uppercase tracking-wider">
-                <th className="text-left py-3 px-4">Invoice</th>
-                <th className="text-left py-3 px-4">Date</th>
-                <th className="text-right py-3 px-4">Amount</th>
-                <th className="text-right py-3 px-4">Paid</th>
-                <th className="text-right py-3 px-4">Balance</th>
-                <th className="text-left py-3 px-4">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {invoiceList.map((inv) => (
-                <tr key={inv.id} onClick={() => navigate(`/billing/invoices/${inv.id}`)} className="text-sm text-slate-900 hover:bg-slate-50 cursor-pointer">
-                  <td className="py-3 px-4 font-medium">{inv.invoice_number || `#${inv.id}`}</td>
-                  <td className="py-3 px-4 whitespace-nowrap">{formatDisplayDate(inv.issue_date)}</td>
-                  <td className="py-3 px-4 text-right font-medium">{formatDisplayCurrency(inv.total_amount, inv.currency)}</td>
-                  <td className="py-3 px-4 text-right text-emerald-700">{formatDisplayCurrency(inv.paid_amount, inv.currency)}</td>
-                  <td className="py-3 px-4 text-right text-amber-600 font-medium">{formatDisplayCurrency(inv.balance_due, inv.currency)}</td>
-                  <td className="py-3 px-4">
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+        <DataTable
+          stickyHeader={false}
+          data={invoiceList}
+          rowKey={(inv) => inv.id}
+          onRowClick={(inv) => navigate(`/billing/invoices/${inv.id}`)}
+          columns={[
+            { key: "invoice", label: "Invoice", render: (inv) => <span className="font-medium">{inv.invoice_number || `#${inv.id}`}</span> },
+            { key: "date", label: "Date", render: (inv) => <span className="whitespace-nowrap">{formatDisplayDate(inv.issue_date)}</span> },
+            { key: "amount", label: "Amount", align: "right", render: (inv) => <span className="font-medium">{formatDisplayCurrency(inv.total_amount, inv.currency)}</span> },
+            { key: "paid", label: "Paid", align: "right", render: (inv) => <span className="text-emerald-700">{formatDisplayCurrency(inv.paid_amount, inv.currency)}</span> },
+            { key: "balance", label: "Balance", align: "right", render: (inv) => <span className="text-amber-600 font-medium">{formatDisplayCurrency(inv.balance_due, inv.currency)}</span> },
+            { key: "status", label: "Status", render: (inv) => <><span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
                       inv.status === "paid" ? "bg-emerald-100 text-emerald-700" :
                       inv.status === "overdue" ? "bg-red-100 text-red-700" :
                       inv.status === "partially_paid" ? "bg-amber-100 text-amber-700" :
                       inv.status === "sent" ? "bg-blue-100 text-blue-700" :
                       "bg-slate-100 text-slate-600"
-                    }`}>{inv.status?.replace(/_/g, " ")}</span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                    }`}>{inv.status?.replace(/_/g, " ")}</span></> },
+          ]}
+        />
       )}
     </div>
   );
@@ -534,32 +520,20 @@ export default function SubscriptionDetailPage() {
           <p className="text-sm">No payments recorded yet</p>
         </div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-slate-200">
-            <thead>
-              <tr className="text-xs font-medium text-slate-500 uppercase tracking-wider">
-                <th className="text-left py-3 px-4">Payment</th>
-                <th className="text-left py-3 px-4">Date</th>
-                <th className="text-left py-3 px-4">Method</th>
-                <th className="text-right py-3 px-4">Amount</th>
-                <th className="text-left py-3 px-4">Status</th>
-                <th className="text-left py-3 px-4">Transaction ID</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {paymentList.map((pay) => (
-                <tr key={pay.id} onClick={() => navigate(`/billing/payments/${pay.id}`)} className="text-sm text-slate-900 hover:bg-slate-50 cursor-pointer">
-                  <td className="py-3 px-4 font-medium">{pay.payment_number || `#${pay.id}`}</td>
-                  <td className="py-3 px-4 whitespace-nowrap">{formatDisplayDate(pay.payment_date)}</td>
-                  <td className="py-3 px-4 text-slate-600 capitalize">{pay.payment_type?.replace(/_/g, " ") || pay.payment_method || "—"}</td>
-                  <td className="py-3 px-4 text-right font-medium">{formatDisplayCurrency(pay.amount, pay.currency)}</td>
-                  <td className="py-3 px-4"><StatusBadge status={pay.status} /></td>
-                  <td className="py-3 px-4 text-slate-500 text-xs">{pay.transaction_id || pay.gateway_transaction_id || "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          stickyHeader={false}
+          data={paymentList}
+          rowKey={(pay) => pay.id}
+          onRowClick={(pay) => navigate(`/billing/payments/${pay.id}`)}
+          columns={[
+            { key: "payment", label: "Payment", render: (pay) => <span className="font-medium">{pay.payment_number || `#${pay.id}`}</span> },
+            { key: "date", label: "Date", render: (pay) => <span className="whitespace-nowrap">{formatDisplayDate(pay.payment_date)}</span> },
+            { key: "method", label: "Method", render: (pay) => <span className="text-slate-600 capitalize">{pay.payment_type?.replace(/_/g, " ") || pay.payment_method || "—"}</span> },
+            { key: "amount", label: "Amount", align: "right", render: (pay) => <span className="font-medium">{formatDisplayCurrency(pay.amount, pay.currency)}</span> },
+            { key: "status", label: "Status", render: (pay) => <><StatusBadge status={pay.status} /></> },
+            { key: "transaction_id", label: "Transaction ID", render: (pay) => <span className="text-slate-500 text-xs">{pay.transaction_id || pay.gateway_transaction_id || "—"}</span> },
+          ]}
+        />
       )}
     </div>
   );

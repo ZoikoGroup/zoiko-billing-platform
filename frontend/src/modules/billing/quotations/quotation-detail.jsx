@@ -4,7 +4,7 @@ import { ArrowLeft, FileSignature, RefreshCw, AlertCircle, Loader2, Send,
   CheckCircle, XCircle, Ban, RotateCcw, FileText, DollarSign, User,
   Package, CreditCard, Clock, Activity, FileEdit, Hash, Copy } from "lucide-react"
 import HRPage from "../../../components/HRPage";
-import { Button, Modal } from "../../../components/billing-ui";
+import { DataTable, Button, Modal } from "../../../components/billing-ui";
 import { quoteApi, customerApi, contractApi } from "../../../service/billingService";
 import { loadGlobalBillingConfig } from "../../../service/billingConfigCache";
 import { formatDisplayCurrency, formatDisplayDate } from "../../../utils/billing-helpers";
@@ -399,38 +399,22 @@ export default function QuotationDetailPage() {
           <p className="text-sm">No line items</p>
         </div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-slate-200">
-            <thead>
-              <tr className="text-xs font-medium text-slate-500 uppercase tracking-wider">
-                <th scope="col" className="text-left py-3 px-4">#</th>
-                <th scope="col" className="text-left py-3 px-4">Description</th>
-                <th scope="col" className="text-right py-3 px-4">Qty</th>
-                <th scope="col" className="text-right py-3 px-4">Unit Price</th>
-                <th scope="col" className="text-right py-3 px-4">Disc %</th>
-                <th scope="col" className="text-right py-3 px-4">Tax %</th>
-                <th scope="col" className="text-right py-3 px-4">Total</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {items.map((item, i) => (
-                <tr key={item.id || i} onClick={() => item.product_id && navigate(`/billing/products/${item.product_id}`)}
-                  className={`text-sm text-slate-900 hover:bg-slate-50 ${item.product_id ? "cursor-pointer" : ""}`}>
-                  <td className="py-3 px-4 text-slate-500">{item.line_number || i + 1}</td>
-                  <td className="py-3 px-4">
-                    <p className="font-medium text-slate-800">{item.description || "Item"}</p>
-                    {item.product_id && <p className="text-xs text-brand-600 hover:underline">Product #{item.product_id} →</p>}
-                  </td>
-                  <td className="py-3 px-4 text-right">{parseFloat(item.quantity).toFixed(2)}</td>
-                  <td className="py-3 px-4 text-right">{formatDisplayCurrency(item.unit_price, quote.currency)}</td>
-                  <td className="py-3 px-4 text-right text-slate-500">{parseFloat(item.discount_percentage || 0) > 0 ? `${item.discount_percentage}%` : "—"}</td>
-                  <td className="py-3 px-4 text-right text-slate-500">{parseFloat(item.tax_percentage || 0) > 0 ? `${item.tax_percentage}%` : "—"}</td>
-                  <td className="py-3 px-4 text-right font-medium">{formatDisplayCurrency(item.total_amount, quote.currency)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          stickyHeader={false}
+          data={items}
+          rowKey={(item, i) => item.id || i}
+          onRowClick={(item) => item.product_id && navigate(`/billing/products/${item.product_id}`)}
+          columns={[
+            { key: "col1", label: "#", mobileRole: "hidden", render: (item, i) => <span className="text-slate-500">{item.line_number || i + 1}</span> },
+            { key: "description", label: "Description", mobileRole: "title", render: (item, i) => <><p className="font-medium text-slate-800">{item.description || "Item"}</p>
+                    {item.product_id && <p className="text-xs text-brand-600 hover:underline">Product #{item.product_id} →</p>}</> },
+            { key: "qty", label: "Qty", align: "right", render: (item, i) => <>{parseFloat(item.quantity).toFixed(2)}</> },
+            { key: "unit_price", label: "Unit Price", align: "right", render: (item, i) => <>{formatDisplayCurrency(item.unit_price, quote.currency)}</> },
+            { key: "disc", label: "Disc %", align: "right", render: (item, i) => <span className="text-slate-500">{parseFloat(item.discount_percentage || 0) > 0 ? `${item.discount_percentage}%` : "—"}</span> },
+            { key: "tax", label: "Tax %", align: "right", render: (item, i) => <span className="text-slate-500">{parseFloat(item.tax_percentage || 0) > 0 ? `${item.tax_percentage}%` : "—"}</span> },
+            { key: "total", label: "Total", align: "right", mobileRole: "amount", render: (item, i) => <span className="font-medium">{formatDisplayCurrency(item.total_amount, quote.currency)}</span> },
+          ]}
+        />
       )}
     </div>
   );
