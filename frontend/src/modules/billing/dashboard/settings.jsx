@@ -457,7 +457,7 @@ function Field({ label, description, children, className = "", error, tooltip, i
         {tooltip && (
           <span className="group relative inline-flex" role="tooltip">
             <span className="text-slate-500 cursor-help text-xs border border-slate-300 rounded-full w-4 h-4 flex items-center justify-center" aria-hidden="true">?</span>
-            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-xs text-white bg-slate-800 rounded opacity-0 group-hover:opacity-100 whitespace-nowrap z-10 pointer-events-none">{tooltip}</span>
+            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-xs text-white bg-slate-800 rounded opacity-0 group-hover:opacity-100 w-max max-w-56 whitespace-normal sm:max-w-none sm:whitespace-nowrap z-10 pointer-events-none">{tooltip}</span>
           </span>
         )}
       </div>
@@ -1713,8 +1713,8 @@ export default function BillingSettingsPage() {
           <Card title="Regional Settings" icon={Globe} color="brand">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
               <Field label="Default Currency" tooltip="Primary currency for billing">
-                <div className="flex items-center gap-2">
-                  <div className="flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="min-w-48 flex-1">
                     <SearchableSelect value={form.default_currency}
                       onChange={(v) => update("default_currency", v)}
                       options={CURRENCY_OPTIONS_WITH_INFO}
@@ -1754,8 +1754,8 @@ export default function BillingSettingsPage() {
                   ]} />
               </Field>
               <Field label="Date Format">
-                <div className="flex items-center gap-2">
-                  <div className="flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="min-w-48 flex-1">
                     <Select value={form.date_format} onChange={(e) => update("date_format", e.target.value)}
                       ariaLabel="Date Format"
                       options={["DD-MM-YYYY","MM-DD-YYYY","YYYY-MM-DD","DD-MM-YY","MM-DD-YY"]} />
@@ -1766,24 +1766,24 @@ export default function BillingSettingsPage() {
                 </div>
               </Field>
               <Field label="Fiscal Year Start" tooltip="Month and day when fiscal year starts (MM-DD)" error={fieldErrors.fiscal_year_start}>
-                <div className="flex items-center gap-2">
-                  <div className="flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="min-w-48 flex-1">
                     <Input ariaLabel="Fiscal Year Start" value={form.fiscal_year_start} onChange={(e) => update("fiscal_year_start", e.target.value)} placeholder="MM-DD" />
                   </div>
                   <div className="shrink-0"><StatusBadge status={fieldStatus.fiscal_year_start} /></div>
                 </div>
               </Field>
               <Field label="Fiscal Year End" tooltip="Month and day when fiscal year ends (MM-DD)" error={fieldErrors.fiscal_year_end}>
-                <div className="flex items-center gap-2">
-                  <div className="flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="min-w-48 flex-1">
                     <Input ariaLabel="Fiscal Year End" value={form.fiscal_year_end} onChange={(e) => update("fiscal_year_end", e.target.value)} placeholder="MM-DD" />
                   </div>
                   <div className="shrink-0"><StatusBadge status={fieldStatus.fiscal_year_end} /></div>
                 </div>
               </Field>
               <Field label="Timezone">
-                <div className="flex items-center gap-2">
-                  <div className="flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="min-w-48 flex-1">
                     <Select value={form.timezone} onChange={(e) => update("timezone", e.target.value)}
                       ariaLabel="Timezone"
                       options={["UTC","America/New_York","America/Chicago","America/Denver","America/Los_Angeles","Europe/London","Europe/Berlin","Europe/Paris","Asia/Tokyo","Asia/Shanghai","Asia/Dubai","Asia/Kolkata","Australia/Sydney","Africa/Johannesburg"]} />
@@ -1888,8 +1888,8 @@ export default function BillingSettingsPage() {
           <Card title="Numbering" icon={FileText} color="blue">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
               <Field id="invoice_prefix" label="Invoice Prefix" tooltip="Prefix for invoice numbers" error={fieldErrors.invoice_prefix}>
-                <div className="flex items-center gap-2">
-                  <div className="flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="min-w-48 flex-1">
                     <Input id="invoice_prefix" value={form.invoice_prefix} onChange={(e) => update("invoice_prefix", e.target.value)} ariaLabel="Invoice prefix" />
                   </div>
                   <div className="shrink-0"><StatusBadge status={fieldStatus.invoice_prefix} /></div>
@@ -2147,8 +2147,8 @@ export default function BillingSettingsPage() {
           <Card title="Payment Terms" icon={Wallet} color="emerald">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <Field label="Default Payment Terms">
-                <div className="flex items-center gap-2">
-                  <div className="flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="min-w-48 flex-1">
                     <Select id="default_payment_terms" value={form.default_payment_terms} onChange={(e) => update("default_payment_terms", e.target.value)}
                       options={["due_on_receipt","net_7","net_10","net_15","net_30","net_45","net_60","net_90"]} />
                   </div>
@@ -2271,8 +2271,8 @@ export default function BillingSettingsPage() {
                   options={[{value:"exclusive",label:"Exclusive (added to subtotal)"},{value:"inclusive",label:"Inclusive (included in price)"}]} />
               </Field>
               <Field label="Tax Label" tooltip="Display label for tax (e.g. VAT, GST, Sales Tax)">
-                <div className="flex items-center gap-2">
-                  <div className="flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="min-w-48 flex-1">
                     <Input id="tax_label" value={form.tax_label} onChange={(e) => update("tax_label", e.target.value)} />
                   </div>
                   <div className="shrink-0"><StatusBadge status={fieldStatus.tax_label} flash={transientFields.has('tax_label')} /></div>
