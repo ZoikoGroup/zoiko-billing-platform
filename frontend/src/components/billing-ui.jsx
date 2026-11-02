@@ -15,6 +15,7 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { Link, useInRouterContext } from "react-router-dom";
 import useMediaQuery, { BELOW_MD, BELOW_SM } from "../hooks/useMediaQuery";
 import {
   ArrowLeft,
@@ -288,6 +289,16 @@ function HeaderActions({ actions, primaryAction, moreActions = [] }) {
   );
 }
 
+// Breadcrumb link: client-side navigation inside the app's router (a real
+// <a href>, so modifier-clicks and the unsaved-changes guard still work);
+// a plain link where a component renders outside a router.
+export function CrumbLink({ href, children }) {
+  const className = "transition-colors hover:text-brand-600";
+  return useInRouterContext()
+    ? <Link to={href} className={className}>{children}</Link>
+    : <a href={href} className={className}>{children}</a>;
+}
+
 export function PageHeader({
   crumbs = [],
   title,
@@ -326,9 +337,7 @@ export function PageHeader({
               <span key={crumb.label + idx} className="inline-flex items-center gap-1.5">
                 {idx > 0 && <ChevronRight size={13} className="text-slate-300" />}
                 {!isLast && crumb.href ? (
-                  <a href={crumb.href} className="transition-colors hover:text-brand-600" onClick={(e) => e.preventDefault()}>
-                    {crumb.label}
-                  </a>
+                  <CrumbLink href={crumb.href}>{crumb.label}</CrumbLink>
                 ) : (
                   <span className={isLast ? "font-semibold text-slate-600" : ""}>{crumb.label}</span>
                 )}
