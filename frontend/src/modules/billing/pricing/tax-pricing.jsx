@@ -458,16 +458,16 @@ export default function TaxPricingPage() {
     <HRPage title="Tax Pricing" icon={DollarSign}>
       <div className="space-y-4">
         <div className="flex flex-wrap gap-3 items-center justify-between">
-          <div className="flex gap-2 items-center">
-            <div className="relative">
+          <div className="flex w-full flex-wrap gap-2 items-center sm:w-auto">
+            <div className="relative w-full sm:w-auto">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-              <input className="pl-9 pr-3 py-2 border rounded-lg text-sm w-48" placeholder="Search tax pricing..." aria-label="Search tax pricing" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+              <input className="pl-9 pr-3 py-2 border rounded-lg text-sm w-full sm:w-48" placeholder="Search tax pricing..." aria-label="Search tax pricing" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
             </div>
             <select className="border rounded-lg px-3 py-2 text-sm" value={taxTypeFilter} onChange={e => setTaxTypeFilter(e.target.value)}>
               <option value="">All Types</option>
               {TAX_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
-            <input className="border rounded-lg px-3 py-2 text-sm w-32" placeholder="Country" value={countryFilter} onChange={e => setCountryFilter(e.target.value)} />
+            <input className="border rounded-lg px-3 py-2 text-sm min-w-0 flex-1 sm:w-32 sm:flex-none" placeholder="Country" value={countryFilter} onChange={e => setCountryFilter(e.target.value)} />
             <button onClick={() => fetchData()} className="p-2 border rounded-lg hover:bg-slate-50" aria-label="Refresh" title="Refresh"><RefreshCw size={16} /></button>
           </div>
           <div className="flex gap-2">
