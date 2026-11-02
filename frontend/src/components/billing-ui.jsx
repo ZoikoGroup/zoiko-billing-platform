@@ -1736,6 +1736,40 @@ export function FormActionBar({
   );
 }
 
+// Page frame for module settings pages: the shared PageHeader plus the
+// page's sections, inside the shell's own padding (no second padded layer).
+export function SettingsPageShell({ title, description, icon, crumbs = [], children }) {
+  return (
+    <div className="space-y-6">
+      <PageHeader crumbs={crumbs} title={title} description={description} icon={icon} />
+      <div>{children}</div>
+    </div>
+  );
+}
+
+// Pinned save bar for settings pages, which save the whole page at once:
+// the page's own actions (Refresh / Discard / Save, passed as children)
+// plus whether anything is unsaved, so Save stays in reach from every
+// section. Buttons are 44px on phones; `compactStatus` hides the status
+// text on phones when a page has three actions.
+export function SettingsSaveBar({ hasChanges, saved = false, compactStatus = false, children }) {
+  return (
+    <StickyFooter contentClassName="mx-auto flex max-w-6xl items-center gap-2 sm:gap-3 max-sm:[&_button]:min-h-11">
+      <p role="status" aria-live="polite" className={`min-w-0 flex-1 truncate text-sm font-medium ${compactStatus ? "max-sm:hidden" : ""}`}>
+        {saved ? (
+          <span className="text-emerald-700">Saved</span>
+        ) : hasChanges ? (
+          <span className="text-amber-700">Unsaved changes</span>
+        ) : (
+          <span className="text-slate-500">No unsaved changes</span>
+        )}
+      </p>
+      {/* Wraps rather than overflowing if the actions ever outgrow the bar. */}
+      <div className={`flex min-w-0 flex-wrap items-center justify-end gap-2 ${compactStatus ? "max-sm:ml-auto" : ""}`}>{children}</div>
+    </StickyFooter>
+  );
+}
+
 // Actions row for a hand-rolled scrolling dialog panel: sticks to the bottom
 // of the panel so Save/Create is always visible while the fields scroll.
 // The default bleed matches a `p-5 sm:p-8` panel; pass className to adjust.
