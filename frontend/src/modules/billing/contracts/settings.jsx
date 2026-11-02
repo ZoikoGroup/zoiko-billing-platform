@@ -1,6 +1,6 @@
 import { useState, useEffect, Children, cloneElement, isValidElement, useId } from "react";
 import { Save, RefreshCw, AlertCircle, CheckCircle, Hash, ToggleLeft, Calendar, DollarSign, FileText, Image, Users } from "lucide-react";
-import HRPage from "../../../components/HRPage";
+import { SettingsPageShell, SettingsSaveBar, useUnsavedChangesGuard } from "../../../components/billing-ui";
 import { ErrorState } from "../../../components/billing-shared";
 import { settingsApi } from "../../../service/billingService";
 import { useTerminology } from "../utils/TerminologyContext";
@@ -92,6 +92,7 @@ export default function ContractSettingsPage() {
 
   const [original, setOriginal] = useState({});
   const hasChanges = Object.keys(form).some((key) => form[key] !== original[key]);
+  useUnsavedChangesGuard(hasChanges, "You have unsaved settings. Leave this page and discard them?");
 
   useEffect(() => { fetchSettings(); }, []);
 
@@ -154,11 +155,11 @@ export default function ContractSettingsPage() {
 
   if (loading) {
     return (
-      <HRPage title="Contract Settings" subtitle="Configure contract module preferences">
+      <SettingsPageShell title="Contract Settings" description="Configure contract module preferences" icon={FileText} crumbs={[{ label: "Billing", href: "/billing" }, { label: "Contracts", href: "/billing/contracts" }, { label: "Settings" }]}>
         <div className="flex items-center justify-center py-12">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600" />
         </div>
-      </HRPage>
+      </SettingsPageShell>
     );
   }
 
@@ -172,34 +173,14 @@ export default function ContractSettingsPage() {
   // invoicing/settings.jsx and tax/settings.jsx).
   if (loadFailed) {
     return (
-      <HRPage title="Contract Settings" subtitle="Configure contract module preferences">
+      <SettingsPageShell title="Contract Settings" description="Configure contract module preferences" icon={FileText} crumbs={[{ label: "Billing", href: "/billing" }, { label: "Contracts", href: "/billing/contracts" }, { label: "Settings" }]}>
         <ErrorState title="Couldn't load contract settings" message={error} onRetry={fetchSettings} />
-      </HRPage>
+      </SettingsPageShell>
     );
   }
 
   return (
-    <HRPage title="Contract Settings" subtitle="Configure contract module preferences">
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-        <div />
-        <div className="flex items-center gap-2">
-          {saved && (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-emerald-700 bg-emerald-50 rounded-lg">
-              <CheckCircle className="h-4 w-4" /> Saved
-            </span>
-          )}
-          <button onClick={fetchSettings}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
-            <RefreshCw className="h-4 w-4" /> Refresh
-          </button>
-          <button onClick={handleSave} disabled={!hasChanges || saving}
-            className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors">
-            {saving ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> : <Save className="h-4 w-4" />}
-            Save Changes
-          </button>
-        </div>
-      </div>
-
+    <SettingsPageShell title="Contract Settings" description="Configure contract module preferences" icon={FileText} crumbs={[{ label: "Billing", href: "/billing" }, { label: "Contracts", href: "/billing/contracts" }, { label: "Settings" }]}>
       {error && (
         <div className="mb-6 p-4 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 flex items-center gap-2" role="alert">
           <AlertCircle className="h-4 w-4 flex-shrink-0" /> {error}
@@ -293,6 +274,17 @@ export default function ContractSettingsPage() {
             className="block w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm bg-slate-50 text-slate-500 cursor-not-allowed" />
         </SettingsField>
       </div>
-    </HRPage>
+      <SettingsSaveBar hasChanges={hasChanges} saved={saved}>
+        <button onClick={fetchSettings}
+          className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
+          <RefreshCw className="h-4 w-4" /> Refresh
+        </button>
+        <button onClick={handleSave} disabled={!hasChanges || saving}
+          className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors">
+          {saving ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> : <Save className="h-4 w-4" />}
+          Save Changes
+        </button>
+      </SettingsSaveBar>
+    </SettingsPageShell>
   );
 }
