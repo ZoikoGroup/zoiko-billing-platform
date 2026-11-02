@@ -672,12 +672,14 @@ Created from `origin/main` (`7d96cc8`) with production files only; last updated 
 | Screen | Route | Size | Status |
 |---|---|---|---|
 | Invoice create wizard (7 steps) | `/billing/invoices/create` | 1,534 lines | **Done** (below) |
-| Contract create wizard | `/billing/contracts/create` | 1,224 | To do |
-| Quotation create (full page) | `/billing/quotations/create` | 1,045 | To do |
-| Contract edit | `/billing/contracts/:id/edit` | 719 | To do |
-| Subscription create wizard | `/billing/subscriptions/create` | 707 | To do |
+| Contract create wizard (7 steps) | `/billing/contracts/create` | 1,224 | **Done** `eca2816` (in production via PR #112) |
+| Quotation create (6 steps) | `/billing/quotations/create` | 1,045 | **Done** `6a31572` (PR #112) |
+| Contract edit | `/billing/contracts/:id/edit` | 719 | **Done** `a407ca7` (PR #112) |
+| Subscription create wizard (4 steps) | `/billing/subscriptions/create` | 707 | **Done** `9d59f08` (PR #112) |
+| Register (public) | `/register` | 673 | **Done** `2573934` (not yet in production) |
+| Draft invoice action bar | `/billing/invoices/:id` | 1,070 | **Done** `deb9cf9` (not yet in production) |
 
-Related full-page forms, for a decision (not in the list above): public Register page, draft-invoice editing on invoice detail (already uses `StickyFooter`), customer-profile inline edits, settings pages.
+Remaining related screens: customer-profile inline edits (B5), settings pages (B3 step 3, needs approval).
 
 ### Invoice create wizard
 
@@ -697,6 +699,29 @@ Related full-page forms, for a decision (not in the list above): public Register
 - **Parity:** 4 differences, all intended (the step 7 copy line, Next now `step < 7 ? Next : Save + Save & Send`, Back's label wrapped for the phone icon-only view with the same accessible name, the `FormPageBar` margin).
 - **Tests:** existing invoicing + components tests pass (25 files, 133 tests). New on `nikhil-new` only: `create-invoice-wizard.typing.test.jsx` — customer search and line-item quantity typed key by key (value and focus kept).
 - Screenshots `shots/phase3/stepB3-invoice-wizard/{before,after-final}/` (`step1|step3|step7 __ 360|412|1280 __ top|bottom`); `after`, `after-r2` are intermediate.
+
+### B3 round 2 — contract, quotation, contract edit, subscription, Register, draft invoice
+
+Measured with the same scripts before and after (`D:\zoiko-local	ools\*-shots.mjs`); every screen 0 horizontal overflow at 360 / 412 / 1280.
+
+| Screen | Primary action before (360 / 1280) | After | Autosave → pattern | Parity | Tests (new, `nikhil-new` only) |
+|---|---|---|---|---|---|
+| Contract create | Next 836px down at step 1; Save as Draft / Save & Activate off-screen on step 7 (360, 412) | Pinned footer at every step and width; 44px on phones | No → Cancel (sm+) / back arrow (phones) + discard prompt + guard | 33, all the shell swap (step row → `Stepper`, header Back, inline spinners) | `contract-create.b3.test.jsx` (5) |
+| Quotation create | Save as Draft / Save & Send off-screen on step 6 (360, 412) | Pinned, 44px | No → same | 36: shell swap + `*` on Qty / Unit Price / Description | `quotation-create.b3.test.jsx` (5) |
+| Contract edit | Save Changes 2,568px down (360), 1,565px down (1280) | Cancel / Save Changes pinned at every width; line items as cards on phones | No → Cancel + prompt only when values differ from the loaded ones | 16: `HRPage` → `PageHeader`, Back/Cancel through the prompt, Save into `FormActionBar`, phone item cards reuse the same handlers | `contract-edit.b3.test.jsx` (4) |
+| Subscription create | Create Subscription off-screen at every width; 38px buttons | Pinned, 44px | No → same; a contract/customer pre-selected from a link doesn't count as dirty | 23: shell swap | `subscription-create.b3.test.jsx` (5) |
+| Register | Submit 4,356px down (360), 2,473px (768); fine at 1280 (sticky summary) | Bar pinned below `lg` with plan + today's price; summary keeps the button from `lg` | n/a (nothing saved before submit) → guard on reload / links, no Cancel | 0 | `RegisterPage.b3.test.jsx` (5) |
+| Draft invoice bar | 3 rows, 155px (19% of 360×800), Finalize left, 40px buttons | 2 rows, 109px (14%): full-width 44px primary + "⋯" (Cancel invoice, Recalculate) | n/a (no edit form exists: the page's Edit button is disabled, "Edit invoice workflow is not registered yet") | 0 (+1 in `OverflowMenu`: optional `direction="up"`) | `invoice-detail.actionbar.b3.test.jsx` (3) |
+
+**Shared fixes found in this round:**
+- **Sticky page bars never pinned** (`63622cc`): the shell's page wrapper had `overflow-x: hidden`, which also makes it a scroll container, so `FormPageBar` stuck to it instead of `<main>` and scrolled away (this affected the invoice wizard too). Now `overflow-x: clip` where supported (Safari < 16 keeps `hidden`). Checked 12 wide routes at 360 / 1280: 0 overflow. The shell test that matches the wrapper's classes was updated.
+- `FormActionBar` buttons 44px on phones; `OverflowMenu` `direction="up"`.
+
+**Desktop differences:** the four wizards / edit page use the shared `PageHeader` (breadcrumbs, icon, step) and `Stepper` (brand-coloured completed steps instead of green pills) instead of their own headers; step actions are a pinned footer bar with a Cancel button; contract edit no longer adds its own padding inside the shell's. Register and the draft invoice bar are unchanged on desktop.
+
+**Pre-existing, reported, not changed:** contract and quotation wizards' last-step "Save as Draft" / "Save & …" cards submit with no loading guard (a second tap can create a duplicate; the footer buttons are guarded); contract wizard shows "Contract Discount (undefined%)" on the pricing and preview steps (contract-level discount isn't in the form state).
+
+Screenshots `shots/phase3/stepB3-{contract-wizard,quotation-create,contract-edit,subscription-wizard,register,draft-invoice}/{before,after}/`; `after-r2` (contract wizard, quotation, contract edit) = after the sticky-bar fix; `draft-invoice/after-menu/` = the phone menu open.
 
 ## 9. Local environment safety notes
 
