@@ -10,6 +10,7 @@ import { formatCurrency } from "../../../utils/locale";
 import { useCurrency } from "../utils/CurrencyContext";
 import { Spinner, ErrorState, EmptyState, DateRangeFilter, useDateRange, ExportMenu, DashboardStatCard } from "../../../components/billing-shared";
 import { filterByDateRange, downloadExcel, downloadJSON, downloadCSV } from "../../../utils/export-helpers";
+import { DataTable } from "../../../components/billing-ui";
 
 const COLORS = ["var(--color-accent-invoicing)", "#FF9B4D", "#FFC9A6", "#f59e0b", "#10b981", "#ef4444", "#3b82f6", "#ec4898", "#14b8a6", "#f97316"];
 
@@ -490,38 +491,26 @@ export default function CustomerReportsPage() {
                     <Download className="h-3.5 w-3.5" /> Export
                   </button>
                 </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-<thead>
-                       <tr className="border-b border-slate-100">
-                         <th scope="col" className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Name</th>
-                         <th scope="col" className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Email</th>
-                         <th scope="col" className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Company</th>
-                         <th scope="col" className="text-center py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Status</th>
-                         <th scope="col" className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Created</th>
-                       </tr>
-                     </thead>
-                    <tbody>
-                      {fCustomers.map((c) => (
-                        <tr key={c.id || c._id} className="border-b border-slate-50 hover:bg-slate-50">
-                          <td className="py-3 px-3 font-medium text-slate-900">{c.display_name || c.company_name}</td>
-                          <td className="py-3 px-3 text-slate-500">{c.email || "—"}</td>
-                          <td className="py-3 px-3 text-slate-500">{c.company_name || "—"}</td>
-                          <td className="py-3 px-3 text-center">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                              c.status === "active" ? "bg-emerald-100 text-emerald-700" :
-                              c.status === "suspended" ? "bg-amber-100 text-amber-700" :
-                              c.status === "inactive" ? "bg-slate-100 text-slate-600" : "bg-blue-100 text-blue-700"
-                            }`}>
-                              {c.status ? c.status.charAt(0).toUpperCase() + c.status.slice(1) : "Unknown"}
-                            </span>
-                          </td>
-                          <td className="py-3 px-3 text-slate-500">{formatDisplayDate(c.created_at)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <DataTable
+                  stickyHeader={false}
+                  data={fCustomers}
+                  rowKey={(c) => c.id || c._id}
+                  columns={[
+                    { key: "name", label: "Name", render: (c) => <span className="font-medium text-slate-900">{c.display_name || c.company_name}</span> },
+                    { key: "email", label: "Email", render: (c) => <span className="text-slate-500">{c.email || "—"}</span> },
+                    { key: "company", label: "Company", render: (c) => <span className="text-slate-500">{c.company_name || "—"}</span> },
+                    { key: "status", label: "Status", align: "center", render: (c) => (
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        c.status === "active" ? "bg-emerald-100 text-emerald-700" :
+                        c.status === "suspended" ? "bg-amber-100 text-amber-700" :
+                        c.status === "inactive" ? "bg-slate-100 text-slate-600" : "bg-blue-100 text-blue-700"
+                      }`}>
+                        {c.status ? c.status.charAt(0).toUpperCase() + c.status.slice(1) : "Unknown"}
+                      </span>
+                    ) },
+                    { key: "created_at", label: "Created", render: (c) => <span className="text-slate-500">{formatDisplayDate(c.created_at)}</span> },
+                  ]}
+                />
               </div>
             </>
           )}

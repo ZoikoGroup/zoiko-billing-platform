@@ -15,6 +15,7 @@ import { sumInBaseCurrency, convertToBaseCurrency } from "../../../utils/currenc
 import { extractArray } from "../../../utils/billing-helpers";
 import { Spinner, ErrorState, EmptyState, DateRangeFilter, useDateRange, ExportMenu } from "../../../components/billing-shared";
 import { filterByDateRange, downloadExcel, downloadJSON, downloadCSV } from "../../../utils/export-helpers";
+import { DataTable } from "../../../components/billing-ui";
 
 const TABS = [
   { key: "overview", label: "Overview", icon: DollarSign },
@@ -715,30 +716,18 @@ export default function PaymentReportsPage() {
           )}
           <div className="bg-white rounded-3xl border border-slate-200 p-6">
             <h3 className="text-sm font-semibold text-slate-900 mb-4">Payment Summary</h3>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-100">
-                    <th scope="col" className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Month</th>
-                    <th scope="col" className="text-right py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Payments</th>
-                    <th scope="col" className="text-right py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Collected</th>
-                    <th scope="col" className="text-right py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Refunds</th>
-                    <th scope="col" className="text-right py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Net</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {monthlyChartData.slice(-12).reverse().map((m) => (
-                    <tr key={m.month} className="border-b border-slate-50 hover:bg-slate-50">
-                      <td className="py-3 px-3 font-medium text-slate-900">{m.month}</td>
-                      <td className="py-3 px-3 text-right text-slate-600">{m.count}</td>
-                      <td className="py-3 px-3 text-right font-medium text-emerald-700">{formatCurrency(m.value, baseCurrency)}</td>
-                      <td className="py-3 px-3 text-right font-medium text-red-600">{formatCurrency(m.refunds, baseCurrency)}</td>
-                      <td className="py-3 px-3 text-right font-semibold text-slate-900">{formatCurrency(m.net, baseCurrency)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <DataTable
+              stickyHeader={false}
+              data={monthlyChartData.slice(-12).reverse()}
+              rowKey={(m) => m.month}
+              columns={[
+                { key: "month", label: "Month", render: (m) => <span className="font-medium text-slate-900">{m.month}</span> },
+                { key: "payments", label: "Payments", align: "right", render: (m) => <span className="text-slate-600">{m.count}</span> },
+                { key: "collected", label: "Collected", align: "right", render: (m) => <span className="font-medium text-emerald-700">{formatCurrency(m.value, baseCurrency)}</span> },
+                { key: "refunds", label: "Refunds", align: "right", render: (m) => <span className="font-medium text-red-600">{formatCurrency(m.refunds, baseCurrency)}</span> },
+                { key: "net", label: "Net", align: "right", render: (m) => <span className="font-semibold text-slate-900">{formatCurrency(m.net, baseCurrency)}</span> },
+              ]}
+            />
           </div>
         </div>
       )}

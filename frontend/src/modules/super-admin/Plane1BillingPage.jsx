@@ -208,30 +208,19 @@ function ItemsTable({ items, currency }) {
   }
   return (
     <div className="overflow-x-auto rounded-xl border border-slate-200">
-      <table className="w-full text-xs">
-        <thead>
-          <tr className="border-b border-slate-200 bg-slate-50 text-slate-500">
-            <th className="px-3 py-2 text-left font-semibold">Description</th>
-            <th className="px-3 py-2 text-right font-semibold">Qty</th>
-            <th className="px-3 py-2 text-right font-semibold">Unit Price</th>
-            <th className="px-3 py-2 text-right font-semibold">Discount</th>
-            <th className="px-3 py-2 text-right font-semibold">Tax</th>
-            <th className="px-3 py-2 text-right font-semibold">Total</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((it) => (
-            <tr key={it.line_number} className="border-b border-slate-100 last:border-0">
-              <td className="px-3 py-2 text-slate-700">{it.description}</td>
-              <td className="px-3 py-2 text-right tabular-nums text-slate-600">{it.quantity}</td>
-              <td className="px-3 py-2 text-right tabular-nums text-slate-600">{formatCurrency(it.unit_price, currency)}</td>
-              <td className="px-3 py-2 text-right tabular-nums text-slate-600">{formatCurrency(it.discount_amount, currency)}</td>
-              <td className="px-3 py-2 text-right tabular-nums text-slate-600">{formatCurrency(it.tax_amount, currency)}</td>
-              <td className="px-3 py-2 text-right tabular-nums font-semibold text-slate-800">{formatCurrency(it.total, currency)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <DataTable
+        stickyHeader={false}
+        data={items}
+        rowKey={(it) => it.line_number}
+        columns={[
+          { key: "description", label: "Description", render: (it) => <span className="text-slate-700">{it.description}</span> },
+          { key: "qty", label: "Qty", align: "right", render: (it) => <span className="tabular-nums text-slate-600">{it.quantity}</span> },
+          { key: "unit_price", label: "Unit Price", align: "right", render: (it) => <span className="tabular-nums text-slate-600">{formatCurrency(it.unit_price, currency)}</span> },
+          { key: "discount", label: "Discount", align: "right", render: (it) => <span className="tabular-nums text-slate-600">{formatCurrency(it.discount_amount, currency)}</span> },
+          { key: "tax", label: "Tax", align: "right", render: (it) => <span className="tabular-nums text-slate-600">{formatCurrency(it.tax_amount, currency)}</span> },
+          { key: "total", label: "Total", align: "right", render: (it) => <span className="tabular-nums font-semibold text-slate-800">{formatCurrency(it.total, currency)}</span> },
+        ]}
+      />
     </div>
   );
 }

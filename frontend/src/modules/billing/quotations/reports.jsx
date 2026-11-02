@@ -12,6 +12,7 @@ import { extractArray } from "../../../utils/billing-helpers";
 import { Spinner, ErrorState, EmptyState, DateRangeFilter, useDateRange, ExportMenu } from "../../../components/billing-shared";
 import { filterByDateRange, downloadExcel, downloadJSON, downloadCSV } from "../../../utils/export-helpers";
 import { useCurrency } from "../utils/CurrencyContext";
+import { DataTable } from "../../../components/billing-ui";
 
 const TABS = [
   { key: "overview", label: "Overview", icon: FileText },
@@ -280,23 +281,13 @@ export default function QuotationReportsPage() {
                   <button onClick={() => downloadJSON(fQuotations, "all-quotations.json")}
                     className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200" aria-label="Export all quotations"><Download className="h-3.5 w-3.5" /> Export</button>
                 </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-<thead>
-                       <tr className="border-b border-slate-100">
-                         <th scope="col" className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Quotation</th>
-                         <th scope="col" className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Status</th>
-                         <th scope="col" className="text-right py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Amount</th>
-                         <th scope="col" className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Valid Until</th>
-                         <th scope="col" className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Created</th>
-                       </tr>
-                     </thead>
-                    <tbody>
-                      {fQuotations.slice(0, 20).map((q) => (
-                        <tr key={q.id} className="border-b border-slate-50 hover:bg-slate-50">
-                          <td className="py-3 px-3 font-medium text-slate-900">{q.quote_number || `#${q.id}`}</td>
-                          <td className="py-3 px-3">
-                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                <DataTable
+                  stickyHeader={false}
+                  data={fQuotations.slice(0, 20)}
+                  rowKey={(q) => q.id}
+                  columns={[
+                    { key: "quotation", label: "Quotation", render: (q) => <span className="font-medium text-slate-900">{q.quote_number || `#${q.id}`}</span> },
+                    { key: "status", label: "Status", render: (q) => <><span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
                               q.status === "draft" ? "bg-slate-100 text-slate-600" :
                               q.status === "sent" ? "bg-blue-100 text-blue-700" :
                               q.status === "accepted" ? "bg-emerald-100 text-emerald-700" :
@@ -304,16 +295,12 @@ export default function QuotationReportsPage() {
                               q.status === "converted" ? "bg-brand-100 text-brand-700" :
                               q.status === "cancelled" || q.status === "expired" ? "bg-amber-100 text-amber-700" :
                               "bg-slate-100 text-slate-600"
-                            }`}>{q.status}</span>
-                          </td>
-                          <td className="py-3 px-3 text-right font-medium text-slate-900">{formatCurrency(q.total_amount, q.currency || displayCurrency)}</td>
-                          <td className="py-3 px-3 text-slate-500 whitespace-nowrap">{q.valid_until ? new Date(q.valid_until).toLocaleDateString() : "—"}</td>
-                          <td className="py-3 px-3 text-slate-500 whitespace-nowrap">{q.created_at ? new Date(q.created_at).toLocaleDateString() : "—"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                            }`}>{q.status}</span></> },
+                    { key: "amount", label: "Amount", align: "right", render: (q) => <span className="font-medium text-slate-900">{formatCurrency(q.total_amount, q.currency || displayCurrency)}</span> },
+                    { key: "valid_until", label: "Valid Until", render: (q) => <span className="text-slate-500 whitespace-nowrap">{q.valid_until ? new Date(q.valid_until).toLocaleDateString() : "—"}</span> },
+                    { key: "created", label: "Created", render: (q) => <span className="text-slate-500 whitespace-nowrap">{q.created_at ? new Date(q.created_at).toLocaleDateString() : "—"}</span> },
+                  ]}
+                />
               </div>
             </>
           )}
