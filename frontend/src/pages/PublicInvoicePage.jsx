@@ -448,6 +448,44 @@ export default function PublicInvoicePage() {
                 </table>
               </div>
 
+              {/* Phones: one card per line instead of an 8-column table swiped
+                  sideways (CSS switches at 640px; the table stays for print). */}
+              <ul className="pub-item-cards">
+                {items.map((item, i) => {
+                  const lineTotal = parseMoney(item.total_amount ?? item.total ?? (parseMoney(item.quantity || 0) * parseMoney(item.unit_price || 0)));
+                  const discAmt   = parseMoney(item.unit_price || 0) * parseMoney(item.quantity || 0) * parseMoney(item.discount_percentage || 0) / 100;
+                  return (
+                    <li key={item.id || item.line_number || i} className="pub-item-card">
+                      <div className="pub-item-card-head">
+                        <p className="pub-item-name"><span className="pub-td--muted">{item.line_number || i + 1}.</span> {item.description || "Item"}</p>
+                        <p className="pub-td--bold pub-mono pub-item-card-total">{fmtCcy(lineTotal, currency)}</p>
+                      </div>
+                      <span className="pub-type-badge">{item.item_type || "product"}</span>
+                      <dl className="pub-item-card-grid">
+                        <div><dt>Qty</dt><dd className="pub-mono">{parseMoney(item.quantity || 0).toFixed(2)}</dd></div>
+                        <div><dt>Unit Price</dt><dd className="pub-mono">{fmtCcy(parseMoney(item.unit_price), currency)}</dd></div>
+                        <div><dt>Discount</dt><dd>
+                          {parseMoney(item.discount_percentage || 0) > 0 ? (
+                            <span className="pub-discount">
+                              -{parseMoney(item.discount_percentage).toFixed(1)}%
+                              <span className="pub-discount-amt">&nbsp;(-{fmtCcy(discAmt, currency)})</span>
+                            </span>
+                          ) : (
+                            <span className="pub-td--muted">—</span>
+                          )}
+                        </dd></div>
+                        <div><dt>Tax</dt><dd>
+                          {parseMoney(item.tax_percentage || 0) > 0 ? (
+                            <span className="pub-tax-pct">{parseMoney(item.tax_percentage).toFixed(1)}%</span>
+                          ) : (
+                            <span className="pub-td--muted">—</span>
+                          )}
+                        </dd></div>
+                      </dl>
+                    </li>
+                  );
+                })}
+              </ul>
             </>
           )}
         </SectionCard>
@@ -758,6 +796,16 @@ export default function PublicInvoicePage() {
 
         /* ── table ── */
         .pub-table-wrap { overflow-x: auto; margin: 0 -0.5rem; }
+        .pub-item-cards { display: none; list-style: none; margin: 0; padding: 0; }
+        .pub-item-card { padding: 0.875rem 0; border-bottom: 1px solid rgba(255,255,255,0.04); color: #e2e8f0; font-size: 0.85rem; }
+        .pub-item-card:last-child { border-bottom: 0; }
+        .pub-item-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.75rem; margin-bottom: 0.375rem; }
+        .pub-item-card-head .pub-item-name { min-width: 0; overflow-wrap: anywhere; }
+        .pub-item-card-total { flex-shrink: 0; text-align: right; }
+        .pub-item-card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.375rem 1rem; margin: 0.5rem 0 0; font-size: 0.8125rem; }
+        .pub-item-card-grid dt { color: #94a3b8; font-size: 0.75rem; }
+        .pub-item-card-grid dd { margin: 0; color: #e2e8f0; }
+        @media screen and (max-width:640px){ .pub-table-wrap { display: none; } .pub-item-cards { display: block; } }
         .pub-table { width: 100%; border-collapse: separate; border-spacing: 0; min-width: 640px; }
         .pub-th {
           font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em;
