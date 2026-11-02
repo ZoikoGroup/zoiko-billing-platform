@@ -120,6 +120,8 @@ Status key used in every table:
 
 ## 5. Page findings
 
+> Phase 0 findings, kept for history. **Current status of every route: §8i (B6 re-measure).**
+
 Every route below was measured at all 5 viewports. **No route overflows at 768 or 1280.** "Clean" means no clipping, sideways scrolling, launcher overlap or crushed table was measured. The shared problems from §3–§4 (14px inputs, about 50% small targets, trial banner 38%) apply to every authenticated page and aren't repeated per row.
 
 ### 5.1 Billing: org_admin (billing_admin samples matched)
@@ -796,6 +798,39 @@ Inventory at 360px (`D:\zoiko-local\tools\detail-probe.mjs`, `shots/phase3/stepB
 **Tests:** new `customer-profile.editbar.b5` (Edit ↔ bar, guard asks only when dirty, Save sends the edit); existing module suites pass unchanged.
 
 **Still open:** public invoice / quote line items (customer-facing documents) — decision needed (recommended: cards for public invoice only). Small tap targets on detail pages (e.g. 11/25 on customer profile at 360) → Phase 4.
+
+## 8i. Phase 3 B6 — final check (all 135 route checks re-measured)
+
+Sweep after B5 (`D:\zoiko-local\tools\sweep.mjs` via `run-sweep.ps1`, local SQLite stack, real fonts; 360 / 390 / 412 / 768 / 1280): `shots/phase3/stepB6/sweep-after-b5/` (screenshots at 390 and 1280 per route). 135 / 135 measured, no errors.
+
+| Check (360 and 390) | Phase 0 | After B6 |
+|---|---|---|
+| Pages scrolling sideways | 6 | **0** |
+| Squeezed tables (columns < 56px, not scrolling) | 1 | **0** |
+| Form controls under 16px | 123 pages | **0** |
+| AI button over a control | 19 pages | **0** (see note) |
+| Clipped visible content | 22 pages | **3 pages, all Phase 4 insight lines** (+4 decorative hero backgrounds, not content) |
+| Drawer: Esc / overlay / back close it, scroll lock, nothing focusable while closed | ✗ | **✓** for org_admin, billing_admin, super_admin |
+| Trial banner + top bar | 38% | 15% (super admin 8%) |
+
+**Fixed in B6:**
+- *Billing settings — "Auto-configured" / "Customized" badge* (the page-level clip carried since Phase 0, `ff3a4e6`): badge rows wrap, so the badge drops under its input on phones instead of running out of the card; field tooltips wrap on phones. Reproduced by editing fields / changing country (badges show for 4s): before, Default Currency's badge ended at the screen edge (360); after, 0 clipped at 360 / 390. `shots/phase3/stepB6/badge-{before,after}/`.
+- *Dashboard chart cards* (`a5409cb`, shared `DashboardChartCard`): header action wraps under the title, 16px padding on phones. Products dashboard "Monthly view" toggle and the chart's right edge were clipped at 360 → 0.
+- *Tax pricing filters* (`17f9414`): the search / type / country / refresh row wrapped nowhere; "Country" clipped at 390 → 0. `shots/phase3/stepB6/clips-after/`.
+
+**Note on the AI button:** the sweep's scrolled-to-bottom check reports 18 pages (360) where a button overlaps the AI button's box. Below `lg` the AI button lives in the top bar (y 10–54px); verified with `elementFromPoint` that these are page buttons scrolled up *behind* the header (the header is on top), not covered controls.
+
+**Route checklist (current):**
+
+| Group | Routes | Clean at 360 / 390 | Remaining (owner) |
+|---|---|---|---|
+| Auth / public | 6 | 6 | — |
+| Billing (org_admin) | 77 | 74 + products dashboard, tax pricing fixed after the sweep | Insight lines on products, collections, credit-notes dashboards (Phase 4) |
+| Organization admin | 6 | 6 | Decorative hero background on dashboard / organization (not content) |
+| Billing-admin workspace + billing sample | 12 | 11 | Workspace activity line (also the raw `InvoiceStatus.OVERDUE` text) — Phase 4 |
+| Super admin | 34 | 34 | Decorative hero background on dashboard / command-center (not content) |
+
+**Not covered by this sweep:** public invoice / quote / estimate / platform checkout (need public tokens; line-item cards decision pending), privileged-session banner and triage strip (Phase 5, fake responses), and detail pages without local records (refund, write-off, dunning, collections — checked statically in B5). Tap targets under 44px (37% of controls on billing pages at 360) and text under 12px are Phase 4.
 
 ## 9. Local environment safety notes
 
