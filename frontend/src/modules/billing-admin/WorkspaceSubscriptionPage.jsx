@@ -8,6 +8,7 @@ import { loadGlobalBillingConfig } from "../../service/billingConfigCache";
 import WorkspaceHeader from "./WorkspaceHeader";
 import { formatOrgMoney, resolveOrgCurrency, formatCurrencyChip } from "./workspace-format";
 import { Repeat, Loader2, ArrowRight, Coins, Layers } from "lucide-react";
+import { DataTable } from "../../components/billing-ui";
 
 function Field({ label, value }) {
   return (
@@ -312,36 +313,20 @@ export default function WorkspaceSubscriptionPage() {
             {activeSubs.length === 0 ? (
               <p className="text-[13px] text-slate-500 pb-6 px-6 text-center">No active subscriptions</p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead>
-                    <tr className="border-y border-slate-100 bg-slate-50/60 text-xs uppercase tracking-wider text-slate-600">
-                      <th className="px-6 py-3 font-semibold">Subscription</th>
-                      <th className="px-6 py-3 font-semibold">Plan</th>
-                      <th className="px-6 py-3 font-semibold">Status</th>
-                      <th className="px-6 py-3 font-semibold text-right">Amount</th>
-                      <th className="px-6 py-3 font-semibold">Renews</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {activeSubs.map((sub) => (
-                      <tr key={sub.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60 transition-colors">
-                        <td className="px-6 py-4">
-                          <button onClick={() => navigate(`/billing/subscriptions/${sub.id}`)} className="text-[13px] font-semibold text-brand hover:text-brand-hover cursor-pointer">
+              <DataTable
+                stickyHeader={false}
+                data={activeSubs}
+                rowKey={(sub) => sub.id}
+                columns={[
+                  { key: "subscription", label: "Subscription", render: (sub) => <><button onClick={() => navigate(`/billing/subscriptions/${sub.id}`)} className="text-[13px] font-semibold text-brand hover:text-brand-hover cursor-pointer">
                             {sub.subscription_number || `#${sub.id}`}
-                          </button>
-                        </td>
-                        <td className="px-6 py-4 text-[13px] text-slate-600">{planMap[sub.plan_id] || `Plan #${sub.plan_id}`}</td>
-                        <td className="px-6 py-4"><StatusPill status={sub.status} /></td>
-                        <td className="px-6 py-4 text-right text-[13px] font-semibold text-slate-800">
-                          {formatOrgMoney(Number(sub.unit_price || 0) * Number(sub.quantity || 1), { default_currency: currency })}
-                        </td>
-                        <td className="px-6 py-4 text-[13px] text-slate-500">{sub.next_billing_at ? new Date(sub.next_billing_at).toLocaleDateString() : "—"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                          </button></> },
+                  { key: "plan", label: "Plan", render: (sub) => <span className="text-[13px] text-slate-600">{planMap[sub.plan_id] || `Plan #${sub.plan_id}`}</span> },
+                  { key: "status", label: "Status", render: (sub) => <><StatusPill status={sub.status} /></> },
+                  { key: "amount", label: "Amount", align: "right", render: (sub) => <span className="text-[13px] font-semibold text-slate-800">{formatOrgMoney(Number(sub.unit_price || 0) * Number(sub.quantity || 1), { default_currency: currency })}</span> },
+                  { key: "renews", label: "Renews", render: (sub) => <span className="text-[13px] text-slate-500">{sub.next_billing_at ? new Date(sub.next_billing_at).toLocaleDateString() : "—"}</span> },
+                ]}
+              />
             )}
           </div>
 
