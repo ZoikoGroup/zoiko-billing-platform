@@ -537,7 +537,7 @@ Measured at 390 and 1280 (sent/accepted quotations via route interception — th
 | `/billing/quotations?action=create&product_id=…`, `/billing/invoices?action=create&product_id=…` | — | n/a — **dead link** | Product profile "New Quotation" / "New Invoice". Nothing reads `action` or `product_id`, so the buttons just open the list. Pre-existing; logged, not changed |
 | `OrganizationPage` `?code=&state=` | — | n/a | Stripe OAuth callback, not a dialog |
 
-**Parity check (every JSX attribute, not just handlers).** `D:\zoiko-local	ools\parity.mjs <commit>` parses each changed `.jsx` before and after with `@babel/parser` and compares, as multisets, *every* attribute on *every* element (name + normalised value: `onSubmit`, `type`, `name`, `id`, `aria-*`, `data-*`, `autoFocus`, `ref`, `key`, spreads, conditional `className` expressions …) and every text / expression child (JSX inside a `{cond && (…)}` is compared element by element, comments ignored). Every entry present before and missing after must match a dialog-shell rule (overlay close handler → `onClose`, panel `stopPropagation`, `role` / `aria-modal` / `aria-labelledby` + heading `id` now provided by `Modal`, title / intro text → `title` / `description`, × button inside a removed overlay, the removed `WizardStep` helper with its labels present in `Stepper`, static `className`); anything else is reported. Elements are also paired by `onClick` handler and each pair's other attributes and children must be identical. Dynamic (conditional) `className`s outside the removed shell are never auto-explained. Checked against planted regressions (dropped `onClick`, changed `disabled` rule, dropped `aria-label` on an unrelated button): all caught.
+**Parity check (every JSX attribute, not just handlers).** `D:\zoiko-local\tools\parity.mjs <commit>` parses each changed `.jsx` before and after with `@babel/parser` and compares, as multisets, *every* attribute on *every* element (name + normalised value: `onSubmit`, `type`, `name`, `id`, `aria-*`, `data-*`, `autoFocus`, `ref`, `key`, spreads, conditional `className` expressions …) and every text / expression child (JSX inside a `{cond && (…)}` is compared element by element, comments ignored). Every entry present before and missing after must match a dialog-shell rule (overlay close handler → `onClose`, panel `stopPropagation`, `role` / `aria-modal` / `aria-labelledby` + heading `id` now provided by `Modal`, title / intro text → `title` / `description`, × button inside a removed overlay, the removed `WizardStep` helper with its labels present in `Stepper`, static `className`); anything else is reported. Elements are also paired by `onClick` handler and each pair's other attributes and children must be identical. Dynamic (conditional) `className`s outside the removed shell are never auto-explained. Checked against planted regressions (dropped `onClick`, changed `disabled` rule, dropped `aria-label` on an unrelated button): all caught.
 
 | Commit | Elements | Attributes | Children | Unexplained |
 |---|---|---|---|---|
@@ -703,7 +703,7 @@ Remaining related screens: customer-profile inline edits (B5). Settings pages: d
 
 ### B3 round 2 — contract, quotation, contract edit, subscription, Register, draft invoice
 
-Measured with the same scripts before and after (`D:\zoiko-local	ools\*-shots.mjs`); every screen 0 horizontal overflow at 360 / 412 / 1280.
+Measured with the same scripts before and after (`D:\zoiko-local\tools\*-shots.mjs`); every screen 0 horizontal overflow at 360 / 412 / 1280.
 
 | Screen | Primary action before (360 / 1280) | After | Autosave → pattern | Parity | Tests (new, `nikhil-new` only) |
 |---|---|---|---|---|---|
@@ -747,7 +747,7 @@ Screenshots `shots/phase3/stepB3-settings/{inventory-r2,before,after,after-dirty
 ## 8g. Phase 3 B4 — tables
 
 Rule applied: tables with more than four meaningful columns become cards on phones; four or fewer keep scrolling inside their own box (all already did). Two ways, chosen per table:
-- **Shared `DataTable`** (cards below 768px, table above): cell content moved verbatim into each column's `render`; header alignment, row `key` / `onClick`, empty states and "Clear filters" carried over. Mostly done with `D:\zoiko-local	ools	able2datatable.py` (refuses anything unusual; those were done by hand).
+- **Shared `DataTable`** (cards below 768px, table above): cell content moved verbatim into each column's `render`; header alignment, row `key` / `onClick`, empty states and "Clear filters" carried over. Mostly done with `D:\zoiko-local\tools\table2datatable.py` (refuses anything unusual; those were done by hand).
 - **Phone cards alongside the unchanged desktop table** for the main lists with selection / sort / bulk actions (customers, payments, subscriptions, quotations, contracts, products, pricing plans): same handlers; a "Select all" checkbox and a sort menu replace the header row.
 
 | Module | Commit | Converted | Left as is (and why) |
@@ -774,6 +774,28 @@ Rule applied: tables with more than four meaningful columns become cards on phon
 **Desktop differences:** converted tables use the shared table styling (header band, row hover, the shared empty state); reconciliation exceptions' header no longer sticks inside its 420px scroll box. Lists that got phone cards are unchanged on desktop.
 
 **Tests:** new `customer-list.cards.b4`, `billing-history.cards.b4`, `payment-list.cards.b4` (phones: cards, selection, bulk action, sort, open); existing module suites pass unchanged.
+
+## 8h. Phase 3 B5 — detail pages
+
+Inventory at 360px (`D:\zoiko-local\tools\detail-probe.mjs`, `shots/phase3/stepB5/inventory/`): no page overflow anywhere; main + side panels already stack below `lg`. What needed fixing: wide tables inside detail tabs, a clipped customer header, the customer details edit actions, and payment info rows squeezed into two ~107px columns.
+
+| Page | Commit | Change |
+|---|---|---|
+| Customer profile | `67b1f28` | Header: long name / email wrap instead of running past the card. Editing details: Cancel / Save Changes move into a pinned bottom bar (44px on phones, one per page) and leaving with unsaved edits asks first (`useUnsavedChangesGuard`, compared with the form as it was when editing started). Tab tables with 5–6 columns (payments, credit notes ×2, contracts, subscriptions) → `DataTable`; the two 4-column tables stay. |
+| Invoice detail | `10b60d6` | Line items (7 cols) → phone-only cards (description + total, then qty / unit price / disc / tax), desktop table unchanged; currency-conversion rows wrap. |
+| Subscription, contract, quotation, product | `fcc506d` | Tab tables with 5–7 columns → `DataTable`: subscription invoices + payments, contract line items + billing schedule, quotation line items, product pricing plans / contracts / subscriptions. Line-item cards: title = description, amount = total, "#" hidden in cards only. 3–4 column tables stay. |
+| Payment detail | `9d79156` | Payment information / invoice / allocation label-value grids stack below 640px (were cut off: "bank_tr", "GBP" clipped). The three 4-column tables stay. |
+| Credit note, refund, write-off, dunning, collections | — | No change needed: 2-column stat tiles that widen from `sm`, credit-note applications table is 3 columns. Refund / write-off / dunning / collections have no local records, so checked statically. |
+
+**Measured (before → after, 360px):** customer Billing Overview payments 449px table in a 246px box → card; invoice line items 559 / 278 → cards; subscription invoices 543 → 2 cards, payments 678 → card; product subscriptions 441 → card; quotation line items 571 → 3 cards; contract line items 609 → 3 cards, billing schedule 649 → 2 cards; payment info rows 5 overflowing → 0. Page overflow 0 before and after; desktop tables unchanged in content. Quotation / contract / tab data from fictional fixtures (`D:\zoiko-local\tools\cfg-b5-details.mjs`). Screenshots `shots/phase3/stepB5/{customer,invoice,details,payment}-{before,after}*/`, `details-cards/`, `inventory-after/`.
+
+**Parity:** invoice detail 0 unexplained; `DataTable` conversions show only the structural moves (headers → column labels, row keys / clicks → `rowKey` / `onRowClick`, cells → `render`) and the customer edit buttons moving from the section header into the bar, word for word.
+
+**Desktop differences:** customer profile Cancel / Save Changes are in the pinned bar instead of the section header while editing; converted tab tables use the shared table styling.
+
+**Tests:** new `customer-profile.editbar.b5` (Edit ↔ bar, guard asks only when dirty, Save sends the edit); existing module suites pass unchanged.
+
+**Still open:** public invoice / quote line items (customer-facing documents) — decision needed (recommended: cards for public invoice only). Small tap targets on detail pages (e.g. 11/25 on customer profile at 360) → Phase 4.
 
 ## 9. Local environment safety notes
 
