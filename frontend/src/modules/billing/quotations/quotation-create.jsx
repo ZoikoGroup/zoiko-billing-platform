@@ -512,7 +512,13 @@ export default function QuotationCreateWizardPage({ onClose, onCreated }) {
       converted_amount: i.converted_amount != null ? parseFloat(i.converted_amount) : undefined,
     }));
 
+  // One submission at a time: the last step's cards and the footer buttons
+  // all call this, and the cards had no busy guard, so a second tap while
+  // saving created a second record.
+  const submitLockRef = useRef(false);
   const submit = async (sendAfter = false) => {
+    if (submitLockRef.current) return;
+    submitLockRef.current = true;
     setLoading(true); setError(null);
     try {
       const quote = await quoteApi.create(buildPayload());
@@ -529,7 +535,7 @@ export default function QuotationCreateWizardPage({ onClose, onCreated }) {
       navigate(`/billing/quotations/${quote.id}`);
     } catch (err) {
       setError(err?.detail || err?.message || "Failed to create quotation");
-    } finally { setLoading(false); }
+    } finally { submitLockRef.current = false; setLoading(false); }
   };
 
   // No autosave here, so leaving with entered data asks first. The quote
