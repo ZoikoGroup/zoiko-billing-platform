@@ -84,10 +84,12 @@ describe("BUG-11.13 Tax Configuration", () => {
   it("header stacks on mobile and the action group wraps", async () => {
     render(<TaxConfigurationPage />);
     await screen.findByText("Tax Jurisdictions");
+    // Refresh / Save live in the save bar pinned to the bottom of the screen.
     const actions = screen.getByRole("button", { name: /refresh/i }).parentElement;
     expect(actions.className).toMatch(/\bflex-wrap\b/);
-    const header = actions.parentElement;
-    expect(header.className).toMatch(/\bflex-col\b/);
+    expect(actions.closest("div.fixed")).not.toBeNull();
+    // The summary header still stacks on mobile.
+    const header = screen.getByText("Jurisdictions").closest("div.flex-col");
     expect(header.className).toMatch(/\blg:flex-row\b/);
     expect(header.className).toMatch(/\bgap-4\b/);
   });

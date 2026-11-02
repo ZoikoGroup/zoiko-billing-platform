@@ -3,7 +3,7 @@ import {
   Save, RefreshCw, AlertCircle, CheckCircle, Hash, ToggleLeft,
   DollarSign, Percent, Clock, FileText, CreditCard, Ban, Repeat, Bell,
 } from "lucide-react";
-import HRPage from "../../../components/HRPage";
+import { SettingsPageShell, SettingsSaveBar, useUnsavedChangesGuard } from "../../../components/billing-ui";
 import { ErrorState } from "../../../components/billing-shared";
 import { settingsApi } from "../../../service/billingService";
 import { getCurrencySelectOptions } from "../../../utils/currency";
@@ -75,6 +75,7 @@ export default function PaymentSettingsPage() {
 
   const [original, setOriginal] = useState({});
   const hasChanges = Object.keys(form).some((key) => form[key] !== original[key]);
+  useUnsavedChangesGuard(hasChanges, "You have unsaved settings. Leave this page and discard them?");
 
   useEffect(() => { fetchSettings(); }, []);
 
@@ -156,11 +157,11 @@ export default function PaymentSettingsPage() {
 
   if (loading) {
     return (
-      <HRPage title="Payment Settings" subtitle="Configure payment module preferences">
+      <SettingsPageShell title="Payment Settings" description="Configure payment module preferences" icon={CreditCard} crumbs={[{ label: "Billing", href: "/billing" }, { label: "Payments", href: "/billing/payments" }, { label: "Settings" }]}>
         <div className="flex items-center justify-center py-12">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600" />
         </div>
-      </HRPage>
+      </SettingsPageShell>
     );
   }
 
@@ -174,34 +175,14 @@ export default function PaymentSettingsPage() {
   // invoicing/settings.jsx and tax/settings.jsx).
   if (loadFailed) {
     return (
-      <HRPage title="Payment Settings" subtitle="Configure payment module preferences">
+      <SettingsPageShell title="Payment Settings" description="Configure payment module preferences" icon={CreditCard} crumbs={[{ label: "Billing", href: "/billing" }, { label: "Payments", href: "/billing/payments" }, { label: "Settings" }]}>
         <ErrorState title="Couldn't load payment settings" message={error} onRetry={fetchSettings} />
-      </HRPage>
+      </SettingsPageShell>
     );
   }
 
   return (
-    <HRPage title="Payment Settings" subtitle="Configure payment module preferences">
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-        <div />
-        <div className="flex items-center gap-2">
-          {saved && (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-emerald-700 bg-emerald-50 rounded-lg">
-              <CheckCircle className="h-4 w-4" /> Saved
-            </span>
-          )}
-          <button onClick={fetchSettings}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
-            <RefreshCw className="h-4 w-4" /> Refresh
-          </button>
-          <button onClick={handleSave} disabled={!hasChanges || saving}
-            className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors">
-            {saving ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> : <Save className="h-4 w-4" />}
-            Save Changes
-          </button>
-        </div>
-      </div>
-
+    <SettingsPageShell title="Payment Settings" description="Configure payment module preferences" icon={CreditCard} crumbs={[{ label: "Billing", href: "/billing" }, { label: "Payments", href: "/billing/payments" }, { label: "Settings" }]}>
       {error && (
         <div className="mb-6 p-4 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 flex items-center gap-2">
           <AlertCircle className="h-4 w-4 flex-shrink-0" /> {error}
@@ -406,6 +387,17 @@ export default function PaymentSettingsPage() {
             className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
         </SettingsField>
       </div>
-    </HRPage>
+      <SettingsSaveBar hasChanges={hasChanges} saved={saved}>
+        <button onClick={fetchSettings}
+          className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
+          <RefreshCw className="h-4 w-4" /> Refresh
+        </button>
+        <button onClick={handleSave} disabled={!hasChanges || saving}
+          className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors">
+          {saving ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> : <Save className="h-4 w-4" />}
+          Save Changes
+        </button>
+      </SettingsSaveBar>
+    </SettingsPageShell>
   );
 }

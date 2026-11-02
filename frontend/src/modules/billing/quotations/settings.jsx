@@ -2,7 +2,7 @@ import { useState, useEffect, Children, cloneElement, isValidElement, useId } fr
 import {
   Save, RefreshCw, AlertCircle, CheckCircle, Hash, DollarSign, FileText, Image, Loader2,
 } from "lucide-react";
-import HRPage from "../../../components/HRPage";
+import { SettingsPageShell, SettingsSaveBar, useUnsavedChangesGuard } from "../../../components/billing-ui";
 import { ErrorState } from "../../../components/billing-shared";
 import ConfirmDialog from "../../../components/ConfirmDialog";
 import { settingsApi } from "../../../service/billingService";
@@ -63,6 +63,7 @@ export default function QuotationSettingsPage() {
 
   const [original, setOriginal] = useState({});
   const hasChanges = Object.keys(form).some((key) => form[key] !== original[key]);
+  useUnsavedChangesGuard(hasChanges, "You have unsaved settings. Leave this page and discard them?");
 
   useEffect(() => { fetchSettings(); }, []);
 
@@ -154,9 +155,9 @@ export default function QuotationSettingsPage() {
 
   if (loading) {
     return (
-      <HRPage title="Quotation Settings" subtitle="Loading settings...">
+      <SettingsPageShell title="Quotation Settings" description="Loading settings..." icon={FileText} crumbs={[{ label: "Billing", href: "/billing" }, { label: "Quotations", href: "/billing/quotations" }, { label: "Settings" }]}>
         <div className="flex items-center justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-brand-600" /></div>
-      </HRPage>
+      </SettingsPageShell>
     );
   }
 
@@ -166,31 +167,14 @@ export default function QuotationSettingsPage() {
   // invoicing/settings.jsx and tax/settings.jsx).
   if (loadFailed) {
     return (
-      <HRPage title="Quotation Settings" subtitle="Configure quotation defaults and behavior">
+      <SettingsPageShell title="Quotation Settings" description="Configure quotation defaults and behavior" icon={FileText} crumbs={[{ label: "Billing", href: "/billing" }, { label: "Quotations", href: "/billing/quotations" }, { label: "Settings" }]}>
         <ErrorState title="Couldn't load quotation settings" message={error} onRetry={fetchSettings} />
-      </HRPage>
+      </SettingsPageShell>
     );
   }
 
   return (
-    <HRPage title="Quotation Settings" subtitle="Configure quotation defaults and behavior">
-
-      <div className="flex flex-wrap items-center justify-end gap-2 mb-6">
-        {saved && (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-emerald-700 bg-emerald-50 rounded-lg">
-            <CheckCircle className="h-4 w-4" /> Saved
-          </span>
-        )}
-        <button onClick={handleRefresh}
-          className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
-          <RefreshCw className="h-4 w-4" /> Refresh
-        </button>
-        <button onClick={saveSettings} disabled={!hasChanges || saving}
-          className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors">
-          {saving ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> : <Save className="h-4 w-4" />}
-          Save Changes
-        </button>
-      </div>
+    <SettingsPageShell title="Quotation Settings" description="Configure quotation defaults and behavior" icon={FileText} crumbs={[{ label: "Billing", href: "/billing" }, { label: "Quotations", href: "/billing/quotations" }, { label: "Settings" }]}>
 
       {confirmRefresh && (
         <ConfirmDialog
@@ -356,6 +340,17 @@ export default function QuotationSettingsPage() {
         </div>
 
       </div>
-    </HRPage>
+      <SettingsSaveBar hasChanges={hasChanges} saved={saved}>
+        <button onClick={handleRefresh}
+          className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
+          <RefreshCw className="h-4 w-4" /> Refresh
+        </button>
+        <button onClick={saveSettings} disabled={!hasChanges || saving}
+          className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors">
+          {saving ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> : <Save className="h-4 w-4" />}
+          Save Changes
+        </button>
+      </SettingsSaveBar>
+    </SettingsPageShell>
   );
 }
