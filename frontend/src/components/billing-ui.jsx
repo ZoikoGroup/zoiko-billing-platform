@@ -119,8 +119,9 @@ const BUTTON_VARIANTS = {
 };
 
 const BUTTON_SIZES = {
-  sm: "px-3 py-1.5 text-xs gap-1.5 rounded-lg",
-  md: "px-4 py-2.5 text-sm gap-2 rounded-xl",
+  // max-sm:min-h-11 — 44px tap height on phones; desktop sizes unchanged.
+  sm: "px-3 py-1.5 text-xs gap-1.5 rounded-lg max-sm:min-h-11",
+  md: "px-4 py-2.5 text-sm gap-2 rounded-xl max-sm:min-h-11",
 };
 
 export function Button({

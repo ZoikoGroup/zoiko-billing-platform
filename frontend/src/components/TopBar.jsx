@@ -130,7 +130,7 @@ export default function TopBar({ menuOpen = false, onMenuClick, sidebarCollapsed
         )}
         <Link
           to={role === "super_admin" ? "/super-admin/dashboard" : "/billing"}
-          className="flex shrink-0 items-center focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
+          className="flex min-h-11 shrink-0 items-center focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
         >
           <img src="/zoiko-billing-logo-sm.png" alt="Zoiko Billing" width="123" height="44" className="h-9 w-auto sm:h-11" />
         </Link>
