@@ -6,7 +6,7 @@ import {
   XCircle, Info, Receipt, Building2, Send, Shield, Plus,
 } from "lucide-react";
 import HRPage from "../../../components/HRPage";
-import { Button, Modal } from "../../../components/billing-ui";
+import { DataTable, Button, Modal } from "../../../components/billing-ui";
 import { contractApi, customerApi, invoiceApi, subscriptionApi, auditApi } from "../../../service/billingService";
 import { formatDisplayCurrency, formatDisplayDate, extractArray } from "../../../utils/billing-helpers";
 import { useTerminology } from "../utils/TerminologyContext";
@@ -425,38 +425,22 @@ export default function ContractDetailPage() {
             <p className="text-sm">No products linked to this contract</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-200">
-              <thead>
-                <tr className="text-xs font-medium text-slate-500 uppercase tracking-wider">
-                  <th className="text-left py-3 px-4">#</th>
-                  <th className="text-left py-3 px-4">Description</th>
-                  <th className="text-right py-3 px-4">Qty</th>
-                  <th className="text-right py-3 px-4">Unit Price</th>
-                  <th className="text-right py-3 px-4">Discount %</th>
-                  <th className="text-right py-3 px-4">Tax %</th>
-                  <th className="text-right py-3 px-4">Total</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {products.map((item, i) => (
-                  <tr key={item.id || i} onClick={() => item.product_id && navigate(`/billing/products/${item.product_id}`)}
-                    className={`text-sm text-slate-900 hover:bg-slate-50 ${item.product_id ? "cursor-pointer" : ""}`}>
-                    <td className="py-3 px-4 text-slate-500">{item.line_number || i + 1}</td>
-                    <td className="py-3 px-4">
-                      <p className="font-medium text-slate-800">{item.description || "Item"}</p>
-                      {item.product_id && <p className="text-xs text-brand-600 hover:underline">Product #{item.product_id} →</p>}
-                    </td>
-                    <td className="py-3 px-4 text-right">{parseFloat(item.quantity || 1).toFixed(2)}</td>
-                    <td className="py-3 px-4 text-right">{formatDisplayCurrency(item.unit_price, contract.currency)}</td>
-                    <td className="py-3 px-4 text-right text-slate-500">{parseFloat(item.discount_percentage || 0) > 0 ? `${item.discount_percentage}%` : "—"}</td>
-                    <td className="py-3 px-4 text-right text-slate-500">{parseFloat(item.tax_percentage || 0) > 0 ? `${item.tax_percentage}%` : "—"}</td>
-                    <td className="py-3 px-4 text-right font-medium">{formatDisplayCurrency(item.total_amount, contract.currency)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            stickyHeader={false}
+            data={products}
+            rowKey={(item, i) => item.id || i}
+            onRowClick={(item) => item.product_id && navigate(`/billing/products/${item.product_id}`)}
+            columns={[
+              { key: "col1", label: "#", mobileRole: "hidden", render: (item, i) => <span className="text-slate-500">{item.line_number || i + 1}</span> },
+              { key: "description", label: "Description", mobileRole: "title", render: (item, i) => <><p className="font-medium text-slate-800">{item.description || "Item"}</p>
+                      {item.product_id && <p className="text-xs text-brand-600 hover:underline">Product #{item.product_id} →</p>}</> },
+              { key: "qty", label: "Qty", align: "right", render: (item, i) => <>{parseFloat(item.quantity || 1).toFixed(2)}</> },
+              { key: "unit_price", label: "Unit Price", align: "right", render: (item, i) => <>{formatDisplayCurrency(item.unit_price, contract.currency)}</> },
+              { key: "discount", label: "Discount %", align: "right", render: (item, i) => <span className="text-slate-500">{parseFloat(item.discount_percentage || 0) > 0 ? `${item.discount_percentage}%` : "—"}</span> },
+              { key: "tax", label: "Tax %", align: "right", render: (item, i) => <span className="text-slate-500">{parseFloat(item.tax_percentage || 0) > 0 ? `${item.tax_percentage}%` : "—"}</span> },
+              { key: "total", label: "Total", align: "right", mobileRole: "amount", render: (item, i) => <span className="font-medium">{formatDisplayCurrency(item.total_amount, contract.currency)}</span> },
+            ]}
+          />
         )}
       </div>
     );
@@ -530,42 +514,27 @@ export default function ContractDetailPage() {
             <p className="text-sm">No invoices generated yet</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-200">
-              <thead>
-                <tr className="text-xs font-medium text-slate-500 uppercase tracking-wider">
-                  <th className="text-left py-3 px-4">Invoice</th>
-                  <th className="text-left py-3 px-4">Issue Date</th>
-                  <th className="text-left py-3 px-4">Due Date</th>
-                  <th className="text-right py-3 px-4">Amount</th>
-                  <th className="text-right py-3 px-4">Paid</th>
-                  <th className="text-right py-3 px-4">Balance</th>
-                  <th className="text-left py-3 px-4">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {invoices.map((inv) => (
-                  <tr key={inv.id} onClick={() => navigate(`/billing/invoices/${inv.id}`)} className="text-sm text-slate-900 hover:bg-slate-50 cursor-pointer">
-                    <td className="py-3 px-4 font-medium text-brand-600 hover:underline">{inv.invoice_number || `#${inv.id}`}</td>
-                    <td className="py-3 px-4 whitespace-nowrap">{formatDisplayDate(inv.issue_date)}</td>
-                    <td className="py-3 px-4 whitespace-nowrap">{formatDisplayDate(inv.due_date)}</td>
-                    <td className="py-3 px-4 text-right font-medium">{formatDisplayCurrency(inv.total_amount, inv.currency)}</td>
-                    <td className="py-3 px-4 text-right text-emerald-700">{formatDisplayCurrency(inv.paid_amount, inv.currency)}</td>
-                    <td className="py-3 px-4 text-right text-amber-600 font-medium">{formatDisplayCurrency(inv.balance_due, inv.currency)}</td>
-                    <td className="py-3 px-4">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+          <DataTable
+            stickyHeader={false}
+            data={invoices}
+            rowKey={(inv) => inv.id}
+            onRowClick={(inv) => navigate(`/billing/invoices/${inv.id}`)}
+            columns={[
+              { key: "invoice", label: "Invoice", render: (inv) => <span className="font-medium text-brand-600 hover:underline">{inv.invoice_number || `#${inv.id}`}</span> },
+              { key: "issue_date", label: "Issue Date", render: (inv) => <span className="whitespace-nowrap">{formatDisplayDate(inv.issue_date)}</span> },
+              { key: "due_date", label: "Due Date", render: (inv) => <span className="whitespace-nowrap">{formatDisplayDate(inv.due_date)}</span> },
+              { key: "amount", label: "Amount", align: "right", render: (inv) => <span className="font-medium">{formatDisplayCurrency(inv.total_amount, inv.currency)}</span> },
+              { key: "paid", label: "Paid", align: "right", render: (inv) => <span className="text-emerald-700">{formatDisplayCurrency(inv.paid_amount, inv.currency)}</span> },
+              { key: "balance", label: "Balance", align: "right", render: (inv) => <span className="text-amber-600 font-medium">{formatDisplayCurrency(inv.balance_due, inv.currency)}</span> },
+              { key: "status", label: "Status", render: (inv) => <><span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
                         inv.status === "paid" ? "bg-emerald-100 text-emerald-700" :
                         inv.status === "overdue" ? "bg-red-100 text-red-700" :
                         inv.status === "partially_paid" ? "bg-amber-100 text-amber-700" :
                         inv.status === "sent" ? "bg-blue-100 text-blue-700" :
                         "bg-slate-100 text-slate-600"
-                      }`}>{inv.status?.replace(/_/g, " ")}</span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                      }`}>{inv.status?.replace(/_/g, " ")}</span></> },
+            ]}
+          />
         )}
       </div>
     </div>
