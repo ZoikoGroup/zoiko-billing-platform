@@ -842,7 +842,7 @@ export function DashboardStatCardSkeleton() {
 
 export function DashboardChartCardSkeleton() {
   return (
-    <div className="bg-white border border-slate-200 rounded-3xl p-6 animate-pulse h-full" aria-hidden="true">
+    <div className="bg-white border border-slate-200 rounded-3xl p-4 sm:p-6 animate-pulse h-full" aria-hidden="true">
       <div className="h-5 bg-slate-200 rounded w-40 mb-6" />
       <div className="h-64 bg-slate-100 rounded-lg" />
     </div>
@@ -868,9 +868,11 @@ export class DashboardChartErrorBoundary extends Component {
 
 export function DashboardChartCard({ title, children, className = "", action }) {
   return (
-    <div className={`bg-white border border-slate-200 rounded-3xl p-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)] h-full flex flex-col min-w-0 ${className}`}>
-      <div className="flex items-center justify-between mb-6 gap-3">
-        <h2 className="text-lg font-bold text-slate-800 truncate">{title}</h2>
+    <div className={`bg-white border border-slate-200 rounded-3xl p-4 sm:p-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)] h-full flex flex-col min-w-0 ${className}`}>
+      {/* Wraps so a header action (e.g. a period toggle) drops under the
+          title on phones instead of pushing past the card. */}
+      <div className="flex flex-wrap items-center justify-between mb-6 gap-3">
+        <h2 className="min-w-0 text-lg font-bold text-slate-800 truncate">{title}</h2>
         {action}
       </div>
       <div className="flex-1 min-w-0 min-h-0">{children}</div>
