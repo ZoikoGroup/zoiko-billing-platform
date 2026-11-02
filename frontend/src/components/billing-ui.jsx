@@ -154,10 +154,11 @@ export function Button({
  * OverflowMenu — "⋯" button + menu of secondary actions
  * ------------------------------------------------------------------ */
 
-// items: [{ key?, label, icon?, onClick, disabled?, danger? }]. Esc and an
+// items: [{ key?, label, icon?, onClick, disabled?, danger? }]. direction="up"
+// opens the menu above the trigger (for bars pinned to the bottom). Esc and an
 // outside tap close it; arrow keys move between items; focus returns to the
 // trigger on Esc. Used by PageHeader on phones and available to pages.
-export function OverflowMenu({ items = [], label = "More actions", align = "right", className = "" }) {
+export function OverflowMenu({ items = [], label = "More actions", align = "right", direction = "down", className = "" }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
   const buttonRef = useRef(null);
@@ -216,7 +217,7 @@ export function OverflowMenu({ items = [], label = "More actions", align = "righ
           role="menu"
           aria-label={label}
           onKeyDown={onMenuKeyDown}
-          className={`absolute ${align === "left" ? "left-0" : "right-0"} z-50 mt-2 w-56 max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl`}
+          className={`absolute ${align === "left" ? "left-0" : "right-0"} ${direction === "up" ? "bottom-full mb-2" : "mt-2"} z-50 w-56 max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl`}
         >
           {items.map((item) => {
             const ItemIcon = item.icon;
