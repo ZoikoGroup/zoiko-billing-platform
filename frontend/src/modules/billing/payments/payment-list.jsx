@@ -10,6 +10,7 @@ import { ErrorState, PageSkeleton, SuccessMessage, DashboardHeader, DashboardSta
 import { useBillingDateRange } from "../utils/DateRangeContext";
 import ActiveUrlFilterChips from "../utils/ActiveUrlFilterChips";
 import { Button, Modal, Stepper } from "../../../components/billing-ui";
+import useMediaQuery, { BELOW_SM } from "../../../hooks/useMediaQuery";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -101,6 +102,7 @@ export default function PaymentListPage() {
 
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [selectAll, setSelectAll] = useState(false);
+  const isPhone = useMediaQuery(BELOW_SM);
   const [bulkLoading, setBulkLoading] = useState(false);
   const { confirm, ConfirmationDialog } = useConfirmationDialog();
 
@@ -643,6 +645,79 @@ export default function PaymentListPage() {
             )}
           </div>
 
+          {/* Phones: one card per payment instead of an 8-column table swiped
+              sideways. Same selection, open and sort handlers. */}
+          {isPhone ? (
+            <div>
+              <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-2">
+                <label className="flex min-h-11 items-center gap-2 text-sm text-slate-600">
+                  <input type="checkbox" checked={selectAll} onChange={handleSelectAll} aria-label="Select all payments"
+                    className="h-5 w-5 rounded border-slate-300 text-brand-600 focus:ring-brand/30" />
+                  Select all
+                </label>
+                <label className="flex items-center gap-2 text-sm text-slate-500">
+                  <span>Sort</span>
+                  <select
+                    value={`${sortField}:${sortDir}`}
+                    onChange={(e) => { const [field, dir] = e.target.value.split(":"); setSortField(field); setSortDir(dir); setCurrentPage(1); }}
+                    className="min-h-11 rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-700"
+                    aria-label="Sort by"
+                  >
+                    {![["payment_date", "desc"], ["payment_date", "asc"], ["amount", "desc"], ["amount", "asc"], ["customer", "asc"], ["customer", "desc"]].some(([f, d]) => f === sortField && d === sortDir) && (
+                      <option value={`${sortField}:${sortDir}`}>Default</option>
+                    )}
+                    <option value="payment_date:desc">Newest first</option>
+                    <option value="payment_date:asc">Oldest first</option>
+                    <option value="amount:desc">Amount high–low</option>
+                    <option value="amount:asc">Amount low–high</option>
+                    <option value="customer:asc">Customer A–Z</option>
+                    <option value="customer:desc">Customer Z–A</option>
+                  </select>
+                </label>
+              </div>
+              {payments.length === 0 ? (
+                <div className="px-4 py-16 text-center">
+                  <div className="flex flex-col items-center">
+                    <CreditCard size={40} className="text-slate-300 mb-3" />
+                    <p className="text-slate-500 font-medium">No payments found</p>
+                    <p className="text-slate-500 text-sm mt-1">{search || statusFilter ? "Try adjusting your search or filters" : "Record your first payment to get started"}</p>
+                  </div>
+                </div>
+              ) : (
+                <ul className="divide-y divide-slate-100">
+                  {payments.map((pmt) => (
+                    <li key={pmt.id} className="px-4 py-3">
+                      <div className="flex items-start gap-3">
+                        <input type="checkbox" checked={selectedIds.has(pmt.id)} onChange={() => handleSelectOne(pmt.id)} aria-label={`Select payment ${pmt.payment_number || pmt.id}`}
+                          className="mt-3 h-5 w-5 shrink-0 rounded border-slate-300 text-brand-600 focus:ring-brand/30" />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start justify-between gap-2">
+                            <button onClick={() => navigate(`/billing/payments/${pmt.id}`)} className="flex min-h-11 min-w-0 items-center gap-2 text-left font-medium text-slate-800 hover:text-brand-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 rounded">
+                              <Receipt size={14} className="shrink-0 text-slate-500" />
+                              <span className="truncate">{pmt.payment_number || `#${pmt.id}`}</span>
+                            </button>
+                            <div className="shrink-0 pt-2.5"><StatusBadge status={pmt.status} /></div>
+                          </div>
+                          <p className="truncate text-sm text-slate-600">{pmt.customer_name || pmt.customer?.name || `Customer #${pmt.customer_id}`}</p>
+                          <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                            <div><dt className="text-slate-500">Amount</dt><dd className="font-medium text-slate-800 text-sm">{formatDisplayCurrency(pmt.amount, pmt.currency)}</dd></div>
+                            <div><dt className="text-slate-500">Date</dt><dd className="text-slate-600">{formatDisplayDate(pmt.payment_date)}</dd></div>
+                            <div className="col-span-2"><dt className="text-slate-500">Method</dt><dd className="capitalize text-slate-600">{pmt.payment_type?.replace(/_/g, " ") || pmt.payment_method || "—"}</dd></div>
+                          </dl>
+                          <div className="mt-1 flex justify-end">
+                            <button onClick={() => navigate(`/billing/payments/${pmt.id}`)}
+                              className="inline-flex h-11 w-11 items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500 hover:text-brand-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30" title="View" aria-label={`View payment ${pmt.payment_number || pmt.id}`}>
+                              <Eye size={16} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -701,6 +776,7 @@ export default function PaymentListPage() {
               </tbody>
             </table>
           </div>
+          )}
 
           <Pagination page={safePage} totalPages={totalPages} onPageChange={setCurrentPage}>
             {total} total payment(s)

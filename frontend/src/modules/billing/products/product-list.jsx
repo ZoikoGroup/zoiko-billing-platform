@@ -11,6 +11,7 @@ import { formatDisplayDate, formatDisplayCurrency } from "../../../utils/billing
 import { getCurrencySelectOptions } from "../../../utils/currency";
 import { useCurrency } from "../utils/CurrencyContext";
 import useLatestRequest from "../utils/useLatestRequest";
+import useMediaQuery, { BELOW_SM } from "../../../hooks/useMediaQuery";
 import ImportWizardModal from "./import-wizard";
 import { useConfirmationDialog, PageSkeleton, SuccessMessage, ErrorState, Pagination, StatusBadge } from "../../../components/billing-shared";
 
@@ -90,6 +91,7 @@ export default function ProductListPage() {
 
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [selectAll, setSelectAll] = useState(false);
+  const isPhone = useMediaQuery(BELOW_SM);
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -782,6 +784,49 @@ export default function ProductListPage() {
     );
   }
 
+  // Empty list (shared by the table and the phone cards).
+  const productsEmptyState = (
+    <div className="flex flex-col items-center justify-center py-20 gap-5">
+      <div className="relative">
+        <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-brand-100 to-brand-100 flex items-center justify-center shadow-inner">
+          <Package size={40} className="text-brand-300" />
+        </div>
+        <div className="absolute -top-2 -right-2 w-8 h-8 rounded-full bg-amber-400 flex items-center justify-center shadow">
+          <Sparkles size={14} className="text-white" />
+        </div>
+      </div>
+      <div className="text-center">
+        <h3 className="text-lg font-bold text-slate-800 mb-1">
+          {search || statusFilter || typeFilter || categoryFilter || currencyFilter ? "No products match your filters" : "No products or services yet"}
+        </h3>
+        <p className="text-sm text-slate-500 max-w-sm">
+          {search || statusFilter || typeFilter || categoryFilter || currencyFilter
+            ? "Try adjusting your search or filter criteria."
+            : "Add your first product or service to start creating invoices, quotations, and subscriptions."}
+        </p>
+      </div>
+      {hasActiveFilters && (
+        <button onClick={clearAllFilters} className="px-4 py-2 text-sm font-medium text-brand-600 hover:text-brand-700">Clear filters</button>
+      )}
+      {!search && !statusFilter && !typeFilter && !categoryFilter && !currencyFilter && (
+        <div className="flex gap-3">
+          <button
+            onClick={openCreateModal}
+            className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-semibold hover:shadow-lg hover:shadow-brand-200 transition-all"
+          >
+            <Plus size={16} /> Add Product / Service
+          </button>
+          <button
+            onClick={() => setShowImportModal(true)}
+            className="flex items-center gap-2 px-5 py-2.5 border-2 border-brand-200 text-brand-700 rounded-xl text-sm font-semibold hover:bg-brand-50 transition-colors"
+          >
+            <Upload size={16} /> Import Catalog
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <HRPage title="Products" subtitle="Manage your products">
       <nav className="mb-5 flex items-center gap-1.5 text-xs text-slate-500" aria-label="Breadcrumb">
@@ -996,6 +1041,122 @@ export default function ProductListPage() {
           </div>
         )}
 
+        {/* Phones: one card per product instead of a 10-column table swiped
+            sideways. Same selection, open, edit, duplicate, delete and restore
+            handlers; archived products don't open (as in the table). */}
+        {isPhone ? (
+          <div>
+            <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-2">
+              <label className="flex min-h-11 items-center gap-2 text-sm text-slate-600">
+                <input type="checkbox" checked={selectAll}
+                  onChange={(e) => handleSelectAll(e.target.checked)}
+                  aria-label="Select all products"
+                  className="h-5 w-5 rounded border-slate-300 text-brand-600 focus:ring-brand/30" />
+                Select all
+              </label>
+              <label className="flex items-center gap-2 text-sm text-slate-500">
+                <span>Sort</span>
+                <select
+                  value={`${sortField}:${sortDir}`}
+                  onChange={(e) => { const [field, dir] = e.target.value.split(":"); setSortField(field); setSortDir(dir); setCurrentPage(1); }}
+                  className="min-h-11 rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-700"
+                  aria-label="Sort by"
+                >
+                  {![["name", "asc"], ["name", "desc"], ["default_price", "asc"], ["default_price", "desc"], ["created_at", "desc"], ["created_at", "asc"]].some(([f, d]) => f === sortField && d === sortDir) && (
+                    <option value={`${sortField}:${sortDir}`}>Default</option>
+                  )}
+                  <option value="name:asc">Name A–Z</option>
+                  <option value="name:desc">Name Z–A</option>
+                  <option value="default_price:asc">Price low–high</option>
+                  <option value="default_price:desc">Price high–low</option>
+                  <option value="created_at:desc">Newest first</option>
+                  <option value="created_at:asc">Oldest first</option>
+                </select>
+              </label>
+            </div>
+            {products.length === 0 ? (
+              <div className="px-4">{productsEmptyState}</div>
+            ) : (
+              <ul className="divide-y divide-slate-100">
+                {products.map((product) => (
+                  <li key={product.id} className={`px-4 py-3 ${selectedIds.has(product.id) ? "bg-brand-50/50" : ""}`}>
+                    <div className="flex items-start gap-3">
+                      <input type="checkbox" checked={selectedIds.has(product.id)}
+                        onChange={() => handleSelectOne(product.id)}
+                        aria-label={`Select ${product.name || "product"}`}
+                        className="mt-3 h-5 w-5 shrink-0 rounded border-slate-300 text-brand-600 focus:ring-brand/30" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <button
+                            type="button"
+                            onClick={() => { if (product.status !== "archived") navigate(`/billing/products/${product.id}`); }}
+                            disabled={product.status === "archived"}
+                            className="flex min-h-11 min-w-0 items-center gap-3 text-left disabled:cursor-default"
+                          >
+                            {visibleColumns.has("image") && product.image_url ? (
+                              <img src={product.image_url} alt={product.name ? `${product.name} thumbnail` : "Product thumbnail"}
+                                onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = IMAGE_FALLBACK_SRC; }}
+                                className="h-10 w-10 shrink-0 rounded-lg object-cover border" />
+                            ) : (
+                              <div className="h-9 w-9 shrink-0 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 text-white flex items-center justify-center text-sm font-bold">
+                                {(product.name || "?").charAt(0).toUpperCase()}
+                              </div>
+                            )}
+                            <div className="min-w-0">
+                              <p className="truncate font-medium text-slate-800">{product.name || "Unnamed"}</p>
+                              {product.description && <p className="text-xs text-slate-500 line-clamp-1">{product.description}</p>}
+                            </div>
+                          </button>
+                          {visibleColumns.has("status") && <div className="shrink-0 pt-2.5"><StatusBadge status={product.status} options={PRODUCT_STATUS_BADGE_OPTIONS} /></div>}
+                        </div>
+                        <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                          {visibleColumns.has("default_price") && (
+                            <div><dt className="text-slate-500">Price</dt><dd className="font-medium text-slate-800 text-sm">{formatDisplayCurrency(product.default_price || 0, product.currency || baseCurrency)}</dd></div>
+                          )}
+                          {visibleColumns.has("code") && (
+                            <div className="min-w-0"><dt className="text-slate-500">Code</dt><dd className="truncate font-mono text-slate-600">{product.code || "—"}</dd></div>
+                          )}
+                          {visibleColumns.has("product_type") && (
+                            <div><dt className="text-slate-500">Type</dt><dd className="capitalize text-slate-600">{product.product_type ? product.product_type.replace("_", " ") : "—"}</dd></div>
+                          )}
+                          {visibleColumns.has("product_type") && (
+                            <div><dt className="text-slate-500">Pricing Model</dt><dd><span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium capitalize ${pricingModelFor(product).cls}`}>{pricingModelFor(product).label}</span></dd></div>
+                          )}
+                          {visibleColumns.has("created_at") && (
+                            <div><dt className="text-slate-500">Created</dt><dd className="text-slate-600">{formatDisplayDate(product.created_at)}</dd></div>
+                          )}
+                        </dl>
+                        <div className="mt-1 flex justify-end gap-1">
+                          {product.status === "archived" ? (
+                            <button onClick={() => handleRestoreProduct(product.id)} aria-label={`Restore ${product.name || "product"}`}
+                              className="inline-flex h-11 w-11 items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500 hover:text-blue-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500" title="Restore">
+                              <RotateCcw size={16} />
+                            </button>
+                          ) : (
+                            <>
+                              <button onClick={() => openEditModal(product)} aria-label={`Edit ${product.name || "product"}`}
+                                className="inline-flex h-11 w-11 items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500 hover:text-blue-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500" title="Edit">
+                                <Pencil size={16} />
+                              </button>
+                              <button onClick={() => handleDuplicateProduct(product.id)} disabled={duplicatingId === product.id} aria-label={`Duplicate ${product.name || "product"}`}
+                                className="inline-flex h-11 w-11 items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500 hover:text-brand-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 disabled:opacity-50 disabled:cursor-not-allowed" title="Duplicate">
+                                {duplicatingId === product.id ? <Loader2 size={16} className="animate-spin" /> : <Copy size={16} />}
+                              </button>
+                              <button onClick={() => handleDeleteProduct(product.id, product.name)} aria-label={`Delete ${product.name || "product"}`}
+                                className="inline-flex h-11 w-11 items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500 hover:text-red-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500" title="Delete">
+                                <Trash2 size={16} />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -1027,45 +1188,7 @@ export default function ProductListPage() {
               {products.length === 0 ? (
                 <tr>
                   <td colSpan={visibleColumns.size + 2 + (visibleColumns.has("product_type") ? 1 : 0)} className="px-4 py-0">
-                    <div className="flex flex-col items-center justify-center py-20 gap-5">
-                      <div className="relative">
-                        <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-brand-100 to-brand-100 flex items-center justify-center shadow-inner">
-                          <Package size={40} className="text-brand-300" />
-                        </div>
-                        <div className="absolute -top-2 -right-2 w-8 h-8 rounded-full bg-amber-400 flex items-center justify-center shadow">
-                          <Sparkles size={14} className="text-white" />
-                        </div>
-                      </div>
-                      <div className="text-center">
-                        <h3 className="text-lg font-bold text-slate-800 mb-1">
-                          {search || statusFilter || typeFilter || categoryFilter || currencyFilter ? "No products match your filters" : "No products or services yet"}
-                        </h3>
-                        <p className="text-sm text-slate-500 max-w-sm">
-                          {search || statusFilter || typeFilter || categoryFilter || currencyFilter
-                            ? "Try adjusting your search or filter criteria."
-                            : "Add your first product or service to start creating invoices, quotations, and subscriptions."}
-                        </p>
-                      </div>
-                      {hasActiveFilters && (
-                        <button onClick={clearAllFilters} className="px-4 py-2 text-sm font-medium text-brand-600 hover:text-brand-700">Clear filters</button>
-                      )}
-                      {!search && !statusFilter && !typeFilter && !categoryFilter && !currencyFilter && (
-                        <div className="flex gap-3">
-                          <button
-                            onClick={openCreateModal}
-                            className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-semibold hover:shadow-lg hover:shadow-brand-200 transition-all"
-                          >
-                            <Plus size={16} /> Add Product / Service
-                          </button>
-                          <button
-                            onClick={() => setShowImportModal(true)}
-                            className="flex items-center gap-2 px-5 py-2.5 border-2 border-brand-200 text-brand-700 rounded-xl text-sm font-semibold hover:bg-brand-50 transition-colors"
-                          >
-                            <Upload size={16} /> Import Catalog
-                          </button>
-                        </div>
-                      )}
-                    </div>
+                    {productsEmptyState}
                   </td>
                 </tr>
               ) : products.map((product) => (
@@ -1158,6 +1281,7 @@ export default function ProductListPage() {
             </tbody>
           </table>
         </div>
+        )}
 
         <Pagination page={safePage} totalPages={totalPages} onPageChange={setCurrentPage}>
           {total} total product(s)
