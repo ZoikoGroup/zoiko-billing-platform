@@ -623,6 +623,7 @@ Bugs found during the mobile work that are probably live today. Each is its own 
 | `ad46c0c` | "Not now" could close the Zoiko plan-change dialog while a plan change / payment was being submitted (Esc and × were already blocked) | Billing workspace → Zoiko subscription → change plan | `PlanChangePanel.test.jsx` (1 fails without the fix) |
 
 | `4a981c1` | Invoice create wizard lost recent edits when leaving: the 600ms debounced draft save was cancelled on unmount, so leaving right after adding a line item stored step 1 with no items and "Resume draft" came back without them | `/billing/invoices/create` (back arrow, breadcrumb or sidebar right after an edit) | `create-invoice-wizard.autosave.test.jsx` (new file; 1 fails without the fix) — new test file, so it stays on `nikhil-new`. Shipped as `694d82a` (PR #111) |
+| `4ff7e4e` | Contract and quotation create wizards could create the same record two or three times: the last step's "Save as Draft" / "Save & …" cards called submit with no busy guard (only the footer buttons were disabled while saving) | `/billing/contracts/create`, `/billing/quotations/create` (tap a card again before the save returns) | Added to `contract-create.b3.test.jsx` / `quotation-create.b3.test.jsx` (existing on main): 3 records without the fix, 1 with it. On `nikhil-mobile` as `703dbad` for its own PR |
 
 **On `nikhil-mobile` (the push branch, production files only):** the fixes are its first four commits, each applied to the original (pre-mobile) code so they can be picked on their own: `145b656` (= `3be74fd` + `ec0f743`), `d330f56` (= `ebb4b5c`), `8dd90f8` (= `0ea3a30`), `679cd78` (= `ad46c0c`; on the original dialog the × button is disabled while submitting too). Their tests stay on `nikhil-new` except the plan-change test, which lives in an existing test file. On the original code the two wizards still don't close on Esc (their original overlays never handled Esc); the mobile dialog commit adds it.
 
@@ -679,7 +680,7 @@ Created from `origin/main` (`7d96cc8`) with production files only; last updated 
 | Register (public) | `/register` | 673 | **Done** `2573934` (not yet in production) |
 | Draft invoice action bar | `/billing/invoices/:id` | 1,070 | **Done** `deb9cf9` (not yet in production) |
 
-Remaining related screens: customer-profile inline edits (B5), settings pages (B3 step 3, needs approval).
+Remaining related screens: customer-profile inline edits (B5). Settings pages: done (below).
 
 ### Invoice create wizard
 
@@ -719,9 +720,29 @@ Measured with the same scripts before and after (`D:\zoiko-local	ools\*-shots.mj
 
 **Desktop differences:** the four wizards / edit page use the shared `PageHeader` (breadcrumbs, icon, step) and `Stepper` (brand-coloured completed steps instead of green pills) instead of their own headers; step actions are a pinned footer bar with a Cancel button; contract edit no longer adds its own padding inside the shell's. Register and the draft invoice bar are unchanged on desktop.
 
-**Pre-existing, reported, not changed:** contract and quotation wizards' last-step "Save as Draft" / "Save & …" cards submit with no loading guard (a second tap can create a duplicate; the footer buttons are guarded); contract wizard shows "Contract Discount (undefined%)" on the pricing and preview steps (contract-level discount isn't in the form state).
+**Pre-existing, reported:** contract and quotation wizards' last-step cards could create duplicates — **fixed (approved) in `4ff7e4e`**, see the bug-fix table; contract wizard shows "Contract Discount (undefined%)" on the pricing and preview steps (contract-level discount isn't in the form state).
 
 Screenshots `shots/phase3/stepB3-{contract-wizard,quotation-create,contract-edit,subscription-wizard,register,draft-invoice}/{before,after}/`; `after-r2` (contract wizard, quotation, contract edit) = after the sticky-bar fix; `draft-invoice/after-menu/` = the phone menu open.
+
+### B3 step 3 — settings pages (approved: one pinned save bar per page, all widths)
+
+Every settings form saves the whole page in one request, so the brief's "save bar per section" became one pinned bar per page (no API change). Shared: `SettingsPageShell` (shared `PageHeader`, no second padded layer) and `SettingsSaveBar` (the page's own Refresh / Discard / Save buttons moved verbatim, "Unsaved changes" / "Saved" / "No changes" status, actions wrap, 44px on phones). Every page also gets the unsaved-changes guard (`hasChanges` it already had).
+
+| Page | Save scrolled to the bottom, before (360 / 1280) | After | Commit |
+|---|---|---|---|
+| Billing Configuration (9 tabs) | 3,002px / 1,570px above the screen | Pinned; phones: Save + "⋯" (Validate, Reset with its two-tap confirm); 44px tabs | `9c43c23` |
+| Customer, pricing, quotation, contract, subscription, invoice, payment, tax settings; tax configuration | 199–4,228px above the screen (360); 549–2,134px (1280) | Pinned with status, 44px on phones | `8b78a58` |
+| Product settings | Already pinned (own bar) | 96px right padding for the old floating launcher removed; 44px buttons | `8b78a58` |
+| Organization profile edit dialog | Already a pinned-footer dialog (46px buttons) | **Wrapped**: close 32 → 44px on phones, `90dvh` | `e6c24bc` |
+| Stripe Connect, Workspace Organization, Governance Configuration | No form | — | — |
+
+Measured with `settings-shots.mjs` (before = the pre-change files restored in the working tree, then HEAD restored): 33 / 33 page-width checks have Save visible at the top and the bottom after (Save off-screen at the bottom on 9 of 11 pages at every width before). No horizontal overflow. Parity: 5 intended items per standard page (subtitle → header description ×3, "Saved" badge → bar status); Billing Configuration 3 (header actions moved, tab class, phone/desktop Save branches); product settings: bar class. Tests: existing settings tests pass; two layout tests updated (tax configuration actions now in the bar; product settings gutter instead of `pr-24`); new `settings.savebar.b3.test.jsx` (3).
+
+**Desktop difference:** Save / Refresh moved from the top of each page to a bar pinned at the bottom (with the status); the page header is the shared one (breadcrumbs, icon) instead of `HRPage`'s plain header.
+
+**Follow-up (pre-existing, logged):** Refresh asks before discarding unsaved edits on customer / pricing / quotation settings but discards them silently on contract / subscription / payment / tax settings.
+
+Screenshots `shots/phase3/stepB3-settings/{inventory-r2,before,after,after-dirty,org-edit-before,org-edit-after}/`.
 
 ## 9. Local environment safety notes
 
