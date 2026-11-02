@@ -283,7 +283,7 @@ export default function PaymentDetailPage() {
 
       <div className="bg-white rounded-3xl border border-slate-200 p-6">
         <h3 className="text-sm font-semibold text-slate-900 mb-4">Payment Information</h3>
-        <div className="grid grid-cols-2 gap-x-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8">
           <InfoRow label="Payment Number" value={payment.payment_number || `#${payment.id}`} />
           <InfoRow label="Transaction ID" value={payment.transaction_id || payment.gateway_transaction_id} />
           <InfoRow label="Customer" value={
@@ -399,7 +399,7 @@ export default function PaymentDetailPage() {
               <FileText className="h-4 w-4" /> View Full Invoice
             </button>
           </div>
-          <div className="grid grid-cols-2 gap-x-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8">
             <InfoRow label="Invoice Number" value={inv.invoice_number} />
             <InfoRow label="Total Amount" value={formatDisplayCurrency(inv.total_amount || inv.amount, inv.currency)} />
             <InfoRow label="Paid Amount" value={formatDisplayCurrency(inv.paid_amount, inv.currency)} />
@@ -437,7 +437,7 @@ export default function PaymentDetailPage() {
               {customer.customer_code && <p className="text-sm text-slate-500">{customer.customer_code}</p>}
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-x-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8">
             <InfoRow label="Email" value={customer.email} />
             <InfoRow label="Phone" value={customer.phone} />
             <InfoRow label="Mobile" value={customer.mobile} />
