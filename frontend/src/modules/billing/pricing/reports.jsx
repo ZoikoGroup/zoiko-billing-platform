@@ -8,6 +8,7 @@ import { extractArray, formatDisplayCurrency } from "../../../utils/billing-help
 import { DashboardHeader, useDateRange, DashboardEmptyPanel } from "../../../components/billing-shared";
 import { filterByDateRange, downloadExcel, downloadCSV, downloadJSON } from "../../../utils/export-helpers";
 import { useCurrency } from "../utils/CurrencyContext";
+import { DataTable } from "../../../components/billing-ui";
 
 const COLORS = ["var(--color-accent-invoicing)", "#FF9B4D", "#FFC9A6", "#f59e0b", "#10b981", "#ef4444", "#3b82f6", "#ec4899", "#14b8a6", "#f97316"];
 
@@ -256,34 +257,21 @@ export default function PricingReportsPage() {
             </ReportSection>
 
             <ReportSection title="Pricing Plans Overview" icon={Tag}>
-              <div className="overflow-x-auto -mx-2 px-2">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-100">
-                      <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Name</th>
-                      <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
-                      <th scope="col" className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Price</th>
-                      <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Frequency</th>
-                      <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Product</th>
-                      <th scope="col" className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Tiers</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50">
-                    {fPlans.length === 0 ? (
-                      <tr><td colSpan={6} className="px-4 py-12 text-center text-slate-500">No plans found</td></tr>
-                    ) : fPlans.slice(0, 20).map((p) => (
-                      <tr key={p.id} className="hover:bg-slate-50">
-                        <td className="px-4 py-3 font-medium text-slate-800">{p.name}</td>
-                        <td className="px-4 py-3">{(() => { const active = p.is_active ?? p.status === "active"; return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${active ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>{active ? "active" : "inactive"}</span>; })()}</td>
-                        <td className="px-4 py-3 text-right font-medium whitespace-nowrap">{formatDisplayCurrency(p.unit_price ?? p.price, p.currency || baseCurrency)}</td>
-                        <td className="px-4 py-3 text-slate-600 capitalize">{(p.billing_period || p.billing_frequency)?.replace(/_/g, " ") || "—"}</td>
-                        <td className="px-4 py-3 text-slate-600">{p.product_name || p.product?.name || "—"}</td>
-                        <td className="px-4 py-3 text-right text-slate-600">{(planTiers[p.id] || []).length}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <DataTable
+                stickyHeader={false}
+                data={fPlans.slice(0, 20)}
+                rowKey={(p) => p.id}
+                emptyTitle="No plans found"
+                emptyMessage=""
+                columns={[
+                  { key: "name", label: "Name", render: (p) => <span className="font-medium text-slate-800">{p.name}</span> },
+                  { key: "status", label: "Status", render: (p) => (() => { const active = p.is_active ?? p.status === "active"; return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${active ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>{active ? "active" : "inactive"}</span>; })() },
+                  { key: "price", label: "Price", align: "right", render: (p) => <span className="font-medium whitespace-nowrap">{formatDisplayCurrency(p.unit_price ?? p.price, p.currency || baseCurrency)}</span> },
+                  { key: "frequency", label: "Frequency", render: (p) => <span className="text-slate-600 capitalize">{(p.billing_period || p.billing_frequency)?.replace(/_/g, " ") || "—"}</span> },
+                  { key: "product", label: "Product", render: (p) => <span className="text-slate-600">{p.product_name || p.product?.name || "—"}</span> },
+                  { key: "tiers", label: "Tiers", align: "right", render: (p) => <span className="text-slate-600">{(planTiers[p.id] || []).length}</span> },
+                ]}
+              />
             </ReportSection>
           </div>
         );
