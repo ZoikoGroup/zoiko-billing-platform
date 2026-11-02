@@ -820,8 +820,31 @@ export default function InvoiceDetailPage() {
 
         {/* ── LINE ITEMS ── */}
         {items.length > 0 && (
-          <div className="bg-white rounded-3xl border border-slate-200 p-6">
+          <div className="bg-white rounded-3xl border border-slate-200 p-4 sm:p-6">
             <h3 className="text-lg font-semibold text-slate-900 mb-4">Line Items</h3>
+            {/* Phones: one card per line instead of a 7-column table swiped
+                sideways. Same values and formatting as the table. */}
+            {isPhone ? (
+              <ul className="divide-y divide-slate-100">
+                {items.map((item, i) => (
+                  <li key={item.id || i} className="py-3 text-sm text-slate-900">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-medium wrap-break-word"><span className="text-slate-500">{i + 1}.</span> {item.description || item.name || "Item"}</p>
+                        {item.product_id && <p className="text-xs text-slate-500">Product #{item.product_id}</p>}
+                      </div>
+                      <p className="shrink-0 text-right font-medium">{formatDisplayCurrency(item.total ?? item.total_price ?? item.quantity * item.unit_price, "—", item.invoice_currency || currency)}</p>
+                    </div>
+                    <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                      <div><dt className="text-slate-500">Qty</dt><dd>{Number(item.quantity).toFixed(2)}</dd></div>
+                      <div><dt className="text-slate-500">Unit Price</dt><dd>{formatDisplayCurrency(item.unit_price, "—", item.invoice_currency || currency)}</dd></div>
+                      <div><dt className="text-slate-500">Disc %</dt><dd>{item.discount_percentage ? `${Number(item.discount_percentage).toFixed(1)}%` : "—"}</dd></div>
+                      <div><dt className="text-slate-500">Tax %</dt><dd>{item.tax_percentage ? `${Number(item.tax_percentage).toFixed(1)}%` : "—"}</dd></div>
+                    </dl>
+                  </li>
+                ))}
+              </ul>
+            ) : (
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-slate-200">
                 <thead>
@@ -853,12 +876,13 @@ export default function InvoiceDetailPage() {
                 </tbody>
               </table>
             </div>
+            )}
             {items.some(i => i.original_currency && i.invoice_currency && i.original_currency !== i.invoice_currency) && (
               <div className="mt-4 p-3 bg-amber-50 rounded-xl border border-amber-100">
                 <p className="text-xs font-semibold text-amber-700 uppercase tracking-wider mb-2">Currency Conversion Details</p>
                 <div className="space-y-1.5 text-xs text-amber-800">
                   {items.filter(i => i.original_currency && i.invoice_currency && i.original_currency !== i.invoice_currency).map((item, idx) => (
-                    <div key={idx} className="flex items-center gap-2">
+                    <div key={idx} className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                       <span className="font-medium">{item.description || `Item ${idx + 1}`}:</span>
                       <span>{item.original_currency} {formatDisplayCurrency(item.original_amount || item.unit_price, "\u2014", item.original_currency)}</span>
                       <span>× {Number(item.exchange_rate || 1).toFixed(6)}</span>
