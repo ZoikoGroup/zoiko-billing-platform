@@ -18,6 +18,7 @@ import { filterByDateRange, downloadExcel, downloadJSON, downloadCSV } from "../
 import { useCurrency } from "../utils/CurrencyContext";
 import { useTerminology } from "../utils/TerminologyContext";
 import { sumInBaseCurrency, convertToBaseCurrency } from "../../../utils/currency-conversion";
+import { DataTable } from "../../../components/billing-ui";
 
 const TABS = [
   { key: "overview", label: "Overview", icon: Receipt },
@@ -394,41 +395,30 @@ export default function InvoiceReportsPage() {
               </div>
               <div className="bg-white rounded-3xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-6">
                 <h3 className="text-sm font-semibold text-slate-900 mb-4">Invoice List by Status</h3>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-100">
-                        <th scope="col" className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Invoice</th>
-                        <th scope="col" className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Status</th>
-                        <th scope="col" className="text-right py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Amount</th>
-                        <th scope="col" className="text-right py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Balance</th>
-                        <th scope="col" className="text-right py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Due Date</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {fInvoices.slice(0, 20).map((inv) => (
-                        <tr key={inv.id} onClick={() => navigate(`/billing/invoices/${inv.id}`)} className="cursor-pointer border-b border-slate-50 hover:bg-brand-50/50">
-                          <td className="py-3 px-3 font-medium text-slate-900">{inv.invoice_number || `#${inv.id}`}</td>
-                          <td className="py-3 px-3">
-                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
-                              inv.status === "paid" ? "bg-emerald-100 text-emerald-700" :
-                              inv.status === "overdue" ? "bg-red-100 text-red-700" :
-                              inv.status === "sent" ? "bg-blue-100 text-blue-700" :
-                              inv.status === "draft" ? "bg-slate-100 text-slate-600" :
-                              inv.status === "partially_paid" ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-500"
-                            }`}>
-                              {inv.status === "paid" ? <CheckCircle size={10} /> : inv.status === "overdue" ? <AlertCircle size={10} /> : <Clock size={10} />}
-                              {inv.status?.replace(/_/g, " ")}
-                            </span>
-                          </td>
-                          <td className="py-3 px-3 text-right font-medium text-slate-900">{formatCurrency(inv.total_amount || inv.total, inv.currency)}</td>
-                          <td className="py-3 px-3 text-right text-slate-600">{formatCurrency(inv.balance_due || 0, inv.currency)}</td>
-                          <td className="py-3 px-3 text-right text-slate-500 whitespace-nowrap">{inv.due_date ? new Date(inv.due_date).toLocaleDateString() : "—"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <DataTable
+                  stickyHeader={false}
+                  data={fInvoices.slice(0, 20)}
+                  rowKey={(inv) => inv.id}
+                  onRowClick={(inv) => navigate(`/billing/invoices/${inv.id}`)}
+                  columns={[
+                    { key: "invoice_number", label: "Invoice", render: (inv) => <span className="font-medium text-slate-900">{inv.invoice_number || `#${inv.id}`}</span> },
+                    { key: "status", label: "Status", render: (inv) => (
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                        inv.status === "paid" ? "bg-emerald-100 text-emerald-700" :
+                        inv.status === "overdue" ? "bg-red-100 text-red-700" :
+                        inv.status === "sent" ? "bg-blue-100 text-blue-700" :
+                        inv.status === "draft" ? "bg-slate-100 text-slate-600" :
+                        inv.status === "partially_paid" ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-500"
+                      }`}>
+                        {inv.status === "paid" ? <CheckCircle size={10} /> : inv.status === "overdue" ? <AlertCircle size={10} /> : <Clock size={10} />}
+                        {inv.status?.replace(/_/g, " ")}
+                      </span>
+                    ) },
+                    { key: "amount", label: "Amount", numeric: true, render: (inv) => <span className="font-medium text-slate-900">{formatCurrency(inv.total_amount || inv.total, inv.currency)}</span> },
+                    { key: "balance", label: "Balance", numeric: true, render: (inv) => <span className="text-slate-600">{formatCurrency(inv.balance_due || 0, inv.currency)}</span> },
+                    { key: "due_date", label: "Due Date", align: "right", render: (inv) => <span className="text-slate-500 whitespace-nowrap">{inv.due_date ? new Date(inv.due_date).toLocaleDateString() : "—"}</span> },
+                  ]}
+                />
               </div>
             </>
           )}
@@ -470,33 +460,22 @@ export default function InvoiceReportsPage() {
               </div>
               <div className="bg-white rounded-3xl border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.02)] p-6">
                 <h3 className="text-sm font-semibold text-slate-900 mb-4">Overdue Invoices</h3>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-100">
-                        <th scope="col" className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Invoice</th>
-                        <th scope="col" className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">{singular}</th>
-                        <th scope="col" className="text-right py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Amount</th>
-                        <th scope="col" className="text-right py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Due Date</th>
-                        <th scope="col" className="text-right py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Days Overdue</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {overdueInvoices.sort((a, b) => new Date(a.due_date) - new Date(b.due_date)).slice(0, 20).map((inv) => {
-                        const daysOverdue = Math.floor((new Date() - new Date(inv.due_date)) / (1000 * 60 * 60 * 24));
-                        return (
-                          <tr key={inv.id} onClick={() => navigate(`/billing/invoices/${inv.id}`)} className="cursor-pointer border-b border-slate-50 hover:bg-brand-50/50">
-                            <td className="py-3 px-3 font-medium text-slate-900">{inv.invoice_number || `#${inv.id}`}</td>
-                            <td className="py-3 px-3 text-slate-600">{inv.customer_name || `#${inv.customer_id}`}</td>
-                            <td className="py-3 px-3 text-right font-medium text-slate-900">{formatCurrency(inv.balance_due || inv.total_amount || inv.total, inv.currency)}</td>
-                            <td className="py-3 px-3 text-right text-slate-500 whitespace-nowrap">{new Date(inv.due_date).toLocaleDateString()}</td>
-                            <td className="py-3 px-3 text-right"><span className={`font-medium ${daysOverdue > 90 ? "text-red-700" : daysOverdue > 60 ? "text-red-600" : daysOverdue > 30 ? "text-amber-600" : "text-amber-500"}`}>{daysOverdue}d</span></td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                <DataTable
+                  stickyHeader={false}
+                  data={overdueInvoices.sort((a, b) => new Date(a.due_date) - new Date(b.due_date)).slice(0, 20)}
+                  rowKey={(inv) => inv.id}
+                  onRowClick={(inv) => navigate(`/billing/invoices/${inv.id}`)}
+                  columns={[
+                    { key: "invoice_number", label: "Invoice", render: (inv) => <span className="font-medium text-slate-900">{inv.invoice_number || `#${inv.id}`}</span> },
+                    { key: "customer", label: singular, render: (inv) => <span className="text-slate-600">{inv.customer_name || `#${inv.customer_id}`}</span> },
+                    { key: "amount", label: "Amount", numeric: true, render: (inv) => <span className="font-medium text-slate-900">{formatCurrency(inv.balance_due || inv.total_amount || inv.total, inv.currency)}</span> },
+                    { key: "due_date", label: "Due Date", align: "right", render: (inv) => <span className="text-slate-500 whitespace-nowrap">{new Date(inv.due_date).toLocaleDateString()}</span> },
+                    { key: "days_overdue", label: "Days Overdue", align: "right", mobileRole: "badge", render: (inv) => {
+                      const daysOverdue = Math.floor((new Date() - new Date(inv.due_date)) / (1000 * 60 * 60 * 24));
+                      return <span className={`font-medium ${daysOverdue > 90 ? "text-red-700" : daysOverdue > 60 ? "text-red-600" : daysOverdue > 30 ? "text-amber-600" : "text-amber-500"}`}>{daysOverdue}d</span>;
+                    } },
+                  ]}
+                />
               </div>
             </>
           )}
