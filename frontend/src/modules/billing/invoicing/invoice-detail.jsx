@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { ArrowLeft, FileText, RefreshCw, AlertCircle, Loader2, Send, CheckCircle, Ban, Repeat, Printer, Copy, CreditCard, Undo2, Mail, X, Receipt, Trash2, RotateCcw, Bell, ShieldAlert, Edit3 } from "lucide-react";
-import { PageHeader, Button, Modal, StickyFooter, ActivityTimeline, CommunicationHistory } from "../../../components/billing-ui";
+import { PageHeader, Button, Modal, StickyFooter, OverflowMenu, ActivityTimeline, CommunicationHistory } from "../../../components/billing-ui";
+import useMediaQuery, { BELOW_SM } from "../../../hooks/useMediaQuery";
 import { invoiceApi, auditApi, paymentApi, stripeApi } from "../../../service/billingService";
 import { isEntitlementLimitError } from "../../../service/api";
 import { SubscriptionLimitReached } from "../../../components/billing-shared";
@@ -54,6 +55,7 @@ export default function InvoiceDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [actionLoading, setActionLoading] = useState(null);
+  const isPhone = useMediaQuery(BELOW_SM);
   const [showSendModal, setShowSendModal] = useState(false);
   const [showMarkPaidModal, setShowMarkPaidModal] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
@@ -901,6 +903,30 @@ export default function InvoiceDetailPage() {
             <p className="text-lg font-bold text-slate-900">{formatDisplayCurrency(balanceDue, "\u2014", currency)}</p>
             <StatusBadge status={invoice.status} />
           </div>
+          {/* Phones: the primary action plus a "⋯" menu (Cancel invoice,
+              Recalculate), so the bar stays two rows instead of three. */}
+          {isPhone ? (
+            <div className="flex w-full items-center gap-2">
+              <OverflowMenu
+                direction="up"
+                align="left"
+                items={[
+                  { key: "cancel", label: "Cancel invoice", icon: Ban, danger: true, disabled: actionLoading === "cancel", onClick: () => setShowCancelModal(true) },
+                  { key: "recalculate", label: actionLoading === "recalculate" ? "Recalculating…" : "Recalculate", icon: Repeat, disabled: actionLoading === "recalculate", onClick: () => handleAction("recalculate", () => invoiceApi.recalculate(id)) },
+                ]}
+              />
+              {isDraft && (
+                <Button variant="primary" icon={CheckCircle} loading={actionLoading === "finalize"} onClick={() => handleAction("finalize", () => invoiceApi.finalize(id))} className="min-h-11 flex-1">
+                  Finalize
+                </Button>
+              )}
+              {isPartiallyPaid && (
+                <Button variant="success" icon={CheckCircle} loading={actionLoading === "mark-paid"} onClick={() => setShowMarkPaidModal(true)} className="min-h-11 flex-1">
+                  Mark as Paid
+                </Button>
+              )}
+            </div>
+          ) : (
           <div className="flex flex-wrap items-center gap-2">
             {isDraft && (
               <Button variant="primary" icon={CheckCircle} loading={actionLoading === "finalize"} onClick={() => handleAction("finalize", () => invoiceApi.finalize(id))}>
@@ -919,6 +945,7 @@ export default function InvoiceDetailPage() {
               Recalculate
             </Button>
           </div>
+          )}
         </StickyFooter>
       )}
 
