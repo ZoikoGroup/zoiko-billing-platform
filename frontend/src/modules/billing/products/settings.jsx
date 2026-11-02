@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, Children, cloneElement, isValidElement, useId } from "react";
 import { Save, RefreshCw, AlertCircle, CheckCircle, Hash, Folder, DollarSign, BarChart3, Eye, Tag, Percent, Globe, SlidersHorizontal, Archive, ScrollText, Store, X } from "lucide-react";
-import HRPage from "../../../components/HRPage";
+import { SettingsPageShell, useUnsavedChangesGuard } from "../../../components/billing-ui";
 import { ErrorState } from "../../../components/billing-shared";
 import { settingsApi, productApi } from "../../../service/billingService";
 import { invalidateGlobalBillingConfig } from "../../../service/billingConfigCache";
@@ -110,6 +110,7 @@ export default function ProductSettingsPage() {
 
   const [original, setOriginal] = useState({});
   const hasChanges = useMemo(() => Object.keys(form).some((key) => form[key] != original[key]), [form, original]);
+  useUnsavedChangesGuard(hasChanges, "You have unsaved settings. Leave this page and discard them?");
 
   useEffect(() => { fetchSettings(); }, []);
 
@@ -237,11 +238,11 @@ export default function ProductSettingsPage() {
 
   if (loading) {
     return (
-      <HRPage title="Product Settings" subtitle="Product configuration and preferences">
+      <SettingsPageShell title="Product Settings" description="Product configuration and preferences" icon={Store} crumbs={[{ label: "Billing", href: "/billing" }, { label: "Products", href: "/billing/products" }, { label: "Settings" }]}>
         <div className="flex items-center justify-center py-12">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600" />
         </div>
-      </HRPage>
+      </SettingsPageShell>
     );
   }
 
@@ -255,14 +256,14 @@ export default function ProductSettingsPage() {
   // invoicing/settings.jsx and tax/settings.jsx).
   if (loadFailed) {
     return (
-      <HRPage title="Product Settings" subtitle="Product configuration and preferences">
+      <SettingsPageShell title="Product Settings" description="Product configuration and preferences" icon={Store} crumbs={[{ label: "Billing", href: "/billing" }, { label: "Products", href: "/billing/products" }, { label: "Settings" }]}>
         <ErrorState title="Couldn't load product settings" message={error} onRetry={fetchSettings} />
-      </HRPage>
+      </SettingsPageShell>
     );
   }
 
   return (
-    <HRPage title="Product Settings" subtitle="Product configuration and preferences">
+    <SettingsPageShell title="Product Settings" description="Product configuration and preferences" icon={Store} crumbs={[{ label: "Billing", href: "/billing" }, { label: "Products", href: "/billing/products" }, { label: "Settings" }]}>
 
       {error && (
         <div className="mb-6 p-4 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700 flex items-center gap-2">
@@ -448,14 +449,13 @@ export default function ProductSettingsPage() {
       </div>
 
       {/* ── Sticky Save Bar ──
-          pr-24 keeps the actions clear of the shell's fixed AI-assistant
-          launcher (bottom-6 right-6, 56px wide => occupies 24-80px from the
-          right edge), which is later in the DOM at the same z-40 and used to
-          sit on top of Save Changes. The content above reserves pb-28 so its
-          last field is never hidden behind this bar. */}
+          The AI-assistant launcher lives in the top bar, so the actions no
+          longer need room for a floating button on the right; they use the
+          normal gutter (and 44px buttons on phones). The content above
+          reserves pb-28 so its last field is never hidden behind this bar. */}
       <div ref={saveBarRef} data-testid="product-settings-save-bar"
         style={saveBarRight != null ? { right: saveBarRight } : undefined}
-        className="fixed bottom-0 left-0 right-0 lg:left-72 z-40 bg-white/90 backdrop-blur border-t border-slate-200 pl-4 sm:pl-6 pr-24 py-3 shadow-[0_-4px_20px_rgba(0,0,0,0.04)]">
+        className="fixed bottom-0 left-0 right-0 lg:left-72 z-40 bg-white/90 backdrop-blur border-t border-slate-200 px-4 sm:px-6 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-4px_20px_rgba(0,0,0,0.04)] max-sm:[&_button]:min-h-11">
         <div className="flex flex-wrap items-center justify-between gap-3 max-w-6xl mx-auto">
           <div className="flex items-center gap-2 min-w-0">
             {hasChanges ? (
@@ -488,6 +488,6 @@ export default function ProductSettingsPage() {
           </div>
         </div>
       </div>
-    </HRPage>
+    </SettingsPageShell>
   );
 }

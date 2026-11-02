@@ -16,6 +16,8 @@ import { formatNumber, getEffectiveLocale } from "../../../utils/locale";
 import { formatLastUpdated, DashboardHeader, ErrorState } from "../../../components/billing-shared";
 import { TAX_ROUNDING_NOT_APPLIED_NOTICE } from "../tax/tax-helpers";
 import useLatestRequest from "../utils/useLatestRequest";
+import { SettingsSaveBar, OverflowMenu, useUnsavedChangesGuard } from "../../../components/billing-ui";
+import useMediaQuery, { BELOW_SM } from "../../../hooks/useMediaQuery";
 
 const TABS = [
   { id: "general", label: "General", icon: Building2 },
@@ -740,6 +742,9 @@ export default function BillingSettingsPage() {
   const confirmResetTimerRef = useRef(null);
 
   const hasChanges = original ? JSON.stringify(form) !== JSON.stringify(original) : false;
+  // Reload is covered by the beforeunload effect below; this adds in-app links.
+  useUnsavedChangesGuard(hasChanges, "You have unsaved billing settings. Leave this page and discard them?");
+  const isPhone = useMediaQuery(BELOW_SM);
 
 
   const [lastSavedTimestamp, setLastSavedTimestamp] = useState(null);
@@ -1343,7 +1348,7 @@ export default function BillingSettingsPage() {
 
   if (loading) {
     return (
-      <div className="bg-transparent text-slate-800 p-6 font-sans min-h-screen space-y-8" aria-label="Loading billing configuration">
+      <div className="bg-transparent text-slate-800 sm:p-6 font-sans min-h-screen space-y-8" aria-label="Loading billing configuration">
         <div className="rounded-3xl bg-white border border-slate-200 p-6 md:p-8 shadow-[0_4px_20px_rgba(0,0,0,0.03)] animate-pulse">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-2xl bg-slate-200 shrink-0" />
@@ -1380,7 +1385,7 @@ export default function BillingSettingsPage() {
 
   if (loadFailed) {
     return (
-      <div className="bg-transparent text-slate-800 p-6 font-sans min-h-screen space-y-8">
+      <div className="bg-transparent text-slate-800 sm:p-6 font-sans min-h-screen space-y-8">
         <ErrorState title="Couldn't load billing configuration" message={error} onRetry={fetchConfig} />
       </div>
     );
@@ -1388,7 +1393,7 @@ export default function BillingSettingsPage() {
 
   return (
     <HighlightContext.Provider value={highlightedField}>
-    <div className="bg-transparent text-slate-800 p-6 font-sans min-h-screen space-y-8">
+    <div className="bg-transparent text-slate-800 sm:p-6 font-sans min-h-screen space-y-8">
       <style>{`
         @keyframes fieldHighlightPulse {
           0% { box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.5); border-color: #eab308; }
@@ -1429,25 +1434,6 @@ export default function BillingSettingsPage() {
                 <button onClick={() => { setForm(JSON.parse(JSON.stringify(original))); setFieldStatus({}); setShowUnsavedWarning(false); }} className="ml-2 text-amber-600 underline text-xs hover:text-amber-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 rounded">Undo all</button>
               </div>
             )}
-            <button onClick={handleValidate} disabled={validating}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-medium transition-colors disabled:opacity-50 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand)]/50">
-              <Check size={14} />
-              Validate
-            </button>
-            <button onClick={handleReset} disabled={!hasChanges}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl border text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand)]/50 ${
-                confirmReset
-                  ? "border-red-300 bg-red-50 text-red-700"
-                  : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
-              }`}>
-              <RotateCcw size={14} />
-              {confirmReset ? "Confirm Reset" : "Reset"}
-            </button>
-            <button onClick={handleSave} disabled={saving || !hasChanges}
-              className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-[var(--color-brand)] to-[var(--color-brand-700)] text-white rounded-xl text-sm font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand)]/50 focus-visible:ring-offset-1">
-              {saving ? <RefreshCw size={16} className="animate-spin" /> : <Save size={16} />}
-              {saving ? "Saving..." : "Save Changes"}
-            </button>
           </div>
         }
       />
@@ -1577,7 +1563,7 @@ export default function BillingSettingsPage() {
               <button key={tab.id} onClick={() => setActiveTab(tab.id)} role="tab" aria-selected={isActive} aria-controls={`panel-${tab.id}`}
                 tabIndex={isActive ? 0 : -1}
                 onKeyDown={(e) => { if (e.key === "ArrowRight") { const idx = TABS.findIndex(t => t.id === tab.id); const next = TABS[(idx + 1) % TABS.length]; setActiveTab(next.id); } if (e.key === "ArrowLeft") { const idx = TABS.findIndex(t => t.id === tab.id); const prev = TABS[(idx - 1 + TABS.length) % TABS.length]; setActiveTab(prev.id); } }}
-                className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-xl transition-all whitespace-nowrap ${
+                className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-xl transition-all whitespace-nowrap max-sm:min-h-11 ${
                   isActive
                     ? `${TAB_ACTIVE_CLASSES[tab.id]} bg-slate-50 shadow-sm`
                     : "border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50/50"
@@ -2513,6 +2499,50 @@ export default function BillingSettingsPage() {
           Audit logs capture all configuration changes for compliance.
         </p>
       </div>
+
+      {/* Validate / Reset / Save stay pinned at the bottom while the tabs scroll.
+          Phones: Save plus a "⋯" menu with Validate and Reset (same handlers;
+          Reset still asks for a second tap, shown as "Confirm Reset"). */}
+      <SettingsSaveBar hasChanges={hasChanges} saved={saved}>
+        {isPhone ? (
+          <>
+            <OverflowMenu
+              direction="up"
+              items={[
+                { key: "validate", label: "Validate", icon: Check, disabled: validating, onClick: handleValidate },
+                { key: "reset", label: confirmReset ? "Confirm Reset" : "Reset", icon: RotateCcw, danger: confirmReset, disabled: !hasChanges, onClick: handleReset },
+              ]}
+            />
+            <button onClick={handleSave} disabled={saving || !hasChanges}
+              className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-[var(--color-brand)] to-[var(--color-brand-700)] text-white rounded-xl text-sm font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand)]/50 focus-visible:ring-offset-1">
+              {saving ? <RefreshCw size={16} className="animate-spin" /> : <Save size={16} />}
+              {saving ? "Saving..." : "Save Changes"}
+            </button>
+          </>
+        ) : (
+          <>
+            <button onClick={handleValidate} disabled={validating}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-medium transition-colors disabled:opacity-50 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand)]/50">
+              <Check size={14} />
+              Validate
+            </button>
+            <button onClick={handleReset} disabled={!hasChanges}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl border text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand)]/50 ${
+                confirmReset
+                  ? "border-red-300 bg-red-50 text-red-700"
+                  : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
+              }`}>
+              <RotateCcw size={14} />
+              {confirmReset ? "Confirm Reset" : "Reset"}
+            </button>
+            <button onClick={handleSave} disabled={saving || !hasChanges}
+              className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-[var(--color-brand)] to-[var(--color-brand-700)] text-white rounded-xl text-sm font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand)]/50 focus-visible:ring-offset-1">
+              {saving ? <RefreshCw size={16} className="animate-spin" /> : <Save size={16} />}
+              {saving ? "Saving..." : "Save Changes"}
+            </button>
+          </>
+        )}
+      </SettingsSaveBar>
     </div>
     </HighlightContext.Provider>
   );

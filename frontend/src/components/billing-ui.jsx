@@ -154,10 +154,11 @@ export function Button({
  * OverflowMenu — "⋯" button + menu of secondary actions
  * ------------------------------------------------------------------ */
 
-// items: [{ key?, label, icon?, onClick, disabled?, danger? }]. Esc and an
+// items: [{ key?, label, icon?, onClick, disabled?, danger? }]. direction="up"
+// opens the menu above the trigger (for bars pinned to the bottom). Esc and an
 // outside tap close it; arrow keys move between items; focus returns to the
 // trigger on Esc. Used by PageHeader on phones and available to pages.
-export function OverflowMenu({ items = [], label = "More actions", align = "right", className = "" }) {
+export function OverflowMenu({ items = [], label = "More actions", align = "right", direction = "down", className = "" }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
   const buttonRef = useRef(null);
@@ -216,7 +217,7 @@ export function OverflowMenu({ items = [], label = "More actions", align = "righ
           role="menu"
           aria-label={label}
           onKeyDown={onMenuKeyDown}
-          className={`absolute ${align === "left" ? "left-0" : "right-0"} z-50 mt-2 w-56 max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl`}
+          className={`absolute ${align === "left" ? "left-0" : "right-0"} ${direction === "up" ? "bottom-full mb-2" : "mt-2"} z-50 w-56 max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl`}
         >
           {items.map((item) => {
             const ItemIcon = item.icon;
@@ -1731,6 +1732,40 @@ export function FormActionBar({
       >
         {primaryLabel}
       </Button>
+    </StickyFooter>
+  );
+}
+
+// Page frame for module settings pages: the shared PageHeader plus the
+// page's sections, inside the shell's own padding (no second padded layer).
+export function SettingsPageShell({ title, description, icon, crumbs = [], children }) {
+  return (
+    <div className="space-y-6">
+      <PageHeader crumbs={crumbs} title={title} description={description} icon={icon} />
+      <div>{children}</div>
+    </div>
+  );
+}
+
+// Pinned save bar for settings pages, which save the whole page at once:
+// the page's own actions (Refresh / Discard / Save, passed as children)
+// plus whether anything is unsaved, so Save stays in reach from every
+// section. Buttons are 44px on phones; `compactStatus` hides the status
+// text on phones when a page has three actions.
+export function SettingsSaveBar({ hasChanges, saved = false, compactStatus = false, children }) {
+  return (
+    <StickyFooter contentClassName="mx-auto flex max-w-6xl items-center gap-2 sm:gap-3 max-sm:[&_button]:min-h-11">
+      <p role="status" aria-live="polite" className={`min-w-0 flex-1 text-sm font-medium max-sm:line-clamp-2 max-sm:text-xs sm:truncate ${compactStatus ? "max-sm:hidden" : ""}`}>
+        {saved ? (
+          <span className="text-emerald-700">Saved</span>
+        ) : hasChanges ? (
+          <span className="text-amber-700">Unsaved changes</span>
+        ) : (
+          <span className="text-slate-500">No changes</span>
+        )}
+      </p>
+      {/* Wraps rather than overflowing if the actions ever outgrow the bar. */}
+      <div className={`flex min-w-0 flex-wrap items-center justify-end gap-2 ${compactStatus ? "max-sm:ml-auto" : ""}`}>{children}</div>
     </StickyFooter>
   );
 }

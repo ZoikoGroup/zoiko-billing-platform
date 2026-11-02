@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, Children, cloneElement, isValidElement, useId } from "react";
 import { Save, AlertCircle, CheckCircle, RefreshCw, DollarSign, Calendar, Hash, Percent, BarChart3 } from "lucide-react";
-import HRPage from "../../../components/HRPage";
+import { SettingsPageShell, SettingsSaveBar, useUnsavedChangesGuard } from "../../../components/billing-ui";
 import { settingsApi } from "../../../service/billingService";
 import { getCurrencySelectOptions } from "../../../utils/currency";
 import { Spinner, ErrorState } from "../../../components/billing-shared";
@@ -120,6 +120,7 @@ export default function PricingSettingsPage() {
   useEffect(() => { fetchSettings(); }, [fetchSettings]);
 
   const hasChanges = Object.keys(DEFAULT_SETTINGS).some((key) => settings[key] !== initial[key]);
+  useUnsavedChangesGuard(hasChanges, "You have unsaved settings. Leave this page and discard them?");
 
   const handleSave = async () => {
     setSaving(true); setError(null); setSuccess(false);
@@ -158,9 +159,9 @@ export default function PricingSettingsPage() {
 
   if (loading) {
     return (
-      <HRPage title="Pricing Settings" subtitle="Configure pricing defaults and behavior">
+      <SettingsPageShell title="Pricing Settings" description="Configure pricing defaults and behavior" icon={DollarSign} crumbs={[{ label: "Billing", href: "/billing" }, { label: "Pricing", href: "/billing/pricing" }, { label: "Settings" }]}>
         <Spinner />
-      </HRPage>
+      </SettingsPageShell>
     );
   }
 
@@ -168,31 +169,14 @@ export default function PricingSettingsPage() {
   // would write over the real configuration.
   if (loadFailed) {
     return (
-      <HRPage title="Pricing Settings" subtitle="Configure pricing defaults and behavior">
+      <SettingsPageShell title="Pricing Settings" description="Configure pricing defaults and behavior" icon={DollarSign} crumbs={[{ label: "Billing", href: "/billing" }, { label: "Pricing", href: "/billing/pricing" }, { label: "Settings" }]}>
         <ErrorState title="Couldn't load pricing settings" message={error} onRetry={fetchSettings} />
-      </HRPage>
+      </SettingsPageShell>
     );
   }
 
   return (
-    <HRPage title="Pricing Settings" subtitle="Configure pricing defaults and behavior">
-
-      <div className="flex flex-wrap items-center justify-end gap-2 mb-6">
-        {success && (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-emerald-700 bg-emerald-50 rounded-lg">
-            <CheckCircle className="h-4 w-4" /> Saved
-          </span>
-        )}
-        <button onClick={handleRefresh}
-          className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
-          <RefreshCw className="h-4 w-4" /> Refresh
-        </button>
-        <button onClick={handleSave} disabled={!hasChanges || saving}
-          className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors">
-          {saving ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> : <Save className="h-4 w-4" />}
-          Save Changes
-        </button>
-      </div>
+    <SettingsPageShell title="Pricing Settings" description="Configure pricing defaults and behavior" icon={DollarSign} crumbs={[{ label: "Billing", href: "/billing" }, { label: "Pricing", href: "/billing/pricing" }, { label: "Settings" }]}>
 
       {confirmRefresh && (
         <ConfirmDialog
@@ -257,6 +241,17 @@ export default function PricingSettingsPage() {
           </select>
         </SettingsField>
       </div>
-    </HRPage>
+      <SettingsSaveBar hasChanges={hasChanges} saved={success}>
+        <button onClick={handleRefresh}
+          className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
+          <RefreshCw className="h-4 w-4" /> Refresh
+        </button>
+        <button onClick={handleSave} disabled={!hasChanges || saving}
+          className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors">
+          {saving ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> : <Save className="h-4 w-4" />}
+          Save Changes
+        </button>
+      </SettingsSaveBar>
+    </SettingsPageShell>
   );
 }
