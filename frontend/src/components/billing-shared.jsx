@@ -1017,6 +1017,18 @@ const PRODUCT_TYPE_FILTER_OPTIONS = [
   { value: "other", label: "Other" },
 ];
 
+// Product.default_price is the catalog selling price (PriceResolver's base
+// price); original_price is only the optional list price before discount.
+// Money arrives as strings, so a "0.00" original_price is truthy -- the old
+// `original_price || default_price || 0` chain showed most products as 0.00
+// and turned a missing price into 0.00 too. Returns null when no price is set.
+function catalogPrice(product) {
+  for (const value of [product?.default_price, product?.unit_price, product?.price]) {
+    if (value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value))) return Number(value);
+  }
+  return null;
+}
+
 const ProductRow = memo(function ProductRow({ rowRef, product, selected, favorite, multiSelect, onActivate, onToggleFavorite, onArrowKey, formatPrice, showQuantityInput, quantity, onQuantityChange }) {
   const badge = PRODUCT_TYPE_BADGE_COLORS[product.product_type] || PRODUCT_TYPE_BADGE_COLORS.other;
   return (
@@ -1225,9 +1237,10 @@ export function ProductSelector({
 
   const formatPrice = useCallback((p) => {
     if (formatPriceProp) return formatPriceProp(p);
-    const price = p.original_price || p.default_price || p.unit_price || 0;
+    const price = catalogPrice(p);
+    if (price === null) return "—";
     const currency = p.currency || invoiceCurrency;
-    return `${currency} ${Number(price).toFixed(2)}`;
+    return `${currency} ${price.toFixed(2)}`;
   }, [formatPriceProp, invoiceCurrency]);
 
   const focusRow = (index) => {
