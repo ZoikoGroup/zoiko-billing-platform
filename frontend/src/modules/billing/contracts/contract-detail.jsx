@@ -885,7 +885,7 @@ export default function ContractDetailPage() {
         <Modal
           open
           dense
-          onClose={() => setShowTerminateModal(false)}
+          onClose={() => { setShowTerminateModal(false); setTerminateReason(""); }}
           title="Terminate Contract"
           description="Provide a reason for terminating this contract."
           size="sm"
