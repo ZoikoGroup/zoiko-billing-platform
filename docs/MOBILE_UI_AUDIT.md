@@ -832,6 +832,32 @@ Sweep after B5 (`D:\zoiko-local\tools\sweep.mjs` via `run-sweep.ps1`, local SQLi
 
 **Not covered by this sweep:** public invoice / quote / estimate / platform checkout (need public tokens; line-item cards decision pending), privileged-session banner and triage strip (Phase 5, fake responses), and detail pages without local records (refund, write-off, dunning, collections — checked statically in B5). Tap targets under 44px (37% of controls on billing pages at 360) and text under 12px are Phase 4.
 
+## 8j. Phase 4 part 1 — polish (released separately from part 2, decided)
+
+Measured with `D:\zoiko-local\tools\p4-measure.mjs` at 390×844: only what is on screen (the closed drawer, inert and aria-hidden content excluded; a checkbox inside its `<label>` counts as the label). Results in `shots/phase4/{baseline,after-step1,after-step2,after-step3}/`; full overflow / clip sweeps after each step in `shots/phase4/sweep-after-step*/`.
+
+| Check (390px, routes measured in every run) | Before Phase 4 | After part 1 |
+|---|---|---|
+| Controls under 44px | 863 | **381** |
+| Text elements under 12px | 1,026 | **0** |
+| Clipped visible content (360 / 390) | 3 insight lines + workspace activity line | **0** (4 decorative hero backgrounds remain, not content) |
+| List search boxes under 200px wide (360 / 390) | 9 pages (54–195px) | **0** |
+| Page overflow | 0 | 0 |
+
+**What changed (all phones-only unless noted; desktop unchanged):**
+- *Tap targets* (`c0c8ada`, `2a16ea1`): shared `Button` sm/md, text inputs and selects (global rule, phones + touch), the top-bar logo, breadcrumb links, card selection checkboxes (44×44 label; the tap doesn't open the row on `DataTable` cards), date-range picker, Export, and 28 page-level Refresh / Filter icon buttons.
+- *Minimum text* (`55ee931`, decided: phones only): the 10–11.5px utility sizes, Recharts axis / legend text and the organization page's tags render at 12px below 640px; inline-styled text opts in with `max(<size>, var(--min-text-size, 0px))`.
+- *Insight lines* (`3140b87`): shared insight pills wrap on phones.
+- *List search* (`1653064`): on 15 list pages the search row takes the full width on phones and Filter / Refresh wrap under it (the bigger icon buttons had squeezed it further).
+- *One status map* (`dc5986a`, `f8badd5`, `f25538a`, **desktop too**): `STATUS_META` covers every billing status; list, detail and pricing pages render the shared `StatusBadge` (icons kept), so a status has one label and colour everywhere. Fixes "Past_due" and raw lowercase labels. Not migrated (own vocabularies): import-wizard row states, Stripe Connect account states, public customer pages (own theme), organization-admin / super-admin / workspace pages.
+- *Follow-ups*: Terminate Contract forgets the typed reason on Esc / X (`41ee51c`); discount form's duplicate Esc handler removed (`6948c34`); Triage Inspect buttons named per incident and working on their own, 11 unused imports removed (`14fb164`); 42 pricing form labels linked to their fields (`36a91d0`).
+
+**Before / after at 390:** `shots/phase4/before-after-390/{before,after-r2}/` — products dashboard, invoice list, invoice detail, credits (empty state). "Before" = the B6 sweep's 390 screenshots.
+
+**Phase 4 part 2 (next):** shared currency / number / date helpers, consistent empty / loading / error states, one primary action per screen.
+
+**Pre-existing, reported:** the full local backend run has 7 failures in unrelated areas (email alert routing, Stripe SDK version pin, 3 super-admin tests); 5 confirmed failing without any change from this work.
+
 ## 9. Local environment safety notes
 
 - `backend/.env` points at a remote PostgreSQL server. It was **not** used, edited, seeded or migrated. Overrides were applied per process only.
