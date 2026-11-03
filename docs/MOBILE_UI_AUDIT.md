@@ -120,6 +120,8 @@ Status key used in every table:
 
 ## 5. Page findings
 
+> Phase 0 findings, kept for history. **Current status of every route: §8i (B6 re-measure).**
+
 Every route below was measured at all 5 viewports. **No route overflows at 768 or 1280.** "Clean" means no clipping, sideways scrolling, launcher overlap or crushed table was measured. The shared problems from §3–§4 (14px inputs, about 50% small targets, trial banner 38%) apply to every authenticated page and aren't repeated per row.
 
 ### 5.1 Billing: org_admin (billing_admin samples matched)
@@ -537,7 +539,7 @@ Measured at 390 and 1280 (sent/accepted quotations via route interception — th
 | `/billing/quotations?action=create&product_id=…`, `/billing/invoices?action=create&product_id=…` | — | n/a — **dead link** | Product profile "New Quotation" / "New Invoice". Nothing reads `action` or `product_id`, so the buttons just open the list. Pre-existing; logged, not changed |
 | `OrganizationPage` `?code=&state=` | — | n/a | Stripe OAuth callback, not a dialog |
 
-**Parity check (every JSX attribute, not just handlers).** `D:\zoiko-local	ools\parity.mjs <commit>` parses each changed `.jsx` before and after with `@babel/parser` and compares, as multisets, *every* attribute on *every* element (name + normalised value: `onSubmit`, `type`, `name`, `id`, `aria-*`, `data-*`, `autoFocus`, `ref`, `key`, spreads, conditional `className` expressions …) and every text / expression child (JSX inside a `{cond && (…)}` is compared element by element, comments ignored). Every entry present before and missing after must match a dialog-shell rule (overlay close handler → `onClose`, panel `stopPropagation`, `role` / `aria-modal` / `aria-labelledby` + heading `id` now provided by `Modal`, title / intro text → `title` / `description`, × button inside a removed overlay, the removed `WizardStep` helper with its labels present in `Stepper`, static `className`); anything else is reported. Elements are also paired by `onClick` handler and each pair's other attributes and children must be identical. Dynamic (conditional) `className`s outside the removed shell are never auto-explained. Checked against planted regressions (dropped `onClick`, changed `disabled` rule, dropped `aria-label` on an unrelated button): all caught.
+**Parity check (every JSX attribute, not just handlers).** `D:\zoiko-local\tools\parity.mjs <commit>` parses each changed `.jsx` before and after with `@babel/parser` and compares, as multisets, *every* attribute on *every* element (name + normalised value: `onSubmit`, `type`, `name`, `id`, `aria-*`, `data-*`, `autoFocus`, `ref`, `key`, spreads, conditional `className` expressions …) and every text / expression child (JSX inside a `{cond && (…)}` is compared element by element, comments ignored). Every entry present before and missing after must match a dialog-shell rule (overlay close handler → `onClose`, panel `stopPropagation`, `role` / `aria-modal` / `aria-labelledby` + heading `id` now provided by `Modal`, title / intro text → `title` / `description`, × button inside a removed overlay, the removed `WizardStep` helper with its labels present in `Stepper`, static `className`); anything else is reported. Elements are also paired by `onClick` handler and each pair's other attributes and children must be identical. Dynamic (conditional) `className`s outside the removed shell are never auto-explained. Checked against planted regressions (dropped `onClick`, changed `disabled` rule, dropped `aria-label` on an unrelated button): all caught.
 
 | Commit | Elements | Attributes | Children | Unexplained |
 |---|---|---|---|---|
@@ -623,6 +625,7 @@ Bugs found during the mobile work that are probably live today. Each is its own 
 | `ad46c0c` | "Not now" could close the Zoiko plan-change dialog while a plan change / payment was being submitted (Esc and × were already blocked) | Billing workspace → Zoiko subscription → change plan | `PlanChangePanel.test.jsx` (1 fails without the fix) |
 
 | `4a981c1` | Invoice create wizard lost recent edits when leaving: the 600ms debounced draft save was cancelled on unmount, so leaving right after adding a line item stored step 1 with no items and "Resume draft" came back without them | `/billing/invoices/create` (back arrow, breadcrumb or sidebar right after an edit) | `create-invoice-wizard.autosave.test.jsx` (new file; 1 fails without the fix) — new test file, so it stays on `nikhil-new`. Shipped as `694d82a` (PR #111) |
+| `4ff7e4e` | Contract and quotation create wizards could create the same record two or three times: the last step's "Save as Draft" / "Save & …" cards called submit with no busy guard (only the footer buttons were disabled while saving) | `/billing/contracts/create`, `/billing/quotations/create` (tap a card again before the save returns) | Added to `contract-create.b3.test.jsx` / `quotation-create.b3.test.jsx` (existing on main): 3 records without the fix, 1 with it. On `nikhil-mobile` as `703dbad` for its own PR |
 
 **On `nikhil-mobile` (the push branch, production files only):** the fixes are its first four commits, each applied to the original (pre-mobile) code so they can be picked on their own: `145b656` (= `3be74fd` + `ec0f743`), `d330f56` (= `ebb4b5c`), `8dd90f8` (= `0ea3a30`), `679cd78` (= `ad46c0c`; on the original dialog the × button is disabled while submitting too). Their tests stay on `nikhil-new` except the plan-change test, which lives in an existing test file. On the original code the two wizards still don't close on Esc (their original overlays never handled Esc); the mobile dialog commit adds it.
 
@@ -672,12 +675,14 @@ Created from `origin/main` (`7d96cc8`) with production files only; last updated 
 | Screen | Route | Size | Status |
 |---|---|---|---|
 | Invoice create wizard (7 steps) | `/billing/invoices/create` | 1,534 lines | **Done** (below) |
-| Contract create wizard | `/billing/contracts/create` | 1,224 | To do |
-| Quotation create (full page) | `/billing/quotations/create` | 1,045 | To do |
-| Contract edit | `/billing/contracts/:id/edit` | 719 | To do |
-| Subscription create wizard | `/billing/subscriptions/create` | 707 | To do |
+| Contract create wizard (7 steps) | `/billing/contracts/create` | 1,224 | **Done** `eca2816` (in production via PR #112) |
+| Quotation create (6 steps) | `/billing/quotations/create` | 1,045 | **Done** `6a31572` (PR #112) |
+| Contract edit | `/billing/contracts/:id/edit` | 719 | **Done** `a407ca7` (PR #112) |
+| Subscription create wizard (4 steps) | `/billing/subscriptions/create` | 707 | **Done** `9d59f08` (PR #112) |
+| Register (public) | `/register` | 673 | **Done** `2573934` (not yet in production) |
+| Draft invoice action bar | `/billing/invoices/:id` | 1,070 | **Done** `deb9cf9` (not yet in production) |
 
-Related full-page forms, for a decision (not in the list above): public Register page, draft-invoice editing on invoice detail (already uses `StickyFooter`), customer-profile inline edits, settings pages.
+Remaining related screens: customer-profile inline edits (B5). Settings pages: done (below).
 
 ### Invoice create wizard
 
@@ -697,6 +702,171 @@ Related full-page forms, for a decision (not in the list above): public Register
 - **Parity:** 4 differences, all intended (the step 7 copy line, Next now `step < 7 ? Next : Save + Save & Send`, Back's label wrapped for the phone icon-only view with the same accessible name, the `FormPageBar` margin).
 - **Tests:** existing invoicing + components tests pass (25 files, 133 tests). New on `nikhil-new` only: `create-invoice-wizard.typing.test.jsx` — customer search and line-item quantity typed key by key (value and focus kept).
 - Screenshots `shots/phase3/stepB3-invoice-wizard/{before,after-final}/` (`step1|step3|step7 __ 360|412|1280 __ top|bottom`); `after`, `after-r2` are intermediate.
+
+### B3 round 2 — contract, quotation, contract edit, subscription, Register, draft invoice
+
+Measured with the same scripts before and after (`D:\zoiko-local\tools\*-shots.mjs`); every screen 0 horizontal overflow at 360 / 412 / 1280.
+
+| Screen | Primary action before (360 / 1280) | After | Autosave → pattern | Parity | Tests (new, `nikhil-new` only) |
+|---|---|---|---|---|---|
+| Contract create | Next 836px down at step 1; Save as Draft / Save & Activate off-screen on step 7 (360, 412) | Pinned footer at every step and width; 44px on phones | No → Cancel (sm+) / back arrow (phones) + discard prompt + guard | 33, all the shell swap (step row → `Stepper`, header Back, inline spinners) | `contract-create.b3.test.jsx` (5) |
+| Quotation create | Save as Draft / Save & Send off-screen on step 6 (360, 412) | Pinned, 44px | No → same | 36: shell swap + `*` on Qty / Unit Price / Description | `quotation-create.b3.test.jsx` (5) |
+| Contract edit | Save Changes 2,568px down (360), 1,565px down (1280) | Cancel / Save Changes pinned at every width; line items as cards on phones | No → Cancel + prompt only when values differ from the loaded ones | 16: `HRPage` → `PageHeader`, Back/Cancel through the prompt, Save into `FormActionBar`, phone item cards reuse the same handlers | `contract-edit.b3.test.jsx` (4) |
+| Subscription create | Create Subscription off-screen at every width; 38px buttons | Pinned, 44px | No → same; a contract/customer pre-selected from a link doesn't count as dirty | 23: shell swap | `subscription-create.b3.test.jsx` (5) |
+| Register | Submit 4,356px down (360), 2,473px (768); fine at 1280 (sticky summary) | Bar pinned below `lg` with plan + today's price; summary keeps the button from `lg` | n/a (nothing saved before submit) → guard on reload / links, no Cancel | 0 | `RegisterPage.b3.test.jsx` (5) |
+| Draft invoice bar | 3 rows, 155px (19% of 360×800), Finalize left, 40px buttons | 2 rows, 109px (14%): full-width 44px primary + "⋯" (Cancel invoice, Recalculate) | n/a (no edit form exists: the page's Edit button is disabled, "Edit invoice workflow is not registered yet") | 0 (+1 in `OverflowMenu`: optional `direction="up"`) | `invoice-detail.actionbar.b3.test.jsx` (3) |
+
+**Shared fixes found in this round:**
+- **Sticky page bars never pinned** (`63622cc`): the shell's page wrapper had `overflow-x: hidden`, which also makes it a scroll container, so `FormPageBar` stuck to it instead of `<main>` and scrolled away (this affected the invoice wizard too). Now `overflow-x: clip` where supported (Safari < 16 keeps `hidden`). Checked 12 wide routes at 360 / 1280: 0 overflow. The shell test that matches the wrapper's classes was updated.
+- `FormActionBar` buttons 44px on phones; `OverflowMenu` `direction="up"`.
+
+**Desktop differences:** the four wizards / edit page use the shared `PageHeader` (breadcrumbs, icon, step) and `Stepper` (brand-coloured completed steps instead of green pills) instead of their own headers; step actions are a pinned footer bar with a Cancel button; contract edit no longer adds its own padding inside the shell's. Register and the draft invoice bar are unchanged on desktop.
+
+**Pre-existing, reported:** contract and quotation wizards' last-step cards could create duplicates — **fixed (approved) in `4ff7e4e`**, see the bug-fix table; contract wizard shows "Contract Discount (undefined%)" on the pricing and preview steps (contract-level discount isn't in the form state).
+
+Screenshots `shots/phase3/stepB3-{contract-wizard,quotation-create,contract-edit,subscription-wizard,register,draft-invoice}/{before,after}/`; `after-r2` (contract wizard, quotation, contract edit) = after the sticky-bar fix; `draft-invoice/after-menu/` = the phone menu open.
+
+### B3 step 3 — settings pages (approved: one pinned save bar per page, all widths)
+
+Every settings form saves the whole page in one request, so the brief's "save bar per section" became one pinned bar per page (no API change). Shared: `SettingsPageShell` (shared `PageHeader`, no second padded layer) and `SettingsSaveBar` (the page's own Refresh / Discard / Save buttons moved verbatim, "Unsaved changes" / "Saved" / "No changes" status, actions wrap, 44px on phones). Every page also gets the unsaved-changes guard (`hasChanges` it already had).
+
+| Page | Save scrolled to the bottom, before (360 / 1280) | After | Commit |
+|---|---|---|---|
+| Billing Configuration (9 tabs) | 3,002px / 1,570px above the screen | Pinned; phones: Save + "⋯" (Validate, Reset with its two-tap confirm); 44px tabs | `9c43c23` |
+| Customer, pricing, quotation, contract, subscription, invoice, payment, tax settings; tax configuration | 199–4,228px above the screen (360); 549–2,134px (1280) | Pinned with status, 44px on phones | `8b78a58` |
+| Product settings | Already pinned (own bar) | 96px right padding for the old floating launcher removed; 44px buttons | `8b78a58` |
+| Organization profile edit dialog | Already a pinned-footer dialog (46px buttons) | **Wrapped**: close 32 → 44px on phones, `90dvh` | `e6c24bc` |
+| Stripe Connect, Workspace Organization, Governance Configuration | No form | — | — |
+
+Measured with `settings-shots.mjs` (before = the pre-change files restored in the working tree, then HEAD restored): 33 / 33 page-width checks have Save visible at the top and the bottom after (Save off-screen at the bottom on 9 of 11 pages at every width before). No horizontal overflow. Parity: 5 intended items per standard page (subtitle → header description ×3, "Saved" badge → bar status); Billing Configuration 3 (header actions moved, tab class, phone/desktop Save branches); product settings: bar class. Tests: existing settings tests pass; two layout tests updated (tax configuration actions now in the bar; product settings gutter instead of `pr-24`); new `settings.savebar.b3.test.jsx` (3).
+
+**Desktop difference:** Save / Refresh moved from the top of each page to a bar pinned at the bottom (with the status); the page header is the shared one (breadcrumbs, icon) instead of `HRPage`'s plain header.
+
+**Follow-up (pre-existing, logged):** Refresh asks before discarding unsaved edits on customer / pricing / quotation settings but discards them silently on contract / subscription / payment / tax settings.
+
+Screenshots `shots/phase3/stepB3-settings/{inventory-r2,before,after,after-dirty,org-edit-before,org-edit-after}/`.
+
+## 8g. Phase 3 B4 — tables
+
+Rule applied: tables with more than four meaningful columns become cards on phones; four or fewer keep scrolling inside their own box (all already did). Two ways, chosen per table:
+- **Shared `DataTable`** (cards below 768px, table above): cell content moved verbatim into each column's `render`; header alignment, row `key` / `onClick`, empty states and "Clear filters" carried over. Mostly done with `D:\zoiko-local\tools\table2datatable.py` (refuses anything unusual; those were done by hand).
+- **Phone cards alongside the unchanged desktop table** for the main lists with selection / sort / bulk actions (customers, payments, subscriptions, quotations, contracts, products, pricing plans): same handlers; a "Select all" checkbox and a sort menu replace the header row.
+
+| Module | Commit | Converted | Left as is (and why) |
+|---|---|---|---|
+| Dashboard | `7870a86` | Invoice / payment reports (5 cols); configuration diagnostics (7, 5) | Forecast (4), exchange rates (2) |
+| Customers | `7d13e57`, `f9a1700` | List (13 → cards); billing history (6, 6); All Customers (5); profitability (5) | Revenue details (4), aging (3); import previews (dialog); **customer profile's 7 tables → B5** |
+| Invoicing | `1ac4aaa` | Report: status list, overdue (5, 5) | Credit notes / applications (3); PDF preview (document); **invoice line items → B5** |
+| Payments | `f31e564` | List (8 → cards); credits (8); dunning levels (6); monthly summary (5) | **Payment detail (4 ×3) → B5** |
+| Subscriptions | `a4870bb` | List (10 → cards); invoice schedules (7); report (7) | **Subscription detail → B5** |
+| Quotations | `00c9393` | List (8 → cards); report (5) | Wizard review (dialog, scrolls) |
+| Contracts | `3b71efe` | List (9 → cards); reports (5, 5); retainers (6) | Create preview (B3), detail → B5 |
+| Products / Pricing | `57525c0`, `681894b`, `674d18a`, `8f15951`, `286f4e6` | Product list (10 → cards); pricing plans list (9 → cards); product pricing plans (8); currency pricing, discounts, price lists, pricing rules, tax pricing ×2, tiers, usage meters, pricing report | Categories (4), tax group members (4), product reports (2, 4); import preview (dialog); product profile → B5 |
+| Tax | `913eafa` | Tax rates (9, sortable); jurisdiction report (5) | Report tables (4, 3); import preview (dialog) |
+| Org admin / workspace | `2cc3175` | Workspace subscriptions (5); usage counters (7) | Workspace invoices / payments (4), Zoiko invoices (4 + action), dashboards' recent lists (3), organization users (4 + actions), Zoiko plan comparison (comparison matrix) |
+| Super admin | `6d68d69` | Collections risk (5); financial summary (5); commercial line items (6); reconciliation exceptions (6) | Narrow tables; main lists were already `DataTable` |
+| Landing / auth | — | — | Register plan comparison (matrix, scrolls); public invoice / quote / estimate / platform invoice (customer-facing documents, scroll in their own box; estimate already hides two columns on phones) — **decision needed** |
+
+**Shared change:** `DataTable` cards get a sort menu + direction toggle when the table has sortable columns and `onSort` (`d876183`); tables without sortable columns are unchanged.
+
+**Measured (before → after, 360px):** customer list 916px table in a 294px box → 6 cards; payment list 759 → cards; subscription list 991 → cards; billing history 687 → 9 cards; invoicing status report 470 → 9 cards; dashboard invoice report 592 → 9 cards; All Customers 659 → 6 cards; profitability 388 → 6 cards. Page overflow 0 everywhere, before and after; desktop tables unchanged in content. Screenshots `shots/phase3/stepB4-*/{before,after}*/`. Pages whose local data is empty (credits, quotations, dunning levels, Postgres-only report queries) are covered by tests instead.
+
+**Parity:** the main lists 0 unexplained (desktop table untouched); `DataTable` conversions show only the structural moves (header text → column labels, row map / keys → `data` / `rowKey`, cell expressions → `render`, 40px empty icons → `emptyIcon`). One real loss caught and restored: the dashboard report's `?? "—"` fallback for empty cells.
+
+**Desktop differences:** converted tables use the shared table styling (header band, row hover, the shared empty state); reconciliation exceptions' header no longer sticks inside its 420px scroll box. Lists that got phone cards are unchanged on desktop.
+
+**Tests:** new `customer-list.cards.b4`, `billing-history.cards.b4`, `payment-list.cards.b4` (phones: cards, selection, bulk action, sort, open); existing module suites pass unchanged.
+
+## 8h. Phase 3 B5 — detail pages
+
+Inventory at 360px (`D:\zoiko-local\tools\detail-probe.mjs`, `shots/phase3/stepB5/inventory/`): no page overflow anywhere; main + side panels already stack below `lg`. What needed fixing: wide tables inside detail tabs, a clipped customer header, the customer details edit actions, and payment info rows squeezed into two ~107px columns.
+
+| Page | Commit | Change |
+|---|---|---|
+| Customer profile | `67b1f28` | Header: long name / email wrap instead of running past the card. Editing details: Cancel / Save Changes move into a pinned bottom bar (44px on phones, one per page) and leaving with unsaved edits asks first (`useUnsavedChangesGuard`, compared with the form as it was when editing started). Tab tables with 5–6 columns (payments, credit notes ×2, contracts, subscriptions) → `DataTable`; the two 4-column tables stay. |
+| Invoice detail | `10b60d6` | Line items (7 cols) → phone-only cards (description + total, then qty / unit price / disc / tax), desktop table unchanged; currency-conversion rows wrap. |
+| Subscription, contract, quotation, product | `fcc506d` | Tab tables with 5–7 columns → `DataTable`: subscription invoices + payments, contract line items + billing schedule, quotation line items, product pricing plans / contracts / subscriptions. Line-item cards: title = description, amount = total, "#" hidden in cards only. 3–4 column tables stay. |
+| Payment detail | `9d79156` | Payment information / invoice / allocation label-value grids stack below 640px (were cut off: "bank_tr", "GBP" clipped). The three 4-column tables stay. |
+| Credit note, refund, write-off, dunning, collections | — | No change needed: 2-column stat tiles that widen from `sm`, credit-note applications table is 3 columns. Refund / write-off / dunning / collections have no local records, so checked statically. |
+
+**Measured (before → after, 360px):** customer Billing Overview payments 449px table in a 246px box → card; invoice line items 559 / 278 → cards; subscription invoices 543 → 2 cards, payments 678 → card; product subscriptions 441 → card; quotation line items 571 → 3 cards; contract line items 609 → 3 cards, billing schedule 649 → 2 cards; payment info rows 5 overflowing → 0. Page overflow 0 before and after; desktop tables unchanged in content. Quotation / contract / tab data from fictional fixtures (`D:\zoiko-local\tools\cfg-b5-details.mjs`). Screenshots `shots/phase3/stepB5/{customer,invoice,details,payment}-{before,after}*/`, `details-cards/`, `inventory-after/`.
+
+**Parity:** invoice detail 0 unexplained; `DataTable` conversions show only the structural moves (headers → column labels, row keys / clicks → `rowKey` / `onRowClick`, cells → `render`) and the customer edit buttons moving from the section header into the bar, word for word.
+
+**Desktop differences:** customer profile Cancel / Save Changes are in the pinned bar instead of the section header while editing; converted tab tables use the shared table styling.
+
+**Tests:** new `customer-profile.editbar.b5` (Edit ↔ bar, guard asks only when dirty, Save sends the edit); existing module suites pass unchanged.
+
+**Still open:** public invoice / quote line items (customer-facing documents) — decision needed (recommended: cards for public invoice only). Small tap targets on detail pages (e.g. 11/25 on customer profile at 360) → Phase 4.
+
+## 8i. Phase 3 B6 — final check (all 135 route checks re-measured)
+
+Sweep after B5 (`D:\zoiko-local\tools\sweep.mjs` via `run-sweep.ps1`, local SQLite stack, real fonts; 360 / 390 / 412 / 768 / 1280): `shots/phase3/stepB6/sweep-after-b5/` (screenshots at 390 and 1280 per route). 135 / 135 measured, no errors.
+
+| Check (360 and 390) | Phase 0 | After B6 |
+|---|---|---|
+| Pages scrolling sideways | 6 | **0** |
+| Squeezed tables (columns < 56px, not scrolling) | 1 | **0** |
+| Form controls under 16px | 123 pages | **0** |
+| AI button over a control | 19 pages | **0** (see note) |
+| Clipped visible content | 22 pages | **3 pages, all Phase 4 insight lines** (+4 decorative hero backgrounds, not content) |
+| Drawer: Esc / overlay / back close it, scroll lock, nothing focusable while closed | ✗ | **✓** for org_admin, billing_admin, super_admin |
+| Trial banner + top bar | 38% | 15% (super admin 8%) |
+
+**Fixed in B6:**
+- *Billing settings — "Auto-configured" / "Customized" badge* (the page-level clip carried since Phase 0, `ff3a4e6`): badge rows wrap, so the badge drops under its input on phones instead of running out of the card; field tooltips wrap on phones. Reproduced by editing fields / changing country (badges show for 4s): before, Default Currency's badge ended at the screen edge (360); after, 0 clipped at 360 / 390. `shots/phase3/stepB6/badge-{before,after}/`.
+- *Dashboard chart cards* (`a5409cb`, shared `DashboardChartCard`): header action wraps under the title, 16px padding on phones. Products dashboard "Monthly view" toggle and the chart's right edge were clipped at 360 → 0.
+- *Tax pricing filters* (`17f9414`): the search / type / country / refresh row wrapped nowhere; "Country" clipped at 390 → 0. `shots/phase3/stepB6/clips-after/`.
+
+**Note on the AI button:** the sweep's scrolled-to-bottom check reports 18 pages (360) where a button overlaps the AI button's box. Below `lg` the AI button lives in the top bar (y 10–54px); verified with `elementFromPoint` that these are page buttons scrolled up *behind* the header (the header is on top), not covered controls.
+
+**Route checklist (current):**
+
+| Group | Routes | Clean at 360 / 390 | Remaining (owner) |
+|---|---|---|---|
+| Auth / public | 6 | 6 | — |
+| Billing (org_admin) | 77 | 74 + products dashboard, tax pricing fixed after the sweep | Insight lines on products, collections, credit-notes dashboards (Phase 4) |
+| Organization admin | 6 | 6 | Decorative hero background on dashboard / organization (not content) |
+| Billing-admin workspace + billing sample | 12 | 11 | Workspace activity line (also the raw `InvoiceStatus.OVERDUE` text) — Phase 4 |
+| Super admin | 34 | 34 | Decorative hero background on dashboard / command-center (not content) |
+
+**Not covered by this sweep:** public invoice / quote / estimate / platform checkout (need public tokens; line-item cards decision pending), privileged-session banner and triage strip (Phase 5, fake responses), and detail pages without local records (refund, write-off, dunning, collections — checked statically in B5). Tap targets under 44px (37% of controls on billing pages at 360) and text under 12px are Phase 4.
+
+## 8j. Phase 4 part 1 — polish (released separately from part 2, decided)
+
+Measured with `D:\zoiko-local\tools\p4-measure.mjs` at 390×844: only what is on screen (the closed drawer, inert and aria-hidden content excluded; a checkbox inside its `<label>` counts as the label). Results in `shots/phase4/{baseline,after-step1,after-step2,after-step3}/`; full overflow / clip sweeps after each step in `shots/phase4/sweep-after-step*/`.
+
+| Check (390px, routes measured in every run) | Before Phase 4 | After part 1 |
+|---|---|---|
+| Controls under 44px | 863 | **381** |
+| Text elements under 12px | 1,026 | **0** |
+| Clipped visible content (360 / 390) | 3 insight lines + workspace activity line | **0** (4 decorative hero backgrounds remain, not content) |
+| List search boxes under 200px wide (360 / 390) | 9 pages (54–195px) | **0** |
+| Page overflow | 0 | 0 |
+
+**What changed (all phones-only unless noted; desktop unchanged):**
+- *Tap targets* (`c0c8ada`, `2a16ea1`): shared `Button` sm/md, text inputs and selects (global rule, phones + touch), the top-bar logo, breadcrumb links, card selection checkboxes (44×44 label; the tap doesn't open the row on `DataTable` cards), date-range picker, Export, and 28 page-level Refresh / Filter icon buttons.
+- *Minimum text* (`55ee931`, decided: phones only): the 10–11.5px utility sizes, Recharts axis / legend text and the organization page's tags render at 12px below 640px; inline-styled text opts in with `max(<size>, var(--min-text-size, 0px))`.
+- *Insight lines* (`3140b87`): shared insight pills wrap on phones.
+- *List search* (`1653064`): on 15 list pages the search row takes the full width on phones and Filter / Refresh wrap under it (the bigger icon buttons had squeezed it further).
+- *One status map* (`dc5986a`, `f8badd5`, `f25538a`, **desktop too**): `STATUS_META` covers every billing status; list, detail and pricing pages render the shared `StatusBadge` (icons kept), so a status has one label and colour everywhere. Fixes "Past_due" and raw lowercase labels. Not migrated (own vocabularies): import-wizard row states, Stripe Connect account states, public customer pages (own theme), organization-admin / super-admin / workspace pages.
+- *Follow-ups*: Terminate Contract forgets the typed reason on Esc / X (`41ee51c`); discount form's duplicate Esc handler removed (`6948c34`); Triage Inspect buttons named per incident and working on their own, 11 unused imports removed (`14fb164`); 42 pricing form labels linked to their fields (`36a91d0`).
+
+**Before / after at 390:** `shots/phase4/before-after-390/{before,after-r2}/` — products dashboard, invoice list, invoice detail, credits (empty state). "Before" = the B6 sweep's 390 screenshots.
+
+**Phase 4 part 2 (next):** shared currency / number / date helpers, consistent empty / loading / error states, one primary action per screen.
+
+**Pre-existing, reported:** the full local backend run has 7 failures in unrelated areas (email alert routing, Stripe SDK version pin, 3 super-admin tests); 5 confirmed failing without any change from this work.
+
+## 8k. Phase 4 part 2 — formatting, states, one primary action
+
+**Shared formatting (decided: "Oct 1, 2026" everywhere).** `formatDisplayDate` shows the short month name (fixed en-US, like the currency formatting); new shared helpers `formatDisplayDateTime` ("Oct 1, 2026, 3:45 PM"), `formatRelativeTime` ("5 min ago", then the date after a week), `formatDisplayNumber`, `formatPercent` (`822a5d3`). Moved onto them: 14 pages' own formatter functions (`5d4ca75`) and 48 inline `new Date(x).toLocale…()` calls on 26 pages (`f64e592`). Effects: one date format app-wide; date-only values on the right calendar day everywhere (the public platform invoice / quote pages showed the previous day in the Americas); "—" instead of "1/1/1970" for missing dates. Left as they are: time-only formats, the weekday greeting, short chart-axis dates, and explicit-currency formatters (platform invoice / quote, payment success).
+
+**States.** Page errors already used the shared `ErrorState` (remaining red text is field / dialog validation). Eight detail / workspace pages drew their own loading spinner; they use the shared `Spinner`, which gains `role="status"` / "Loading" (`702f3d7`).
+
+**One primary action per screen** (`D:\zoiko-local\tools\primary-probe.mjs`, every route at 1280 / 390; the app-wide trial banner and selected filter chips excluded): 10 pages → 0. Empty-state buttons repeating the header's primary action are outlined (shared dashboard empty panel, product pricing plans, credit notes, support access); customer profile keeps "Create Invoice" primary, product profile "New Quotation"; tax configuration's "Add" buttons are secondary (`5927420`). Kept on purpose: invoice detail's "Mark as Paid" (money-confirm style) beside "Pay online".
+
+**Re-measured:** full sweep `shots/phase4/sweep-part2/` — 135 / 135, page overflow 0, squeezed tables 0, clipped content 0 at 360 / 390 (4 decorative hero backgrounds only).
 
 ## 9. Local environment safety notes
 
