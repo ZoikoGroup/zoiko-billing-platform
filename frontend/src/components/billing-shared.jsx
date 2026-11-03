@@ -11,7 +11,7 @@ import { assertExportsAllowed, getExportSuppression } from "../utils/export-help
 // to every one of them. The stat-card sparkline below is hand-rolled SVG for
 // exactly this reason; ExecutiveSummary is likewise recharts-free by design.
 import { ExecutiveSummary } from "./executive-summary";
-import { OverflowMenu } from "./billing-ui";
+import { CrumbLink, OverflowMenu } from "./billing-ui";
 import useMediaQuery, { BELOW_SM } from "../hooks/useMediaQuery";
 
 export function formatLastUpdated(value, options = { hour: "2-digit", minute: "2-digit" }) {
@@ -470,9 +470,7 @@ export function DashboardHeader({
               <span key={crumb.label + idx} className="inline-flex items-center gap-1.5">
                 {idx > 0 && <ChevronRight size={13} className="text-slate-300" />}
                 {!isLast && crumb.href ? (
-                  <a href={crumb.href} className="transition-colors hover:text-brand-600" onClick={(e) => e.preventDefault()}>
-                    {crumb.label}
-                  </a>
+                  <CrumbLink href={crumb.href}>{crumb.label}</CrumbLink>
                 ) : (
                   <span className={isLast ? "font-semibold text-slate-600" : ""}>{crumb.label}</span>
                 )}
