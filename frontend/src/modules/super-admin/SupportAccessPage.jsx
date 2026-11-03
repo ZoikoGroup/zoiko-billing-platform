@@ -1547,7 +1547,7 @@ export default function SupportAccessPage() {
                         {isDesktop ? (
                           <div className="mt-5 flex flex-wrap justify-center gap-2">
                             {canRequest && (
-                              <Button variant="primary" icon={ShieldAlert} onClick={() => setShowRequest(true)}>
+                              <Button variant="secondary" icon={ShieldAlert} onClick={() => setShowRequest(true)}>
                                 Request access
                               </Button>
                             )}

@@ -6,7 +6,7 @@ import HRPage from "../../../components/HRPage";
 import { ErrorState } from "../../../components/billing-shared";
 import { DataTable } from "../../../components/billing-ui";
 import { subscriptionApi } from "../../../service/billingService";
-import { extractArray } from "../../../utils/billing-helpers";
+import { extractArray, formatDisplayDate } from "../../../utils/billing-helpers";
 import { formatCurrency } from "../../../utils/locale";
 import useLatestRequest from "../utils/useLatestRequest";
 
@@ -21,7 +21,7 @@ const STATUS_OPTIONS = [
   { value: "past_due", label: "Past Due" },
 ];
 
-const formatDate = (d) => d ? new Date(d).toLocaleDateString() : "—";
+const formatDate = (d) => d ? formatDisplayDate(d) : "—";
 
 export default function InvoiceSchedulesPage() {
   const navigate = useNavigate();

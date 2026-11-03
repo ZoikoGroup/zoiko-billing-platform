@@ -130,12 +130,59 @@ export function formatTaxRatePercent(rate) {
 // in local time instead so the same calendar day shows in every timezone.
 const DATE_ONLY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
-export function formatDisplayDate(d) {
-  if (d == null || d === "") return "\u2014";
+function parseDisplayDate(d) {
+  if (d == null || d === "") return null;
   const dateOnly = typeof d === "string" ? DATE_ONLY_RE.exec(d) : null;
   const date = dateOnly ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3])) : new Date(d);
-  if (Number.isNaN(date.getTime())) return "\u2014";
-  return date.toLocaleDateString();
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+// One date format app-wide (decided): "Oct 1, 2026" \u2014 unambiguous for every
+// reader, unlike 10/1 vs 1/10. Fixed en-US, like the currency formatting.
+const DATE_FORMAT = { year: "numeric", month: "short", day: "numeric" };
+
+/** "Oct 1, 2026"; "\u2014" for empty / invalid. Bare YYYY-MM-DD stays on its calendar day. */
+export function formatDisplayDate(d) {
+  const date = parseDisplayDate(d);
+  return date ? date.toLocaleDateString("en-US", DATE_FORMAT) : "\u2014";
+}
+
+/** "Oct 1, 2026, 3:45 PM"; "\u2014" for empty / invalid. */
+export function formatDisplayDateTime(d) {
+  const date = parseDisplayDate(d);
+  return date ? date.toLocaleString("en-US", { ...DATE_FORMAT, hour: "numeric", minute: "2-digit" }) : "\u2014";
+}
+
+/** "just now", "5 min ago", "3 hr ago", "2 days ago"; older than a week (or future) -> the date. */
+export function formatRelativeTime(d, now = Date.now()) {
+  const date = parseDisplayDate(d);
+  if (!date) return "\u2014";
+  const sec = Math.round((now - date.getTime()) / 1000);
+  if (sec < 0) return formatDisplayDate(date);
+  if (sec < 60) return "just now";
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min} min ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr} hr ago`;
+  const days = Math.floor(hr / 24);
+  if (days < 7) return `${days} day${days === 1 ? "" : "s"} ago`;
+  return formatDisplayDate(date);
+}
+
+/** Plain number with thousands separators: 12,345 (or 12,345.68 with digits). */
+export function formatDisplayNumber(v, digits = 0) {
+  if (v == null || v === "") return "\u2014";
+  const n = Number(v);
+  if (Number.isNaN(n)) return "\u2014";
+  return n.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+}
+
+/** Percentage from a percent value (12.5 -> "12.5%"). */
+export function formatPercent(v, digits = 1) {
+  if (v == null || v === "") return "\u2014";
+  const n = Number(v);
+  if (Number.isNaN(n)) return "\u2014";
+  return `${n.toFixed(digits)}%`;
 }
 
 export function downloadJSON(data, filename) {

@@ -13,6 +13,7 @@ import {
   Package, CreditCard, ArrowRight, Mail, ShieldCheck, Globe,
   Phone, MapPin, CalendarClock, UserCheck, History, Settings, Megaphone, Bell,
 } from "lucide-react";
+import { formatDisplayDate } from "../../utils/billing-helpers";
 
 const KPI_COLORS = {
   active_customers: "#7C3AED",
@@ -254,7 +255,7 @@ export default function WorkspaceDashboardPage() {
                 <StatusPill status={primarySub.status} />
                 <span className="inline-flex items-center gap-1.5 text-xs text-slate-500">
                   <CalendarClock className="w-3.5 h-3.5" />
-                  Renews {primarySub.next_billing_at ? new Date(primarySub.next_billing_at).toLocaleDateString() : "—"}
+                  Renews {primarySub.next_billing_at ? formatDisplayDate(primarySub.next_billing_at) : "—"}
                 </span>
               </div>
             </>
@@ -342,7 +343,7 @@ export default function WorkspaceDashboardPage() {
                       {item?.description || item?.event_type || item?.action || `Invoice #${item?.invoice_number || item?.invoice_id || ""}`}
                     </p>
                     <p className="text-xs text-slate-500">
-                      {(item?.created_at || item?.timestamp || item?.date) ? new Date(item.created_at || item.timestamp || item.date).toLocaleDateString() : ""}
+                      {(item?.created_at || item?.timestamp || item?.date) ? formatDisplayDate(item.created_at || item.timestamp || item.date) : ""}
                     </p>
                   </div>
                   {item?.total_amount != null && (

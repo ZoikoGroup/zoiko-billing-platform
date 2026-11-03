@@ -10,7 +10,7 @@ import { loadGlobalBillingConfig } from "../../../service/billingConfigCache";
 import { formatDisplayCurrency, formatDisplayDate } from "../../../utils/billing-helpers";
 import { useCurrency } from "../utils/CurrencyContext";
 import { useTerminology } from "../utils/TerminologyContext";
-import { StatusBadge as SharedStatusBadge } from "../../../components/billing-shared";
+import { StatusBadge as SharedStatusBadge, Spinner } from "../../../components/billing-shared";
 
 function StatusBadge({ status }) {
   return <SharedStatusBadge status={status} />;
@@ -204,7 +204,7 @@ export default function QuotationDetailPage() {
   if (loading) {
     return (
       <HRPage title="Quotation Detail" subtitle="Loading quotation details...">
-        <div className="flex items-center justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-brand-600" /></div>
+        <Spinner />
       </HRPage>
     );
   }

@@ -9,7 +9,7 @@ import {
 import HRPage from "../../../components/HRPage";
 import { subscriptionApi } from "../../../service/billingService";
 import { formatCurrency } from "../../../utils/locale";
-import { extractArray } from "../../../utils/billing-helpers";
+import { extractArray, formatDisplayDate } from "../../../utils/billing-helpers";
 import { Spinner, ErrorState, EmptyState, DateRangeFilter, useDateRange, ExportMenu } from "../../../components/billing-shared";
 import { filterByDateRange, downloadExcel, downloadJSON, downloadCSV } from "../../../utils/export-helpers";
 import { useTerminology } from "../utils/TerminologyContext";
@@ -322,8 +322,8 @@ export default function SubscriptionReportsPage() {
                             }`}>{s.status}</span></> },
                     { key: "amount", label: "Amount", align: "right", render: (s) => <span className="font-medium text-slate-900">{formatCurrency(s.unit_price, orgCurrency)}
                             {s.quantity > 1 && <span className="text-xs text-slate-500 ml-1">x{s.quantity}</span>}</span> },
-                    { key: "start_date", label: "Start Date", render: (s) => <span className="text-slate-500 whitespace-nowrap">{s.start_date ? new Date(s.start_date).toLocaleDateString() : "—"}</span> },
-                    { key: "next_billing", label: "Next Billing", render: (s) => <span className="text-slate-500 whitespace-nowrap">{s.next_billing_at ? new Date(s.next_billing_at).toLocaleDateString() : "—"}</span> },
+                    { key: "start_date", label: "Start Date", render: (s) => <span className="text-slate-500 whitespace-nowrap">{s.start_date ? formatDisplayDate(s.start_date) : "—"}</span> },
+                    { key: "next_billing", label: "Next Billing", render: (s) => <span className="text-slate-500 whitespace-nowrap">{s.next_billing_at ? formatDisplayDate(s.next_billing_at) : "—"}</span> },
                   ]}
                 />
               </div>

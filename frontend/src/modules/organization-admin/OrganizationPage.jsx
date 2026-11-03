@@ -4,6 +4,7 @@ import { stripeConnectApi } from "../../service/billingService";
 import { X, CheckCircle, AlertTriangle } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { ROLES } from "../../config/roles";
+import { formatDisplayDate } from "../../utils/billing-helpers";
 
 // Palette + type match the Login page: Inter/JetBrains Mono, blue/navy primary,
 // emerald success, red danger, slate ink. See src/pages/LoginPage.jsx.
@@ -721,7 +722,7 @@ export default function OrgAdminOrganizationPage() {
   const activeCustomers = org.active_customers || 0;
   const billingAdmins = org.billing_admins || 0;
   const currency = org.currency;
-  const regDate = org.created_at ? new Date(org.created_at).toLocaleDateString() : "—";
+  const regDate = org.created_at ? formatDisplayDate(org.created_at) : "—";
 
   return (
     <div className="org-dash">
@@ -914,7 +915,7 @@ export default function OrgAdminOrganizationPage() {
                   <DetailRow label="Charges" value={stripe?.charges_enabled ? "Enabled" : "Disabled"} />
                   <DetailRow label="Payouts" value={stripe?.payouts_enabled ? "Enabled" : "Disabled"} />
                   {stripe?.connected_at && (
-                    <DetailRow label="Connected At" value={new Date(stripe.connected_at).toLocaleDateString()} mono />
+                    <DetailRow label="Connected At" value={formatDisplayDate(stripe.connected_at)} mono />
                   )}
                 </div>
 

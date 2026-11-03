@@ -481,7 +481,7 @@ export default function InvoiceDashboard() {
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-slate-700 truncate">{act.action}</p>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      Invoice #{act.invoice_id} &middot; {act.created_at ? new Date(act.created_at).toLocaleDateString() : "—"}
+                      Invoice #{act.invoice_id} &middot; {act.created_at ? formatDisplayDate(act.created_at) : "—"}
                     </p>
                   </div>
                 </div>

@@ -18,6 +18,7 @@ import { TAX_ROUNDING_NOT_APPLIED_NOTICE } from "../tax/tax-helpers";
 import useLatestRequest from "../utils/useLatestRequest";
 import { SettingsSaveBar, OverflowMenu, DataTable, useUnsavedChangesGuard } from "../../../components/billing-ui";
 import useMediaQuery, { BELOW_SM } from "../../../hooks/useMediaQuery";
+import { formatDisplayDate, formatDisplayDateTime } from "../../../utils/billing-helpers";
 
 const TABS = [
   { id: "general", label: "General", icon: Building2 },
@@ -2199,12 +2200,12 @@ export default function BillingSettingsPage() {
               </button>
               {exchangeRates?.last_refreshed && (
                 <span className="text-xs text-slate-500">
-                  Last updated: {new Date(exchangeRates.last_refreshed).toLocaleString()}
+                  Last updated: {formatDisplayDateTime(exchangeRates.last_refreshed)}
                 </span>
               )}
               {!exchangeRates?.last_refreshed && exchangeRates?.timestamp && (
                 <span className="text-xs text-slate-500">
-                  Last updated: {new Date(exchangeRates.timestamp).toLocaleString()}
+                  Last updated: {formatDisplayDateTime(exchangeRates.timestamp)}
                 </span>
               )}
             </div>
@@ -2827,7 +2828,7 @@ function AdministrationPanel() {
                 </div>
               </div>
             )}
-            <p className="text-xs text-slate-500">Checked at: {health.checked_at ? new Date(health.checked_at).toLocaleString() : "—"}</p>
+            <p className="text-xs text-slate-500">Checked at: {health.checked_at ? formatDisplayDateTime(health.checked_at) : "—"}</p>
           </div>
         ) : (
           <div className="flex items-center gap-2 p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-500">
@@ -2931,7 +2932,7 @@ function AdministrationPanel() {
                     <p className="text-sm font-medium text-slate-800 truncate">{tpl.name}</p>
                     <p className="text-xs text-slate-500">
                       {tpl.size_bytes ? `${(tpl.size_bytes / 1024).toFixed(1)} KB` : ""}
-                      {tpl.last_modified ? ` · ${new Date(tpl.last_modified).toLocaleDateString()}` : ""}
+                      {tpl.last_modified ? ` · ${formatDisplayDate(tpl.last_modified)}` : ""}
                     </p>
                   </div>
                   <button onClick={() => handlePreviewTemplate(tpl.name)}
@@ -3258,7 +3259,7 @@ function AdministrationPanel() {
               </div>
             )}
             {enhancedValidation.validated_at && (
-              <p className="text-xs text-slate-500">Validated at: {new Date(enhancedValidation.validated_at).toLocaleString()}</p>
+              <p className="text-xs text-slate-500">Validated at: {formatDisplayDateTime(enhancedValidation.validated_at)}</p>
             )}
           </div>
         ) : (

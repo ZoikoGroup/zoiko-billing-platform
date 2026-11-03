@@ -19,6 +19,7 @@ import {
 import { getJobTelemetry, retryJob } from "../../service/privilegedAccessService";
 import { Button, Modal, PageHeader, SectionCard } from "../../components/billing-ui";
 import { ErrorState, Spinner } from "../../components/billing-shared";
+import { formatDisplayDateTime } from "../../utils/billing-helpers";
 
 const SEVERITY_BADGES = {
   p0: "bg-rose-100 text-rose-800 border-rose-200",
@@ -260,7 +261,7 @@ export default function TriagePage({ showReprocessing, embedded = false } = {}) 
                         <p className="mt-1 max-w-xl text-xs text-rose-700">{job.last_error}</p>
                       ) : null}
                       <p className="mt-1 text-[11px] text-slate-500">
-                        Last run: {job.last_started_at ? new Date(job.last_started_at).toLocaleString() : "unknown"}
+                        Last run: {job.last_started_at ? formatDisplayDateTime(job.last_started_at) : "unknown"}
                       </p>
                     </div>
                     <div className="flex flex-col items-end gap-2">
@@ -568,10 +569,10 @@ export default function TriagePage({ showReprocessing, embedded = false } = {}) 
               <p><strong className="text-slate-800">Description:</strong> {selectedIncident.description || "No description provided."}</p>
               <p><strong className="text-slate-800">Source:</strong> {selectedIncident.source} ({selectedIncident.source_key})</p>
               <p><strong className="text-slate-800">Occurrences:</strong> {selectedIncident.occurrence_count}</p>
-              <p><strong className="text-slate-800">Opened At:</strong> {new Date(selectedIncident.opened_at).toLocaleString()}</p>
+              <p><strong className="text-slate-800">Opened At:</strong> {formatDisplayDateTime(selectedIncident.opened_at)}</p>
               <p><strong className="text-slate-800">Correlation ID:</strong> <code className="font-mono">{selectedIncident.correlation_id}</code></p>
               {selectedIncident.sla_ack_deadline && (
-                <p><strong className="text-slate-800">SLA Ack Target:</strong> {new Date(selectedIncident.sla_ack_deadline).toLocaleString()}</p>
+                <p><strong className="text-slate-800">SLA Ack Target:</strong> {formatDisplayDateTime(selectedIncident.sla_ack_deadline)}</p>
               )}
             </div>
 

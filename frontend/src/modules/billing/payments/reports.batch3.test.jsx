@@ -45,7 +45,9 @@ describe("O. Payment reports", () => {
   it("says when only part of the payments are covered", async () => {
     m.pay.mockResolvedValue({ items: [{ id: 1, amount: "5", status: "cleared", currency: "USD", payment_date: "2026-01-01" }], total: 900 });
     renderPage();
-    expect(await screen.findByRole("status")).toHaveTextContent("1 most recent payments of 900");
+    // The loading spinner is also a status region, so wait for the notice's text.
+    const notice = await screen.findByText(/1 most recent payments of 900/);
+    expect(notice.closest('[role="status"]')).not.toBeNull();
   });
 
   it("Monthly Trend tooltip keeps the count as a number", () => {

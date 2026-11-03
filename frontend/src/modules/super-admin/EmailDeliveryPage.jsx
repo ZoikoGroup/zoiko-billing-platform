@@ -7,6 +7,7 @@ import {
 } from "../../service/commandCenterService";
 import { PageHeader, DataTable, Button, SectionCard } from "../../components/billing-ui";
 import { ErrorState, Spinner, EmptyState, StatusBadge, Pagination, SuccessMessage } from "../../components/billing-shared";
+import { formatDisplayDateTime } from "../../utils/billing-helpers";
 
 /**
  * B3 — real operational visibility into email/SMTP delivery health.
@@ -33,8 +34,7 @@ const HEALTH_META = {
 };
 
 function formatDateTime(value) {
-  if (!value) return "—";
-  return new Date(value).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return formatDisplayDateTime(value);
 }
 
 function fmtPct(value) {
@@ -184,7 +184,7 @@ export default function EmailDeliveryPage() {
         description="Real operational visibility over every email send attempt (CommunicationAuditLog) — volume, failure rate, and a manual resend action where a proper business-record resend path exists."
         icon={Mail}
         accent="brand"
-        meta={overview?.generated_at ? `Generated ${new Date(overview.generated_at).toLocaleString()}` : null}
+        meta={overview?.generated_at ? `Generated ${formatDisplayDateTime(overview.generated_at)}` : null}
         actions={
           <Button variant="secondary" icon={RefreshCw} onClick={load} loading={loading}>
             Refresh

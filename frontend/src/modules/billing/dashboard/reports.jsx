@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { BarChart3, Download, RefreshCw, AlertCircle, FileText, DollarSign, Receipt, TrendingUp, Calendar, Percent, Users } from "lucide-react";
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { dashboardApi, invoiceApi, paymentApi, taxApi, subscriptionApi } from "../../../service/billingService";
-import { extractArray } from "../../../utils/billing-helpers";
+import { extractArray, formatDisplayDate } from "../../../utils/billing-helpers";
 import {
   DashboardHeader, useDateRange, DashboardStatCard, DASHBOARD_KPI_GRID,
   DashboardChartErrorBoundary as ChartErrorBoundary, DashboardEmptyPanel,
@@ -212,7 +212,7 @@ export default function ReportsPage() {
       { key: "customer_name", label: "Customer", render: (r) => r.customer_name || r.customer?.name || r.customer_display_name || (r.customer_id ? `Customer #${r.customer_id}` : "Unassigned Customer") },
       { key: "total", label: "Amount", render: (r) => <span className="whitespace-nowrap font-medium text-slate-900">{formatCurrency(r.total || r.amount, baseCurrency)}</span> },
       { key: "status", label: "Status", render: (r) => <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 capitalize">{r.status || "—"}</span> },
-      { key: "created_at", label: "Date", render: (r) => r.created_at ? new Date(r.created_at).toLocaleDateString() : "—" },
+      { key: "created_at", label: "Date", render: (r) => r.created_at ? formatDisplayDate(r.created_at) : "—" },
     ];
 
     return (

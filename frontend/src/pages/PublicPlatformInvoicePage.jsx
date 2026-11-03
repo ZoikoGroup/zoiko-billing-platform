@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { publicPlatformInvoiceApi } from "../service/platformPublicService";
+import { formatDisplayDate } from "../utils/billing-helpers";
 
 function fmtCcy(v, currency) {
   const num = Number(v ?? 0);
@@ -9,10 +10,7 @@ function fmtCcy(v, currency) {
 }
 
 function fmtDate(d) {
-  if (!d) return "—";
-  const parsed = new Date(d);
-  if (Number.isNaN(parsed.getTime())) return d;
-  return parsed.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+  return formatDisplayDate(d);
 }
 
 const STATUS_MAP = {

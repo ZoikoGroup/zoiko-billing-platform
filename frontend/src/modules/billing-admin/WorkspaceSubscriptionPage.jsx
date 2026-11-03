@@ -7,8 +7,10 @@ import {
 import { loadGlobalBillingConfig } from "../../service/billingConfigCache";
 import WorkspaceHeader from "./WorkspaceHeader";
 import { formatOrgMoney, resolveOrgCurrency, formatCurrencyChip } from "./workspace-format";
-import { Repeat, Loader2, ArrowRight, Coins, Layers } from "lucide-react";
+import { Repeat, ArrowRight, Coins, Layers } from "lucide-react";
 import { DataTable } from "../../components/billing-ui";
+import { formatDisplayDate } from "../../utils/billing-helpers";
+import { Spinner } from "../../components/billing-shared";
 
 function Field({ label, value }) {
   return (
@@ -108,7 +110,7 @@ export default function WorkspaceSubscriptionPage() {
   if (loading) {
     return (
       <div className="p-4 sm:p-6 lg:p-8" style={{ background: "#ffffff", minHeight: "calc(100vh - 4rem)" }}>
-        <div className="flex items-center justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-brand" /></div>
+        <Spinner />
       </div>
     );
   }
@@ -175,9 +177,9 @@ export default function WorkspaceSubscriptionPage() {
                     </div>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                    <MiniTile label="Next Renewal" value={primarySub.next_billing_at ? new Date(primarySub.next_billing_at).toLocaleDateString() : "—"} />
+                    <MiniTile label="Next Renewal" value={primarySub.next_billing_at ? formatDisplayDate(primarySub.next_billing_at) : "—"} />
                     <MiniTile label="Active Subscriptions" value={activeCount} />
-                    <MiniTile label="Member Since" value={memberSince ? new Date(memberSince).toLocaleDateString() : "—"} />
+                    <MiniTile label="Member Since" value={memberSince ? formatDisplayDate(memberSince) : "—"} />
                     <MiniTile label="Unit Price" value={formatOrgMoney(primarySub.unit_price, { default_currency: currency })} />
                     <MiniTile label="Quantity" value={primarySub.quantity || 1} />
                   </div>
@@ -260,7 +262,7 @@ export default function WorkspaceSubscriptionPage() {
                           </td>
                           <td className="px-6 py-3.5"><StatusPill status={inv.status} /></td>
                           <td className="px-6 py-3.5 text-right text-[13px] font-semibold text-slate-800">{formatOrgMoney(inv.total_amount, { default_currency: currency })}</td>
-                          <td className="px-6 py-3.5 text-[13px] text-slate-500">{(inv.issue_date || inv.created_at) ? new Date(inv.issue_date || inv.created_at).toLocaleDateString() : "—"}</td>
+                          <td className="px-6 py-3.5 text-[13px] text-slate-500">{(inv.issue_date || inv.created_at) ? formatDisplayDate(inv.issue_date || inv.created_at) : "—"}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -295,7 +297,7 @@ export default function WorkspaceSubscriptionPage() {
                           <td className="px-6 py-3.5 text-[13px] font-semibold text-slate-800">{pay.payment_number || `PAY-${pay.id}`}</td>
                           <td className="px-6 py-3.5"><StatusPill status={pay.status} /></td>
                           <td className="px-6 py-3.5 text-right text-[13px] font-semibold text-slate-800">{formatOrgMoney(pay.amount, { default_currency: currency })}</td>
-                          <td className="px-6 py-3.5 text-[13px] text-slate-500">{(pay.payment_date || pay.created_at) ? new Date(pay.payment_date || pay.created_at).toLocaleDateString() : "—"}</td>
+                          <td className="px-6 py-3.5 text-[13px] text-slate-500">{(pay.payment_date || pay.created_at) ? formatDisplayDate(pay.payment_date || pay.created_at) : "—"}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -324,7 +326,7 @@ export default function WorkspaceSubscriptionPage() {
                   { key: "plan", label: "Plan", render: (sub) => <span className="text-[13px] text-slate-600">{planMap[sub.plan_id] || `Plan #${sub.plan_id}`}</span> },
                   { key: "status", label: "Status", render: (sub) => <><StatusPill status={sub.status} /></> },
                   { key: "amount", label: "Amount", align: "right", render: (sub) => <span className="text-[13px] font-semibold text-slate-800">{formatOrgMoney(Number(sub.unit_price || 0) * Number(sub.quantity || 1), { default_currency: currency })}</span> },
-                  { key: "renews", label: "Renews", render: (sub) => <span className="text-[13px] text-slate-500">{sub.next_billing_at ? new Date(sub.next_billing_at).toLocaleDateString() : "—"}</span> },
+                  { key: "renews", label: "Renews", render: (sub) => <span className="text-[13px] text-slate-500">{sub.next_billing_at ? formatDisplayDate(sub.next_billing_at) : "—"}</span> },
                 ]}
               />
             )}

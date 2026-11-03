@@ -1,6 +1,6 @@
 import { Printer, Download } from "lucide-react";
 import { Button } from "../../../components/billing-ui";
-import { formatDisplayCurrency, formatDisplayDate } from "../../../utils/billing-helpers";
+import { formatDisplayCurrency, formatDisplayDate, formatDisplayDateTime } from "../../../utils/billing-helpers";
 import React from "react";
 
 // pdfmake + vfs_fonts are lazy-loaded inside generatePDF() so the ~1.74 MB
@@ -424,7 +424,7 @@ export default function InvoicePDFPreview({
                         {firstConverted.exchange_rate_timestamp && (
                           <div className="flex justify-between text-xs">
                             <span className="text-slate-500">Fetched</span>
-                            <span className="text-slate-600">{new Date(firstConverted.exchange_rate_timestamp).toLocaleString()}</span>
+                            <span className="text-slate-600">{formatDisplayDateTime(firstConverted.exchange_rate_timestamp)}</span>
                           </div>
                         )}
                       </>
