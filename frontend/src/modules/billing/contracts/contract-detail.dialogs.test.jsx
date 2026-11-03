@@ -109,4 +109,16 @@ describe("Contract detail dialogs", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(mockTerminate).not.toHaveBeenCalled();
   });
+
+  it("closing the Terminate dialog with Esc forgets the typed reason", async () => {
+    await renderPage();
+    let dialog = await open(/terminate contract/i, "Terminate Contract");
+    fireEvent.change(within(dialog).getByPlaceholderText(/reason for termination/i), { target: { value: "Half-typed reason" } });
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+
+    dialog = await open(/terminate contract/i, "Terminate Contract");
+    expect(within(dialog).getByPlaceholderText(/reason for termination/i)).toHaveValue("");
+    expect(within(dialog).getByRole("button", { name: /^terminate$/i })).toBeDisabled();
+  });
 });
