@@ -61,4 +61,10 @@ describe("Triage incident dialog", () => {
     fireEvent.keyDown(document, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
+
+  it("each row's Inspect button is named after its incident and opens it", async () => {
+    render(<MemoryRouter initialEntries={["/super-admin/triage"]}><TriagePage /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole("button", { name: `Inspect ${INCIDENT.title}` }));
+    expect(await screen.findByRole("dialog", { name: INCIDENT.title })).toBeInTheDocument();
+  });
 });
