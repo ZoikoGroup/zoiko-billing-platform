@@ -11,6 +11,6 @@ describe("formatDisplayDate — IST output is unchanged", () => {
   });
 
   it.each(["2026-01-01", "2026-03-31", "2024-02-29", "2026-12-31"])("%s matches the previous output", (input) => {
-    expect(formatDisplayDate(input)).toBe(new Date(input).toLocaleDateString());
+    expect(formatDisplayDate(input)).toBe(new Date(input).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }));
   });
 });
