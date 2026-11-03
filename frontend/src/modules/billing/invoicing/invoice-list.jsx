@@ -188,7 +188,7 @@ export default function InvoicingPage() {
   };
 
   const StatusBadge = ({ status }) => (
-    <SharedStatusBadge status={status} options={STATUS_OPTIONS} icon={STATUS_ICONS[status] || Clock} />
+    <SharedStatusBadge status={status} icon={STATUS_ICONS[status] || Clock} />
   );
 
   const columns = [

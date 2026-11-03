@@ -316,7 +316,7 @@ export default function CreditNotesPage() {
   };
 
   const StatusBadge = ({ status }) => (
-    <SharedStatusBadge status={status} options={STATUS_OPTIONS} />
+    <SharedStatusBadge status={status} />
   );
 
   const actionBtn = "rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 disabled:opacity-40 disabled:cursor-not-allowed";
