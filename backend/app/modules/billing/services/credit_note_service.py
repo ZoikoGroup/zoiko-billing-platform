@@ -467,7 +467,7 @@ class CreditNoteService:
             entries.append({
                 "timestamp": sh.created_at,
                 "event_type": "status_change",
-                "title": f"Status changed to {sh.to_status}",
+                "title": f"Status changed to {getattr(sh.to_status, 'value', sh.to_status)}",
                 "description": sh.reason,
                 "actor_id": sh.changed_by,
                 "metadata": {
