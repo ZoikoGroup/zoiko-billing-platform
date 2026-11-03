@@ -637,7 +637,7 @@ export default function CustomerListPage() {
                   <button onClick={() => handleExport("json")} className="block w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 rounded-lg">Export JSON</button>
                 </div>
               </div>
-              <button onClick={() => setShowCreateModal(true)} className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-medium hover:shadow-lg"><Plus size={18} /> {getLabel("newButton")}</button>
+              <button onClick={() => setShowCreateModal(true)} className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-medium hover:shadow-lg max-sm:min-h-11"><Plus size={18} /> {getLabel("newButton")}</button>
             </div>
           </div>
 
