@@ -6,7 +6,7 @@ import HRPage from "../../../components/HRPage";
 import { DataTable, Button, Modal } from "../../../components/billing-ui";
 import { pricingRuleApi } from "../../../service/billingService";
 import { formatDisplayDate } from "../../../utils/billing-helpers";
-import { Spinner, EmptyState, ErrorState } from "../../../components/billing-shared";
+import { Spinner, EmptyState, ErrorState, StatusBadge as SharedStatusBadge } from "../../../components/billing-shared";
 import useLatestRequest from "../utils/useLatestRequest";
 
 const RULE_TYPE_OPTIONS = [
@@ -43,8 +43,7 @@ function todayIsoDate() {
 }
 
 function StatusBadge({ status }) {
-  const colors = { draft: "bg-slate-100 text-slate-600", active: "bg-green-100 text-green-700", inactive: "bg-slate-100 text-slate-700", expired: "bg-red-100 text-red-600", scheduled: "bg-blue-100 text-blue-600" };
-  return <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${colors[status] || "bg-slate-100 text-slate-700"}`}>{status || "unknown"}</span>;
+  return <SharedStatusBadge status={status} />;
 }
 
 const EMPTY_FORM = {

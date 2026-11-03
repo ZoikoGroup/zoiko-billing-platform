@@ -5,7 +5,7 @@ import { priceListApi } from "../../../service/billingService";
 import { loadGlobalBillingConfig } from "../../../service/billingConfigCache";
 import { formatDisplayDate } from "../../../utils/billing-helpers";
 import { getCurrencySelectOptions } from "../../../utils/currency";
-import { Spinner, EmptyState, ErrorState } from "../../../components/billing-shared";
+import { Spinner, EmptyState, ErrorState, StatusBadge as SharedStatusBadge } from "../../../components/billing-shared";
 import useLatestRequest from "../utils/useLatestRequest";
 import { DataTable } from "../../../components/billing-ui";
 
@@ -13,13 +13,8 @@ const CURRENCY_OPTIONS = getCurrencySelectOptions();
 
 function StatusBadge({ status, isActive }) {
   const active = status === "active" || (isActive && status !== "deprecated");
-  const styles = active ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-700";
-  return (
-    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${styles}`}>
-      {active ? <CheckCircle size={12} /> : <Clock size={12} />}
-      {status || (isActive ? "active" : "inactive")}
-    </span>
-  );
+  const value = status || (isActive ? "active" : "inactive");
+  return <SharedStatusBadge status={value} icon={active ? CheckCircle : Clock} />;
 }
 
 export default function PriceListsPage() {

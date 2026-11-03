@@ -156,6 +156,7 @@ export const STATUS_META = {
   inactive: { label: "Inactive", color: "bg-slate-100 text-slate-600" },
   suspended: { label: "Suspended", color: "bg-amber-100 text-amber-700" },
   archived: { label: "Archived", color: "bg-slate-100 text-slate-600" },
+  deprecated: { label: "Deprecated", color: "bg-slate-100 text-slate-600" },
 };
 
 /** Lookup helper — returns `{ label, color }` or undefined for unknown states. */
