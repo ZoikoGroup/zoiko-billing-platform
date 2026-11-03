@@ -8,7 +8,7 @@ import {
 import HRPage from "../../../components/HRPage";
 import { quoteApi } from "../../../service/billingService";
 import { formatCurrency } from "../../../utils/locale";
-import { extractArray } from "../../../utils/billing-helpers";
+import { extractArray, formatDisplayDate } from "../../../utils/billing-helpers";
 import { Spinner, ErrorState, EmptyState, DateRangeFilter, useDateRange, ExportMenu } from "../../../components/billing-shared";
 import { filterByDateRange, downloadExcel, downloadJSON, downloadCSV } from "../../../utils/export-helpers";
 import { useCurrency } from "../utils/CurrencyContext";
@@ -297,8 +297,8 @@ export default function QuotationReportsPage() {
                               "bg-slate-100 text-slate-600"
                             }`}>{q.status}</span></> },
                     { key: "amount", label: "Amount", align: "right", render: (q) => <span className="font-medium text-slate-900">{formatCurrency(q.total_amount, q.currency || displayCurrency)}</span> },
-                    { key: "valid_until", label: "Valid Until", render: (q) => <span className="text-slate-500 whitespace-nowrap">{q.valid_until ? new Date(q.valid_until).toLocaleDateString() : "—"}</span> },
-                    { key: "created", label: "Created", render: (q) => <span className="text-slate-500 whitespace-nowrap">{q.created_at ? new Date(q.created_at).toLocaleDateString() : "—"}</span> },
+                    { key: "valid_until", label: "Valid Until", render: (q) => <span className="text-slate-500 whitespace-nowrap">{q.valid_until ? formatDisplayDate(q.valid_until) : "—"}</span> },
+                    { key: "created", label: "Created", render: (q) => <span className="text-slate-500 whitespace-nowrap">{q.created_at ? formatDisplayDate(q.created_at) : "—"}</span> },
                   ]}
                 />
               </div>

@@ -210,7 +210,7 @@ export default function InvoicingPage() {
         )}
       </span>
     ) },
-    { key: "updated_at", label: "Last Updated", render: (r) => <span className="text-xs text-slate-500">{r.updated_at ? new Date(r.updated_at).toLocaleDateString() : "—"}</span> },
+    { key: "updated_at", label: "Last Updated", render: (r) => <span className="text-xs text-slate-500">{r.updated_at ? formatDisplayDate(r.updated_at) : "—"}</span> },
   ];
 
   const toggleSort = (field) => {

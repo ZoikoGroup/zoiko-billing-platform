@@ -18,6 +18,7 @@ import {
   displayValue,
   formatEntitlementValue,
 } from "./constants";
+import { formatDisplayDate } from "../../utils/billing-helpers";
 
 // `embedded` drops this page's own PageHeader when it is mounted as a tab of
 // the Products & Pricing hub.
@@ -271,7 +272,7 @@ export default function PlanEntitlementsPage({ embedded = false } = {}) {
             <Package size={13} className="mt-0.5 shrink-0 text-brand-600" />
             <span>
               Snapshot: {selectedVersion.plan_name || `v${selectedVersion.version_number}`} · effective{" "}
-              {selectedVersion.effective_from ? new Date(selectedVersion.effective_from).toLocaleDateString() : "—"} ·{" "}
+              {selectedVersion.effective_from ? formatDisplayDate(selectedVersion.effective_from) : "—"} ·{" "}
               {isPublished
                 ? "the published version is immutable; values shown are the approved bundle."
                 : `this version is ${selectedVersion.status.replace(/_/g, " ")}, so these values are not yet the approved bundle.`}

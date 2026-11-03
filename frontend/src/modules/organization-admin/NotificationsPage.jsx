@@ -4,6 +4,7 @@ import { Bell, FileText, ScrollText, AlertTriangle, Loader2 } from "lucide-react
 import { invoiceApi, contractApi, collectionApi } from "../../service/billingService";
 import { getCurrencySymbol, getCurrencyInfo } from "../../utils/currency";
 import { loadGlobalCurrency, getOrgBaseCurrency, isOrgCurrencyUnavailable } from "../billing/utils/CurrencyContext";
+import { formatDisplayDate } from "../../utils/billing-helpers";
 
 // Same real, org-scoped billing signals as the billing_admin workspace
 // notifications page (invoiceApi.listOverdue, contractApi.listExpiring,
@@ -113,7 +114,7 @@ export default function OrgAdminNotificationsPage() {
                 </p>
                 <p className="mt-0.5 text-[12px] text-slate-500">
                   {formatMoney(inv.balance_due ?? inv.total_amount)} outstanding
-                  {inv.due_date && ` · due ${new Date(inv.due_date).toLocaleDateString()}`}
+                  {inv.due_date && ` · due ${formatDisplayDate(inv.due_date)}`}
                   {inv.customer_name && ` · ${inv.customer_name}`}
                 </p>
               </div>
@@ -134,7 +135,7 @@ export default function OrgAdminNotificationsPage() {
                   Contract {c.contract_number || `#${c.id}`} is expiring
                 </p>
                 <p className="mt-0.5 text-[12px] text-slate-500">
-                  {c.end_date && `Ends ${new Date(c.end_date).toLocaleDateString()}`}
+                  {c.end_date && `Ends ${formatDisplayDate(c.end_date)}`}
                   {c.customer_name && ` · ${c.customer_name}`}
                 </p>
               </div>

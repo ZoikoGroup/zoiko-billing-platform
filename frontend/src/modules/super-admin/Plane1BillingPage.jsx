@@ -67,6 +67,7 @@ import {
   ACCOUNT_STATUS_OPTIONS,
   formatDateTime,
 } from "./constants";
+import { formatDisplayDateTime } from "../../utils/billing-helpers";
 
 function labelFor(options, value) {
   const match = (options || []).find((o) => o.value === value);
@@ -1595,7 +1596,7 @@ export default function Plane1BillingPage() {
                     <li key={i} className="flex items-center justify-between text-xs">
                       <span className="text-slate-600">
                         {a.channel}{a.provider ? ` via ${a.provider}` : ""}
-                        {a.attempted_at ? ` — ${new Date(a.attempted_at).toLocaleString()}` : ""}
+                        {a.attempted_at ? ` — ${formatDisplayDateTime(a.attempted_at)}` : ""}
                       </span>
                       <span className={a.result === "success" ? "font-medium text-emerald-600" : "font-medium text-red-600"}>
                         {a.result}

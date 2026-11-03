@@ -8,6 +8,7 @@ import {
   Activity, FileText, CreditCard, Users, Repeat, Package, Settings, Clock,
   Loader2, Filter, RefreshCw,
 } from "lucide-react";
+import { formatDisplayDateTime } from "../../utils/billing-helpers";
 
 const ENTITY_ICONS = {
   invoice: FileText,
@@ -217,7 +218,7 @@ export default function WorkspaceActivityPage() {
                           </div>
                           {item.description && <p className="text-[12px] mt-0.5 truncate text-slate-500">{item.description}</p>}
                           <div className="flex items-center gap-3 mt-1 text-[11px] text-slate-500">
-                            <span>{item.timestamp ? new Date(item.timestamp).toLocaleString() : ""}</span>
+                            <span>{item.timestamp ? formatDisplayDateTime(item.timestamp) : ""}</span>
                             {item.entityId && <span className="font-mono">#{item.entityId}</span>}
                             {item.amount != null && <span className="font-semibold text-slate-600">{formatOrgMoney(item.amount, config)}</span>}
                           </div>

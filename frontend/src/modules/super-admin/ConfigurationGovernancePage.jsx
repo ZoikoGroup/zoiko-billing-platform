@@ -11,6 +11,7 @@ import {
 import { getConfigurationInventory } from "../../service/commandCenterService";
 import { PageHeader, Button, SectionCard } from "../../components/billing-ui";
 import { ErrorState, Spinner } from "../../components/billing-shared";
+import { formatDisplayDateTime } from "../../utils/billing-helpers";
 
 /**
  * Phase 4 (G-03) — Configuration Governance. One authoritative inventory of
@@ -165,7 +166,7 @@ function EntryRow({ entry, isFirst }) {
             At:{" "}
             <ProvenanceCell category={entry.category} field="at">
               {entry.last_updated_at ? (
-                new Date(entry.last_updated_at).toLocaleString()
+                formatDisplayDateTime(entry.last_updated_at)
               ) : (
                 <UnknownChip title="No recorded timestamp exists." />
               )}
@@ -220,7 +221,7 @@ export default function ConfigurationGovernancePage({ embedded = false } = {}) {
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <p className="text-xs text-slate-500">
             {inventory?.generated_at
-              ? `Generated ${new Date(inventory.generated_at).toLocaleString()}`
+              ? `Generated ${formatDisplayDateTime(inventory.generated_at)}`
               : "Inventory not generated yet."}
           </p>
           <Button variant="secondary" size="sm" icon={RefreshCw} onClick={load} loading={loading}>
@@ -235,7 +236,7 @@ export default function ConfigurationGovernancePage({ embedded = false } = {}) {
           accent="slate"
           meta={
             inventory?.generated_at
-              ? `Generated ${new Date(inventory.generated_at).toLocaleString()}`
+              ? `Generated ${formatDisplayDateTime(inventory.generated_at)}`
               : null
           }
           actions={
