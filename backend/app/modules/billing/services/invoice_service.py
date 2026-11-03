@@ -594,6 +594,18 @@ class InvoiceService:
         if owned is None:
             raise BadRequestException("Invalid tax rate.")
 
+    def _validate_product_ownership(self, organization_id: int, product_id: Optional[int]) -> None:
+        """A client-supplied product_id must belong to this organization.
+        bulk_set_items (the path the Create Invoice wizard saves through) never
+        checked it, so another tenant's product could be attached to a line."""
+        if product_id is None:
+            return
+        owned = self.db.query(Product.id).filter(
+            Product.id == product_id, Product.organization_id == organization_id,
+        ).first()
+        if owned is None:
+            raise BadRequestException("Invalid product.")
+
     def add_item(self, invoice_id: int, organization_id: int, **data: Any) -> InvoiceItem:
         data = filter_allowed(data, ITEM_ALLOWED_FIELDS)
         self._validate_tax_rate_ownership(organization_id, data.get("tax_rate_id"))
@@ -676,6 +688,7 @@ class InvoiceService:
         for idx, it in enumerate(items):
             item_data = filter_allowed(it, ITEM_ALLOWED_FIELDS)
             self._validate_tax_rate_ownership(organization_id, item_data.get("tax_rate_id"))
+            self._validate_product_ownership(organization_id, item_data.get("product_id"))
 
             # Handle currency conversion if product currency differs from invoice currency
             if item_data.get("original_currency") and item_data.get("original_amount"):

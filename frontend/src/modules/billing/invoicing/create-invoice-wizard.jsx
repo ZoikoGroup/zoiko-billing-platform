@@ -89,6 +89,15 @@ const detectCountryFromVAT = (vat) => {
   return null;
 };
 
+// Customer options shown on focus before anything is typed; anything beyond
+// this page is reached through the server-side search.
+const CUSTOMER_OPTIONS_PAGE_SIZE = 20;
+
+const uniqueById = (list) => {
+  const seen = new Set();
+  return list.filter((c) => c && !seen.has(c.id) && seen.add(c.id));
+};
+
 const RECENT_CUSTOMERS_KEY = "zoiko_recent_customers";
 const MAX_RECENT_CUSTOMERS = 5;
 const INVOICE_DRAFT_KEY = "zoiko_invoice_draft_v1";
@@ -116,6 +125,31 @@ function withLineFinancials(item) {
 function applyTaxPercentToLines(lines, taxPct) {
   return lines.map((item) => withLineFinancials({ ...item, tax_percentage: taxPct }));
 }
+
+// Product.default_price is the catalog selling price (PriceResolver's base
+// price). original_price is the optional "list price before discount" and the
+// API sends money as strings, so a "0.00" original_price is truthy -- the old
+// `original_price || default_price` chain showed most products as 0.00.
+function catalogUnitPrice(product) {
+  for (const value of [product?.default_price, product?.unit_price, product?.price]) {
+    if (value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value))) return Number(value);
+  }
+  return null;
+}
+
+// A product line with no positive unit price was never priced -- the product
+// has no catalog price and no applicable plan. Flag it rather than invoicing
+// it as free.
+const isUnpricedProductLine = (item) => Boolean(item.product_id) && !(Number(item.unit_price) > 0);
+
+// A pricing plan applies to an invoice when it is active and its effective
+// window covers the invoice's issue date (ISO yyyy-mm-dd strings compare
+// correctly as strings).
+const isPlanEffectiveOn = (plan, isoDate) => (
+  plan.is_active !== false
+  && (!plan.effective_from || plan.effective_from <= isoDate)
+  && (!plan.effective_to || plan.effective_to >= isoDate)
+);
 
 const loadJson = (key, fallback) => {
   try {
@@ -192,6 +226,13 @@ export default function CreateInvoiceWizard({ onClose, onCreated }) {
   const [customerSearching, setCustomerSearching] = useState(false);
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const [customerHighlight, setCustomerHighlight] = useState(-1);
+  const [customerSearchError, setCustomerSearchError] = useState(null);
+  const [initialCustomers, setInitialCustomers] = useState([]);
+  const [initialCustomersTotal, setInitialCustomersTotal] = useState(0);
+  const [initialCustomersStatus, setInitialCustomersStatus] = useState("idle"); // "idle" | "loading" | "loaded" | "error"
+  const initialCustomersRequestRef = useRef(null);
+  const customerSearchSeqRef = useRef(0);
+  const customerInputRef = useRef(null);
   const { recent: recentCustomers, add: addRecentCustomer, clear: clearRecentCustomers } = useRecentCustomers();
   const [draftAvailable, setDraftAvailable] = useState(null); // { savedAt, customerName, lineCount } | null
   const [draftRestored, setDraftRestored] = useState(false);
@@ -317,34 +358,104 @@ export default function CreateInvoiceWizard({ onClose, onCreated }) {
     setTaxRateSelectionMode("AUTO");
   }, [form.country_code]);
 
+  // Customer options. The first page of the organization's customers (the
+  // list endpoint is org-scoped and active-only) is fetched once per wizard so
+  // the field can show options on focus without a search term; typing then
+  // searches server-side so large customer bases are never loaded wholesale.
+  // The input holds the selected customer's name after a pick -- treat that
+  // as "no query" so reopening the field shows the list again.
+  const customerQuery = form.customer_id && customerSearchTerm === form.customer_name ? "" : customerSearchTerm.trim();
+
+  const loadInitialCustomers = useCallback(() => {
+    if (initialCustomersRequestRef.current) return; // already loaded or in flight
+    setInitialCustomersStatus("loading");
+    initialCustomersRequestRef.current = customerApi
+      .list({ per_page: CUSTOMER_OPTIONS_PAGE_SIZE, sort_by: "company_name", sort_order: "asc" })
+      .then((data) => {
+        const items = uniqueById(Array.isArray(data) ? data : data?.items || []);
+        setInitialCustomers(items);
+        setInitialCustomersTotal(Number(data?.total ?? items.length));
+        setInitialCustomersStatus("loaded");
+      })
+      .catch(() => {
+        initialCustomersRequestRef.current = null; // allow a retry on next focus
+        setInitialCustomersStatus("error");
+      });
+  }, []);
+
+  useEffect(() => { loadInitialCustomers(); }, [loadInitialCustomers]);
+
   useEffect(() => {
+    // Bumping the sequence on every query change discards any response still
+    // in flight for an older query, so a slow early search can't overwrite
+    // the results for what the user has typed since.
+    const seq = ++customerSearchSeqRef.current;
+    if (!customerQuery) {
+      setCustomerSearchResults([]); setCustomerSearching(false); setCustomerSearchError(null);
+      return;
+    }
     const timer = setTimeout(async () => {
-      if (!customerSearchTerm.trim()) { setCustomerSearchResults([]); setCustomerSearching(false); return; }
       setCustomerSearching(true);
+      setCustomerSearchError(null);
       try {
-        const data = await customerApi.search(customerSearchTerm);
-        setCustomerSearchResults(Array.isArray(data) ? data : data?.items || []);
-      } catch { setCustomerSearchResults([]); }
-      finally { setCustomerSearching(false); setCustomerHighlight(-1); }
+        const data = await customerApi.search(customerQuery);
+        if (seq !== customerSearchSeqRef.current) return;
+        setCustomerSearchResults(uniqueById(Array.isArray(data) ? data : data?.items || []));
+      } catch {
+        if (seq !== customerSearchSeqRef.current) return;
+        setCustomerSearchResults([]);
+        setCustomerSearchError(`Could not search ${plural.toLowerCase()}. Please try again.`);
+      } finally {
+        if (seq === customerSearchSeqRef.current) { setCustomerSearching(false); setCustomerHighlight(-1); }
+      }
     }, 300);
     return () => clearTimeout(timer);
-  }, [customerSearchTerm]);
+  }, [customerQuery]);
+
+  const customerOptions = customerQuery ? customerSearchResults : initialCustomers;
+  const customerOptionsLoading = customerQuery ? customerSearching : initialCustomersStatus === "loading";
+  const customerOptionsError = customerQuery
+    ? customerSearchError
+    : initialCustomersStatus === "error" ? `Could not load ${plural.toLowerCase()}. Please try again.` : null;
+
+  useEffect(() => {
+    if (!showCustomerDropdown) return;
+    const handleClickOutside = (e) => {
+      if (customerSearchRef.current && !customerSearchRef.current.contains(e.target)) setShowCustomerDropdown(false);
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showCustomerDropdown]);
+
+  const openCustomerDropdown = () => {
+    setShowCustomerDropdown(true);
+    loadInitialCustomers();
+  };
+
+  const clearSelectedCustomer = () => {
+    setForm((p) => ({ ...p, customer_id: "", customer_name: "", customer_status: "active", billing_address: "", shipping_address: "" }));
+    setCustomerSearchTerm("");
+    setCustomerHighlight(-1);
+    openCustomerDropdown();
+    customerInputRef.current?.focus();
+  };
 
   const handleCustomerInputKeyDown = (e) => {
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      if (customerSearchResults.length === 0) return;
-      setCustomerHighlight((h) => Math.min(customerSearchResults.length - 1, h + 1));
+      if (!showCustomerDropdown) { openCustomerDropdown(); return; }
+      if (customerOptions.length === 0) return;
+      setCustomerHighlight((h) => Math.min(customerOptions.length - 1, h + 1));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setCustomerHighlight((h) => Math.max(0, h - 1));
     } else if (e.key === "Enter") {
       e.preventDefault();
-      if (customerSearchResults.length > 0) {
-        const target = customerHighlight >= 0 ? customerSearchResults[customerHighlight] : customerSearchResults[0];
+      if (showCustomerDropdown && customerOptions.length > 0) {
+        const target = customerHighlight >= 0 ? customerOptions[customerHighlight] : customerOptions[0];
         if (target) handleCustomerSelect(target);
       }
-    } else if (e.key === "Escape") {
+    } else if (e.key === "Escape" || e.key === "Tab") {
       setShowCustomerDropdown(false);
     }
   };
@@ -498,17 +609,37 @@ export default function CreateInvoiceWizard({ onClose, onCreated }) {
   const buildLineItemFromProduct = async (p, quantity = 1) => {
     setExchangeRateError(null);
     const full = p.description ? p : await productApi.get(p.id);
-    let price = Number(full.default_price || full.unit_price || full.price || 0);
+    let price = catalogUnitPrice(full) ?? 0;
+    let pricing = {};
+    let resolvedCurrency = null;
     try {
+      // Price through the backend PriceResolver (the same tenant-scoped
+      // resolver Quotations use) instead of picking a plan client-side. Only
+      // a single flat plan in effect on the issue date is applied; with none,
+      // or several (no basis to choose), the catalog price is used.
       const plans = await pricingApi.listByProduct(full.id);
       const items = Array.isArray(plans) ? plans : plans?.items || [];
-      const flat = items.find((pl) => pl.plan_type === "flat");
-      if (flat?.price > 0) price = Number(flat.price);
+      const applicable = items.filter((pl) => pl.plan_type === "flat" && isPlanEffectiveOn(pl, form.issue_date));
+      const planId = applicable.length === 1 ? applicable[0].id : undefined;
+      const resolved = await pricingApi.resolvePrice(
+        planId ? { product_id: full.id, pricing_plan_id: planId, quantity } : { product_id: full.id, quantity }
+      );
+      const resolvedPrice = Number(resolved?.resolved_price);
+      if (Number.isFinite(resolvedPrice)) {
+        price = resolvedPrice;
+        resolvedCurrency = resolved.currency || null;
+        pricing = {
+          pricing_plan_id: resolved.pricing_plan_id ?? undefined,
+          price_source: resolved.price_source || undefined,
+          base_price: resolved.base_price ?? undefined,
+          resolved_price: resolved.resolved_price,
+        };
+      }
     } catch (pricingErr) {
       /* Pricing lookup failed, using catalog price */
     }
 
-    const productCurrency = full.currency || orgSettings?.default_currency || "";
+    const productCurrency = resolvedCurrency || full.currency || orgSettings?.default_currency || "";
     const invoiceCurrency = form.currency || orgSettings?.default_currency || "";
     let exchangeRate = 1;
     let rateSource = "self";
@@ -581,6 +712,7 @@ export default function CreateInvoiceWizard({ onClose, onCreated }) {
       invoice_currency: invoiceCurrency,
       exchange_rate: exchangeRate,
       exchange_rate_source: rateSource,
+      ...pricing,
       converted_amount: calcs.convertedUnitPrice,
       tax_amount: calcs.convertedTaxAmount,
       total: calcs.convertedLineTotal,
@@ -664,6 +796,22 @@ export default function CreateInvoiceWizard({ onClose, onCreated }) {
     const next = [...p];
     let item = { ...next[index], [field]: value };
 
+    // The backend prices a line from original_amount × exchange_rate and
+    // overwrites unit_price with it, so a hand-edited unit price must carry
+    // back into original_amount or the save silently restores the catalog
+    // price. A product line edited this way is no longer the resolved price.
+    if (field === "unit_price") {
+      const rate = Number(item.exchange_rate) || 1;
+      const entered = Number(value) || 0;
+      item.original_amount = entered / rate;
+      item.converted_amount = entered;
+      if (item.product_id) {
+        item.price_source = "negotiated";
+        item.pricing_plan_id = undefined;
+        item.resolved_price = entered / rate;
+      }
+    }
+
     if (["quantity", "unit_price", "discount_percentage", "tax_percentage"].includes(field)) {
       item = withLineFinancials(item);
     }
@@ -694,6 +842,11 @@ export default function CreateInvoiceWizard({ onClose, onCreated }) {
       if (lineItems.length === 0) return "Add at least one line item";
       const invalid = lineItems.find((item) => !item.description || item.quantity <= 0);
       if (invalid) return "Each line item needs a description and quantity > 0";
+      const unpricedIdx = lineItems.findIndex(isUnpricedProductLine);
+      if (unpricedIdx >= 0) {
+        const name = lineItems[unpricedIdx].product_name || lineItems[unpricedIdx].description;
+        return `Item #${unpricedIdx + 1} (${name}) has no configured price. Enter a unit price greater than 0.`;
+      }
       return null;
     }
     return null;
@@ -765,6 +918,10 @@ export default function CreateInvoiceWizard({ onClose, onCreated }) {
   // Shared save logic used by both handleSave and handleSaveAndSend. Email is
   // deliberately kept out of this function so Save cannot trigger a send.
   const saveInvoice = async (onProgress) => {
+    // A restored draft can land directly on a later step, skipping the step-3
+    // check, so re-run it before anything is persisted.
+    const lineItemsError = validateStep(3);
+    if (lineItemsError) throw new Error(lineItemsError);
     onProgress?.("Saving invoice details", "Creating the invoice record.");
     const created = await invoiceApi.create(buildPayload());
     const invoiceId = created.id || created.invoice_id;
@@ -864,30 +1021,56 @@ export default function CreateInvoiceWizard({ onClose, onCreated }) {
             <label className="block text-xs font-medium text-slate-600 mb-1">Search {singular} *</label>
             <div className="relative">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-              <input type="text"                 placeholder={`Type ${getLabel("singularLower")} name...`} value={customerSearchTerm}
-                onChange={(e) => { setCustomerSearchTerm(e.target.value); setShowCustomerDropdown(true); setCustomerHighlight(-1); }}
-                onFocus={() => setShowCustomerDropdown(true)}
+              <input type="text" ref={customerInputRef}
+                placeholder={`Search by name, email or phone...`} value={customerSearchTerm}
+                onChange={(e) => { setCustomerSearchTerm(e.target.value); openCustomerDropdown(); setCustomerHighlight(-1); }}
+                onFocus={openCustomerDropdown}
+                onClick={openCustomerDropdown}
                 onKeyDown={handleCustomerInputKeyDown}
                 aria-label={`Search ${getLabel("singularLower")}`}
                 role="combobox"
                 aria-haspopup="listbox"
+                aria-autocomplete="list"
                 aria-expanded={showCustomerDropdown}
                 aria-controls="customer-search-listbox"
-                className="block w-full rounded-lg border border-slate-200 pl-9 pr-3 py-2.5 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
-              {customerSearching && <Loader2 size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 animate-spin" />}
+                aria-activedescendant={showCustomerDropdown && customerHighlight >= 0 && customerOptions[customerHighlight] ? `customer-option-${customerOptions[customerHighlight].id}` : undefined}
+                className="block w-full rounded-lg border border-slate-200 pl-9 pr-16 py-2.5 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                {customerOptionsLoading && <Loader2 size={16} className="text-slate-500 animate-spin" aria-hidden="true" />}
+                {(customerSearchTerm || form.customer_id) && (
+                  <button type="button" onClick={clearSelectedCustomer} aria-label={`Clear ${getLabel("singularLower")}`}
+                    className="p-1 rounded text-slate-500 hover:text-slate-700 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40">
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
             </div>
-      {showCustomerDropdown && customerSearchTerm && (
-               <div id="customer-search-listbox" className="absolute z-10 mt-1 w-full bg-white border border-slate-200 rounded-xl shadow-lg max-h-48 overflow-y-auto" role="listbox" aria-label={`Matching ${plural.toLowerCase()}`}>
-                 {customerSearchResults.length === 0 ? (
-                    <p className="px-3 py-2 text-sm text-slate-500">{customerSearching ? "Searching..." : `No ${plural.toLowerCase()} found`}</p>
+      {showCustomerDropdown && (
+               <div id="customer-search-listbox" className="absolute z-10 mt-1 w-full bg-white border border-slate-200 rounded-xl shadow-lg max-h-60 overflow-y-auto" role="listbox" aria-label={customerQuery ? `Matching ${plural.toLowerCase()}` : plural} aria-busy={customerOptionsLoading}>
+                 {customerOptionsError ? (
+                    <div className="px-3 py-2 text-sm text-red-600 flex items-center justify-between gap-2" role="alert">
+                      <span>{customerOptionsError}</span>
+                      {!customerQuery && (
+                        <button type="button" onClick={loadInitialCustomers} className="text-xs font-medium underline hover:text-red-700">Retry</button>
+                      )}
+                    </div>
+                 ) : customerOptions.length === 0 ? (
+                    <p className="px-3 py-2 text-sm text-slate-500" role="status">
+                      {customerOptionsLoading
+                        ? (customerQuery ? "Searching..." : `Loading ${plural.toLowerCase()}...`)
+                        : customerQuery ? `No ${plural.toLowerCase()} match "${customerQuery}"` : `No ${plural.toLowerCase()} found`}
+                    </p>
                  ) : (
                    <div>
-                     {customerSearchResults.map((c, idx) => (
-                       <button key={c.id} type="button" onClick={() => handleCustomerSelect(c)}
+                     {customerOptions.map((c, idx) => (
+                       <button key={c.id} id={`customer-option-${c.id}`} type="button" onClick={() => handleCustomerSelect(c)}
                           onMouseEnter={() => setCustomerHighlight(idx)}
-                          role="option" aria-selected={idx === customerHighlight}
+                          role="option" aria-selected={idx === customerHighlight || String(c.id) === form.customer_id}
                           className={`w-full text-left px-3 py-2 text-sm transition-colors text-slate-700 ${idx === customerHighlight ? "bg-brand-50" : "hover:bg-brand-50"}`}>
-                         <div className="font-medium">{c.display_name || c.company_name || `#${c.id}`}</div>
+                         <div className="font-medium flex items-center gap-1.5">
+                           {c.display_name || c.company_name || `#${c.id}`}
+                           {String(c.id) === form.customer_id && <CheckCircle size={12} className="text-emerald-600" aria-hidden="true" />}
+                         </div>
                          <div className="text-xs text-slate-500 mt-1">
                            {c.company_name && c.company_name !== (c.display_name || `#${c.id}`) && <span className="mr-2">{c.company_name}</span>}
                            {c.email && <span>{c.email}</span>}
@@ -895,6 +1078,11 @@ export default function CreateInvoiceWizard({ onClose, onCreated }) {
                          </div>
                        </button>
                      ))}
+                     {!customerQuery && initialCustomersTotal > customerOptions.length && (
+                       <p className="px-3 py-2 text-xs text-slate-500 border-t border-slate-100">
+                         Showing {customerOptions.length} of {initialCustomersTotal} {plural.toLowerCase()} — type to search the rest.
+                       </p>
+                     )}
                    </div>
                  )}
                </div>
@@ -1115,7 +1303,7 @@ export default function CreateInvoiceWizard({ onClose, onCreated }) {
             fetchProducts={(params) => productApi.list(params)}
             fetchProductById={(id) => productApi.get(id)}
             fetchCategories={(params) => productApi.listCategories(params)}
-            formatPrice={(p) => fmtCurrency(p.original_price || p.default_price || p.unit_price || 0, "\u2014", p.currency || orgSettings?.default_currency || "")}
+            formatPrice={(p) => fmtCurrency(catalogUnitPrice(p), "\u2014", p.currency || orgSettings?.default_currency || "")}
             multiSelect={true}
             selectedProducts={selectedProducts}
             invoiceCurrency={form.currency}
@@ -1128,7 +1316,7 @@ export default function CreateInvoiceWizard({ onClose, onCreated }) {
             fetchProducts={(params) => productApi.list(params)}
             fetchCategories={(params) => productApi.listCategories(params)}
             onAddSelected={handleBulkPickerAdd}
-            formatPrice={(p) => fmtCurrency(p.original_price || p.default_price || p.unit_price || 0, "—", p.currency || orgSettings?.default_currency || "")}
+            formatPrice={(p) => fmtCurrency(catalogUnitPrice(p), "—", p.currency || orgSettings?.default_currency || "")}
             invoiceCurrency={form.currency}
           />
           {addingProducts && (
@@ -1169,7 +1357,14 @@ export default function CreateInvoiceWizard({ onClose, onCreated }) {
                     <input type="number" min="0" step="0.01" value={item.unit_price}
                       onChange={(e) => updateLineItem(idx, "unit_price", e.target.value)}
                       aria-label={`Unit price for item ${idx + 1}`}
-                      className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
+                      aria-invalid={isUnpricedProductLine(item) || undefined}
+                      aria-describedby={isUnpricedProductLine(item) ? `unit-price-missing-${idx}` : undefined}
+                      className={`block w-full rounded-lg border px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 ${isUnpricedProductLine(item) ? "border-red-300" : "border-slate-200"}`} />
+                    {isUnpricedProductLine(item) && (
+                      <p id={`unit-price-missing-${idx}`} className="text-xs text-red-600 mt-1">
+                        No price is configured for this product. Enter a unit price.
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">Discount %</label>
