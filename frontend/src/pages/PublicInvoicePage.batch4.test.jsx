@@ -13,10 +13,11 @@ vi.mock("../service/billingService", () => ({
 
 import PublicInvoicePage from "./PublicInvoicePage";
 
-const view = (configured) => ({
+const view = (configured, payable = true) => ({
   invoice_number: "INV-46", status: "sent", currency: "USD",
-  total_amount: "100.00", balance_due: "100.00", items: [], company: { name: "Acme" },
-  payment: { payable: true, balance_due: "100.00", stripe: { configured, publishable_key: null } },
+  total_amount: "100.00", balance_due: "100.00", items: [],
+  company: { name: "Acme Ltd", support_email: "billing@acme.example", billing_address: "London" },
+  payment: { payable, balance_due: "100.00", stripe: { configured, publishable_key: null } },
 });
 
 const renderPage = () => render(
@@ -42,5 +43,15 @@ describe("B4-07 public invoice payment availability", () => {
     renderPage();
     expect(await screen.findByRole("button", { name: /with stripe/i })).toBeEnabled();
     expect(screen.queryByText(/isn't available for this invoice yet/i)).toBeNull();
+    expect(screen.getByRole("img", { name: "Zoiko Billing" })).toHaveAttribute("src", "/zoiko-billing-logo-sm.png");
+    expect(screen.getByRole("heading", { name: "From" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "billing@acme.example" })).toHaveAttribute("href", "mailto:billing@acme.example");
+  });
+
+  it("does not offer payment when the invoice is not in a payable state", async () => {
+    m.getView.mockResolvedValue(view(true, false));
+    renderPage();
+    expect(await screen.findByRole("heading", { name: "INV-46" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /with stripe/i })).toBeNull();
   });
 });

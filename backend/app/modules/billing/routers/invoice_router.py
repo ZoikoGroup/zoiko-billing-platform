@@ -582,8 +582,8 @@ public_invoice_router = APIRouter(prefix="/invoices/public", tags=["🧾 Invoice
 
 
 class PublicCheckoutCreate(BaseModel):
-    success_url: str
-    cancel_url: str
+    """Empty request body. Checkout return URLs are generated server-side."""
+    pass
 
 
 @public_invoice_router.get(
@@ -607,13 +607,9 @@ def get_public_invoice(
 @limit_route("30/minute")
 def create_public_checkout(
     token: str,
-    body: PublicCheckoutCreate,
+    _body: PublicCheckoutCreate,
     request: Request = None,
     db: Session = Depends(get_db),
 ):
     svc = InvoiceService(db)
-    return svc.create_public_checkout_session(
-        token=token,
-        success_url=body.success_url,
-        cancel_url=body.cancel_url,
-    )
+    return svc.create_public_checkout_session(token=token)

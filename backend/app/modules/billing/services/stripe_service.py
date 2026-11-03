@@ -51,7 +51,7 @@ from app.modules.billing.models import (
     Subscription,
     SubscriptionEvent,
 )
-from app.modules.billing.utils.currency_utils import VALID_CURRENCY_CODES
+from app.modules.billing.utils.currency_utils import VALID_CURRENCY_CODES, get_currency_decimal_digits
 from app.modules.billing.services.audit_service import BillingAuditService
 from app.modules.billing.services.customer_service import CustomerService
 from app.modules.billing.services.document_sequence import DocumentSequenceService
@@ -73,15 +73,18 @@ logger = logging.getLogger("zoiko_billing")
 SYSTEM_ACTOR = None
 
 
-def _to_cents(amount) -> int:
+def _to_cents(amount, currency: Optional[str] = None) -> int:
     value = Decimal(str(amount))
     if value < 0:
         raise BadRequestException("Amount cannot be negative")
-    return int((value * Decimal("100")).to_integral_value(rounding=ROUND_HALF_UP))
+    digits = get_currency_decimal_digits((currency or "USD").upper())
+    return int((value * (Decimal(10) ** digits)).to_integral_value(rounding=ROUND_HALF_UP))
 
 
-def _from_cents(cents) -> Decimal:
-    return (Decimal(str(cents)) / Decimal("100")).quantize(Decimal("0.01"))
+def _from_cents(cents, currency: Optional[str] = None) -> Decimal:
+    digits = get_currency_decimal_digits((currency or "USD").upper())
+    amount = Decimal(str(cents)) / (Decimal(10) ** digits)
+    return amount.quantize(Decimal(1).scaleb(-digits))
 
 
 def _stripe_module():
@@ -212,8 +215,10 @@ class StripeService:
     # ── Checkout / PaymentIntents ──────────────────────────────────────────
 
     def _validate_invoice_payable(self, invoice: Invoice) -> None:
-        if invoice.status in (InvoiceStatus.PAID, InvoiceStatus.CANCELLED, InvoiceStatus.REFUNDED):
-            raise BadRequestException(f"Cannot collect payment for a {invoice.status.value} invoice")
+        payable_statuses = {InvoiceStatus.SENT, InvoiceStatus.OVERDUE, InvoiceStatus.PARTIALLY_PAID}
+        if invoice.status not in payable_statuses:
+            status = invoice.status.value if invoice.status else "unknown"
+            raise BadRequestException(f"Cannot collect payment for a {status} invoice")
         balance = Decimal(str(invoice.balance_due if invoice.balance_due is not None else invoice.total_amount or 0))
         if balance <= 0:
             raise BadRequestException("Invoice has no outstanding balance")
@@ -260,6 +265,11 @@ class StripeService:
         stripe = _stripe_module()
         invoice = self.invoice_service.get_invoice(invoice_id, organization_id)
         self._validate_invoice_payable(invoice)
+        currency = self._resolve_and_validate_currency(invoice.currency)
+        balance = Decimal(str(invoice.balance_due if invoice.balance_due is not None else invoice.total_amount or 0))
+        amount_in_minor_units = _to_cents(balance, currency)
+        if amount_in_minor_units <= 0:
+            raise BadRequestException("Invoice balance is below the minimum payable amount")
 
         # Application-level idempotency for Checkout Sessions: if a previously
         # created session for this invoice is still open, hand back the SAME
@@ -272,7 +282,11 @@ class StripeService:
                     invoice.stripe_checkout_session_id,
                     stripe_account=connected_account_id,
                 )
-                if getattr(existing_session, "status", None) == "open":
+                if (
+                    getattr(existing_session, "status", None) == "open"
+                    and getattr(existing_session, "amount_total", None) == amount_in_minor_units
+                    and str(getattr(existing_session, "currency", "")).lower() == currency
+                ):
                     self.audit.log(
                         organization_id, created_by, BillingAuditAction.SEND, "Invoice", invoice_id,
                         new_values={"checkout_url": existing_session.url, "reused_open_session": True},
@@ -284,40 +298,51 @@ class StripeService:
                         "invoice_number": invoice.invoice_number,
                         "reused": True,
                     }
-            except Exception:
-                logger.info(
-                    "[stripe] Stored checkout session %s is no longer retrievable; creating a new one",
-                    invoice.stripe_checkout_session_id,
-                )
+            except Exception as exc:
+                if getattr(exc, "code", None) == "resource_missing":
+                    invoice.stripe_checkout_session_id = None
+                    self.db.commit()
+                    existing_session = None
+                else:
+                    # Creating a second open session when we cannot verify the
+                    # first one can expose two payable checkout links.
+                    raise BadRequestException(
+                        "We couldn't verify the existing checkout session. Please retry in a moment."
+                    ) from exc
+            if existing_session is not None:
+                session_status = getattr(existing_session, "status", None)
+                if session_status == "open":
+                    # The invoice balance or currency changed since this
+                    # session was created. Expire the stale amount before
+                    # issuing a checkout for the current balance.
+                    try:
+                        stripe.checkout.Session.expire(
+                            existing_session.id,
+                            stripe_account=connected_account_id,
+                        )
+                    except Exception as exc:
+                        raise BadRequestException(
+                            "We couldn't safely replace the existing checkout session. Please retry in a moment."
+                        ) from exc
+                elif session_status == "complete":
+                    raise BadRequestException(
+                        "This invoice payment is processing. Refresh the invoice in a few moments."
+                    )
+            # Expired sessions can be replaced safely; complete sessions are
+            # held above until webhook settlement refreshes the invoice.
 
         customer = self.ensure_customer(organization_id, invoice.customer_id, created_by)
-        currency = self._resolve_and_validate_currency(invoice.currency)
-
-        items = self.invoice_service.list_items(invoice_id, organization_id)
-        line_items = []
-        for item in items:
-            total = Decimal(str(item.total or 0))
-            if total <= 0:
-                continue
-            description = (item.description or "")[:134]
-            line_items.append({
-                "quantity": 1,
-                "price_data": {
-                    "currency": currency,
-                    "unit_amount": _to_cents(total),
-                    "product_data": {"name": description or "Invoice item"},
-                },
-            })
-        if not line_items:
-            balance = invoice.balance_due if invoice.balance_due is not None else invoice.total_amount
-            line_items.append({
-                "quantity": 1,
-                "price_data": {
-                    "currency": currency,
-                    "unit_amount": _to_cents(balance or 0),
-                    "product_data": {"name": f"Invoice {invoice.invoice_number}"},
-                },
-            })
+        # Charge the authoritative outstanding balance, not a sum of original
+        # invoice lines. That keeps partial payments, credits, write-offs,
+        # rounding, tax and shipping aligned with the amount shown publicly.
+        line_items = [{
+            "quantity": 1,
+            "price_data": {
+                "currency": currency,
+                "unit_amount": amount_in_minor_units,
+                "product_data": {"name": f"Invoice {invoice.invoice_number} balance due"},
+            },
+        }]
 
         payment_method_types = [t.strip() for t in settings.STRIPE_PAYMENT_METHOD_TYPES.split(",") if t.strip()] or ["card"]
         metadata = {
@@ -378,7 +403,7 @@ class StripeService:
             "invoice_number": invoice.invoice_number,
         }
         kwargs: Dict[str, Any] = {
-            "amount": _to_cents(balance),
+            "amount": _to_cents(balance, currency),
             "currency": currency,
             "customer": customer.stripe_customer_id,
             "metadata": metadata,
@@ -614,7 +639,7 @@ class StripeService:
         try:
             created = stripe.Refund.create(
                 payment_intent=payment_intent_id,
-                amount=_to_cents(refund.amount),
+                amount=_to_cents(refund.amount, payment.currency),
                 metadata={"organization_id": str(organization_id), "refund_id": str(refund_id)},
                 # Deterministic per business identity: a retried push re-uses
                 # the same key so a timeout/re-run can never create a SECOND
@@ -1150,7 +1175,7 @@ class StripeService:
         latest_charge = data_object.get("latest_charge")
         charge_id = latest_charge if isinstance(latest_charge, str) else None
         amount_cents = data_object.get("amount_received")
-        amount = _from_cents(amount_cents) if amount_cents else None
+        amount = _from_cents(amount_cents, invoice.currency) if amount_cents else None
         pm_data = data_object.get("payment_method")
         pm_id = pm_data if isinstance(pm_data, str) else None
         payment = self._record_cleared_payment(
@@ -1246,7 +1271,7 @@ class StripeService:
             organization_id=invoice.organization_id,
             invoice=invoice,
             payment_intent_id=payment_intent_id,
-            amount=_from_cents(data_object.get("amount_paid")) if data_object.get("amount_paid") else None,
+            amount=_from_cents(data_object.get("amount_paid"), invoice.currency) if data_object.get("amount_paid") else None,
             notes=f"Stripe invoice {data_object.get('id')} paid",
             idempotency_key=fallback_idempotency_key,
         )
@@ -1359,7 +1384,7 @@ class StripeService:
         payment = self._find_payment_by_intent(organization_id, payment_intent_id)
         if payment is None:
             return {"refund_id": refund_id, "action": "ignored", "reason": "no matching payment"}
-        amount = _from_cents(refund.get("amount") or 0)
+        amount = _from_cents(refund.get("amount") or 0, payment.currency)
         if amount <= 0:
             return {"refund_id": refund_id, "action": "ignored", "reason": "zero amount"}
         org = organization_id or payment.organization_id
@@ -1467,8 +1492,8 @@ class StripeService:
             logger.warning("[stripe] Unknown dispute status %r; defaulting to needs_response", status_str)
             status = DisputeStatus.NEEDS_RESPONSE
 
-        amount = _from_cents(data_object.get("amount") or 0)
         currency = (data_object.get("currency") or "usd").upper()
+        amount = _from_cents(data_object.get("amount") or 0, currency)
 
         evidence_due_by = None
         raw_due = (data_object.get("evidence_details") or {}).get("due_by")

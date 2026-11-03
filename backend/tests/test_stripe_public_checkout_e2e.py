@@ -105,6 +105,16 @@ class TestPlane2PublicInvoiceStripe:
         assert view["payment"]["stripe"]["configured"] is False
         assert view["payment"]["stripe"]["publishable_key"] is None
 
+    def test_public_draft_invoice_is_not_payable(self, db):
+        org, cust, inv = _seed_plane2_data(db, org_id=11, has_connect=False)
+        inv.status = InvoiceStatus.DRAFT
+        db.commit()
+
+        svc = InvoiceService(db)
+        view = svc.get_public_invoice(svc._public_invoice_token(inv.id))
+
+        assert view["payment"]["payable"] is False
+
     def test_public_invoice_view_configured_when_connect_active(self, db):
         org, cust, inv = _seed_plane2_data(db, org_id=2, has_connect=True)
         svc = InvoiceService(db)
@@ -120,18 +130,15 @@ class TestPlane2PublicInvoiceStripe:
         svc = InvoiceService(db)
         token = svc._public_invoice_token(inv.id)
 
-        result = svc.create_public_checkout_session(
-            token=token,
-            success_url="https://app.zoikobilling.com/success",
-            cancel_url="https://app.zoikobilling.com/cancel",
-        )
+        result = svc.create_public_checkout_session(token=token)
         assert result["configured"] is False
         assert result["checkout_url"] is None
         assert "not enabled yet for this merchant" in result["message"]
 
     @patch("stripe.Customer.create")
     @patch("stripe.checkout.Session.create")
-    def test_public_checkout_succeeds_when_connect_active(self, mock_session_create, mock_cust_create, db):
+    def test_public_checkout_succeeds_when_connect_active(self, mock_session_create, mock_cust_create, db, monkeypatch):
+        from app.config import settings
         mock_cust_create.return_value = MagicMock(id="cus_test_999")
         mock_session_create.return_value = MagicMock(
             id="cs_test_session_123",
@@ -139,21 +146,41 @@ class TestPlane2PublicInvoiceStripe:
         )
 
         org, cust, inv = _seed_plane2_data(db, org_id=4, has_connect=True)
+        inv.balance_due = Decimal("42.50")  # partial payment / credit already applied
+        db.commit()
+        monkeypatch.setattr(settings, "FRONTEND_URL", "https://billing.example.test")
         svc = InvoiceService(db)
         token = svc._public_invoice_token(inv.id)
 
-        result = svc.create_public_checkout_session(
-            token=token,
-            success_url="https://app.zoikobilling.com/success",
-            cancel_url="https://app.zoikobilling.com/cancel",
-        )
+        result = svc.create_public_checkout_session(token=token)
         assert result["configured"] is True
         assert result["checkout_url"] == "https://checkout.stripe.com/pay/cs_test_session_123"
         assert result["session_id"] == "cs_test_session_123"
 
         # Verify stripe_account parameter was passed to ensure Plane 2 isolation
         mock_session_create.assert_called_once()
-        assert mock_session_create.call_args.kwargs.get("stripe_account") == "acct_test_4"
+        stripe_args = mock_session_create.call_args.kwargs
+        assert stripe_args.get("stripe_account") == "acct_test_4"
+        assert stripe_args["line_items"] == [{
+            "quantity": 1,
+            "price_data": {
+                "currency": "usd",
+                "unit_amount": 4250,
+                "product_data": {"name": f"Invoice {inv.invoice_number} balance due"},
+            },
+        }]
+        assert stripe_args["success_url"].startswith(f"https://billing.example.test/invoice/{token}?paid=true&session_id=")
+        assert "{CHECKOUT_SESSION_ID}" in stripe_args["success_url"]
+        assert stripe_args["cancel_url"] == f"https://billing.example.test/invoice/{token}?cancelled=true"
+
+    def test_stripe_minor_unit_conversion_respects_currency_precision(self):
+        from app.modules.billing.services.stripe_service import _from_cents, _to_cents
+
+        assert _to_cents(Decimal("123.45"), "USD") == 12345
+        assert _to_cents(Decimal("123"), "JPY") == 123
+        assert _to_cents(Decimal("12.345"), "KWD") == 12345
+        assert _from_cents(123, "JPY") == Decimal("123")
+        assert _from_cents(12345, "KWD") == Decimal("12.345")
 
 
 class TestPlane1PlatformInvoiceStripe:
