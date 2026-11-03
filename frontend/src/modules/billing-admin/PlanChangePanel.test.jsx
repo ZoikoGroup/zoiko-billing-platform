@@ -166,7 +166,12 @@ describe("PlanChangePanel", () => {
     const { onChanged } = renderPanel();
 
     fireEvent.click(await screen.findByRole("button", { name: "Downgrade to Essentials" }));
-    fireEvent.click(await screen.findByRole("button", { name: /Schedule downgrade/ }));
+    // "Schedule downgrade" is also the label while the preview is still
+    // loading, when the button is disabled -- clicking it then is a no-op, so
+    // under a loaded CI run the click could land before the preview resolved.
+    const scheduleButton = await screen.findByRole("button", { name: /Schedule downgrade/ });
+    await waitFor(() => expect(scheduleButton).toBeEnabled());
+    fireEvent.click(scheduleButton);
 
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
     expect(platformSelfServiceApi.commitPlanChange).toHaveBeenCalledWith({ targetPlanId: 1, confirmImmediate: false });

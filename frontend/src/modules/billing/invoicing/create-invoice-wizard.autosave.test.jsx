@@ -18,6 +18,7 @@ const mockInvoiceBulkSetItems = vi.fn();
 const mockInvoiceGet = vi.fn();
 const mockInvoiceSendEmail = vi.fn();
 const mockCustomerSearch = vi.fn();
+const mockCustomerList = vi.fn();
 const mockCustomerGet = vi.fn();
 const mockProductList = vi.fn();
 const mockProductGet = vi.fn();
@@ -36,6 +37,7 @@ vi.mock("../../../service/billingService", () => ({
   },
   customerApi: {
     search: (...args) => mockCustomerSearch(...args),
+    list: (...args) => mockCustomerList(...args),
     get: (...args) => mockCustomerGet(...args),
   },
   productApi: {
@@ -167,6 +169,7 @@ beforeEach(() => {
   mockSettingsGetExchangeRatePair.mockResolvedValue({ rate: 1, source: "cached" });
   mockTaxList.mockResolvedValue([]);
   mockCustomerSearch.mockResolvedValue([CUSTOMER_SEARCH_RESULT]);
+  mockCustomerList.mockResolvedValue({ items: [], total: 0 });
   mockCustomerGet.mockResolvedValue(CUSTOMER_FULL);
   mockProductList.mockResolvedValue([]);
   mockProductListCategories.mockResolvedValue([]);
