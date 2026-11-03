@@ -30,6 +30,7 @@ import {
   LIMIT_META,
   PLAN_CATALOG,
   PLAN_ORDER,
+  pricingModelLabels,
 } from "../modules/billing-admin/zoikoPlanCatalog";
 
 const TRIAL_DAYS = 14;
@@ -382,11 +383,9 @@ export default function RegisterPage() {
                         <dl className="mt-4 space-y-1.5 border-t border-slate-100 pt-4 text-[13px]">
                           {[
                             ["users", "Team members"],
+                            ["billing.customer.max", "Customers"],
                             ["billing.invoice.monthly_limit", "Invoices / month"],
-                            ["api.requests_per_day", "API requests / day"],
-                            ["org.entity.max", "Legal entities"],
                             ["currency.enabled.max", "Currencies"],
-                            ["webhooks.endpoint.max", "Webhook endpoints"],
                           ].map(([metaKey, label]) => (
                             <div key={metaKey} className="flex items-baseline justify-between gap-2">
                               <dt className="text-slate-500">{label}</dt>
@@ -485,8 +484,8 @@ export default function RegisterPage() {
                         <tr>
                           <th scope="row" className="px-4 py-2.5 font-semibold text-slate-700">Pricing models</th>
                           {PLAN_ORDER.map((k) => (
-                            <td key={k} className="px-4 py-2.5 capitalize text-slate-800">
-                              {PLAN_CATALOG[k].pricingModels ? PLAN_CATALOG[k].pricingModels.join(", ") : "Per contract"}
+                            <td key={k} className="px-4 py-2.5 text-slate-800">
+                              {PLAN_CATALOG[k].pricingModels ? pricingModelLabels(PLAN_CATALOG[k].pricingModels).join(", ") : "Per contract"}
                             </td>
                           ))}
                         </tr>
@@ -636,7 +635,7 @@ export default function RegisterPage() {
                 <ul className="mt-4 space-y-2 border-t border-slate-100 pt-4 text-[13px] text-slate-700">
                   <li className="flex justify-between"><span>Team members</span><strong>{limitValue(selectedPlanKey, "users")}</strong></li>
                   <li className="flex justify-between"><span>Invoices / month</span><strong>{limitValue(selectedPlanKey, "billing.invoice.monthly_limit")}</strong></li>
-                  <li className="flex justify-between"><span>API requests / day</span><strong>{limitValue(selectedPlanKey, "api.requests_per_day")}</strong></li>
+                  <li className="flex justify-between"><span>Customers</span><strong>{limitValue(selectedPlanKey, "billing.customer.max")}</strong></li>
                 </ul>
 
                 {startMode === "trial" && (

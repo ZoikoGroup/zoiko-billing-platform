@@ -42,7 +42,7 @@ import {
 } from "../../service/commandCenterService";
 import { FinancialSummaryStrip } from "./FinancialSummaryCards";
 
-const POLL_INTERVAL_MS = 60000;
+const POLL_INTERVAL_MS = 45000;
 
 // Headline sources (overview, F1-F4 summary, trend) run first; the three
 // below-the-fold tables are deferred until they near the viewport. At most 6
@@ -90,15 +90,42 @@ function money(value, opts = {}) {
   }).format(n);
 }
 
+// The overview's generated_at is datetime.utcnow() — naive UTC serialized
+// without an offset, which JS would read as LOCAL time ("Refreshed" was off by
+// the viewer's UTC offset). Offset-less timestamps are read as UTC.
+export function parseServerTime(value) {
+  if (value === null || value === undefined || value === "") return null;
+  if (value instanceof Date) return value;
+  const s = String(value).trim();
+  const hasTime = /T\d{2}:\d{2}/.test(s);
+  const hasOffset = /(Z|[+-]\d{2}:?\d{2})$/i.test(s);
+  const d = new Date(hasTime && !hasOffset ? `${s}Z` : s);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 function relTime(iso) {
-  if (!iso) return "";
-  const diffMs = Date.now() - new Date(iso).getTime();
+  const d = parseServerTime(iso);
+  if (!d) return "";
+  const diffMs = Date.now() - d.getTime();
   const mins = Math.round(diffMs / 60000);
   if (mins < 1) return "just now";
   if (mins < 60) return `${mins}m ago`;
   const hours = Math.round(mins / 60);
   if (hours < 24) return `${hours}h ago`;
-  return new Date(iso).toLocaleDateString([], { month: "short", day: "numeric" });
+  return d.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+// Ticking "Refreshed Xs ago" stamp; re-renders only itself.
+function RefreshedAgo({ date }) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setTick((n) => n + 1), 5000);
+    return () => clearInterval(t);
+  }, []);
+  if (!date) return <span>Refreshed —</span>;
+  const secs = Math.max(0, Math.round((Date.now() - date.getTime()) / 1000));
+  const label = secs < 5 ? "just now" : secs < 60 ? `${secs}s ago` : `${Math.floor(secs / 60)}m ago`;
+  return <span title={date.toLocaleString()}>Refreshed {label}</span>;
 }
 
 // A failed panel fetch must read as a failure, never as that panel's "all
@@ -216,12 +243,39 @@ export default function BillingCommandCenterPage({ embedded = false } = {}) {
   const loadAllRef = useRef(() => {});
   const granularityRef = useRef(granularity);
 
+  // Last good value per source. A failed background refresh keeps it on
+  // screen (recorded in staleErrors → one small "Couldn't refresh" note)
+  // instead of replacing a populated panel with an error; only a source that
+  // has never loaded shows its PanelError.
+  const dataRef = useRef({});
+  const [staleErrors, setStaleErrors] = useState({});
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const summarySeqRef = useRef(0);
+
+  const clearStale = (key) =>
+    setStaleErrors((prev) => {
+      if (!(key in prev)) return prev;
+      const { [key]: _cleared, ...rest } = prev;
+      return rest;
+    });
+
   const loadSummary = useCallback(() => {
-    setSummaryError(null);
+    const id = ++summarySeqRef.current;
     queueRef.current
       .run(() => getFinancialOperationsSummary(), { priority: PRIORITY_HEADLINE })
-      .then((res) => { if (mountedRef.current) setSummary(res); })
-      .catch((e) => { if (mountedRef.current) setSummaryError(e?.message || "Summary unavailable"); });
+      .then((res) => {
+        if (!mountedRef.current || id !== summarySeqRef.current) return;
+        dataRef.current.summary = res;
+        setSummary(res);
+        setSummaryError(null);
+        clearStale("summary");
+      })
+      .catch((e) => {
+        if (!mountedRef.current || id !== summarySeqRef.current) return;
+        const message = e?.message || "Summary unavailable";
+        if (dataRef.current.summary) setStaleErrors((prev) => ({ ...prev, summary: message }));
+        else setSummaryError(message);
+      });
   }, []);
 
   const startSource = useCallback((key) => {
@@ -239,6 +293,15 @@ export default function BillingCommandCenterPage({ embedded = false } = {}) {
       (e) => ({ v: null, message: e?.message || fallbackMessage }),
     ).then(({ v, message }) => {
       if (!mountedRef.current || id !== seqRef.current[key]) return;
+      if (message && dataRef.current[key]) {
+        setStaleErrors((prev) => ({ ...prev, [key]: message }));
+        return;
+      }
+      if (!message) {
+        dataRef.current[key] = v;
+        clearStale(key);
+        if (key === "overview") setLastUpdated(new Date());
+      }
       apply(v);
       setSourceErrors((prev) => {
         if (message) return { ...prev, [key]: message };
@@ -287,7 +350,20 @@ export default function BillingCommandCenterPage({ embedded = false } = {}) {
   useEffect(() => { if (riskDeferred.triggered) startSource("risk"); }, [riskDeferred.triggered, startSource]);
   useEffect(() => { if (activityDeferred.triggered) startSource("activity"); }, [activityDeferred.triggered, startSource]);
 
-  usePolling(() => requestRefresh({ auto: true }), POLL_INTERVAL_MS);
+  // Background refresh only while the tab is visible AND focused (usePolling
+  // already pauses on hidden tabs); regaining window focus refreshes at once.
+  const isActiveWindow = () =>
+    document.visibilityState === "visible" && (typeof document.hasFocus !== "function" || document.hasFocus());
+  usePolling(() => {
+    if (isActiveWindow()) requestRefresh({ auto: true });
+  }, POLL_INTERVAL_MS);
+  useEffect(() => {
+    const onFocus = () => {
+      if (isActiveWindow()) loadAllRef.current();
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
 
   useEffect(() => {
     if (firstTickRef.current) {
@@ -297,18 +373,26 @@ export default function BillingCommandCenterPage({ embedded = false } = {}) {
     loadAllRef.current();
   }, [refreshTick]);
 
+  // Shares startSource's sequence counter so a slow response for a
+  // previously clicked granularity can't overwrite the one now selected.
   const loadTrend = useCallback(
     (g) => {
       setGranularity(g);
       granularityRef.current = g;
+      const id = (seqRef.current.trend = (seqRef.current.trend || 0) + 1);
       getBillingCommandTrend(g)
         .then((res) => {
+          if (!mountedRef.current || id !== seqRef.current.trend) return;
+          dataRef.current.trend = res;
           setTrend(res);
           setSourceErrors(({ trend: _cleared, ...rest }) => rest);
         })
-        .catch((e) =>
-          setSourceErrors((prev) => ({ ...prev, trend: e?.message || "Trend unavailable" }))
-        );
+        .catch((e) => {
+          if (!mountedRef.current || id !== seqRef.current.trend) return;
+          // A different granularity's old series must not stay on screen
+          // under the new toggle, so a granularity switch failure is shown.
+          setSourceErrors((prev) => ({ ...prev, trend: e?.message || "Trend unavailable" }));
+        });
     },
     []
   );

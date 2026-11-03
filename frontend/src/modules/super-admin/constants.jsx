@@ -592,3 +592,17 @@ export function OrgAccountStatusBadge({ value }) {
     </span>
   );
 }
+
+// Which operator actions an attention item's status allows. Mirrors the
+// server's rules in attention_service.py (acknowledge from OPEN only;
+// assign/suppress from any open-like status; _FORWARD_TRANSITIONS for the
+// rest) so neither Triage nor Governance offers a button the server rejects.
+const ATTENTION_OPEN_LIKE = ["open", "acknowledged", "assigned", "mitigating", "monitoring"];
+export const ATTENTION_ACTIONS = {
+  acknowledge: ["open"],
+  assign: ATTENTION_OPEN_LIKE,
+  mitigate: ["open", "acknowledged", "assigned", "monitoring"],
+  monitor: ["assigned", "mitigating"],
+  resolve: ["mitigating", "monitoring"],
+  suppress: ATTENTION_OPEN_LIKE,
+};

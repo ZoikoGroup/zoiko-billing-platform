@@ -1721,15 +1721,16 @@ export function ExportMenu({ onExportCSV, onExportJSON, onExportExcel, className
  * ---------------------------------------------------------------------- */
 
 /**
- * Business-facing labels for an entitlement error's `entity` slug. Only
- * "customer" and "invoice" are wired to a real route-enforced limit today
- * (POST /billing/customers -> org.entity.max, POST /billing/invoices ->
- * billing.invoice.monthly_limit) — the rest are included so a future
- * limit-gated create flow needs no new frontend mapping, just a backend
- * call site that passes `entity=` to assert_within_limit.
+ * Business-facing labels for an entitlement error's `entity` slug. Wired
+ * today: "customer" (billing.customer.max), "invoice"
+ * (billing.invoice.monthly_limit), "user" (plan seats) and "currency"
+ * (currency.enabled.max). The rest are included so a future limit-gated
+ * create flow needs no new frontend mapping, just a backend call site that
+ * passes `entity=` to assert_within_limit.
  */
 const ENTITLEMENT_ENTITY_LABELS = {
   customer: { singular: "Customer", plural: "Customers" },
+  user: { singular: "Team Member", plural: "Team Members" },
   invoice: { singular: "Invoice", plural: "Invoices" },
   product: { singular: "Product", plural: "Products" },
   quotation: { singular: "Quotation", plural: "Quotations" },
@@ -1764,7 +1765,7 @@ export function getEntitlementEntityLabel(entity, { plural = false, terminology 
  * panel for a SUBSCRIPTION_LIMIT_REACHED entitlement error. Renders in
  * place of a raw 403/technical message wherever a limit-gated create flow
  * hits its plan cap; never displays the internal entitlement key
- * (e.g. "org.entity.max") — only the resolved entity label, counts, and
+ * (e.g. "billing.customer.max") — only the resolved entity label, counts, and
  * plan name. Wording stays accurate even when existing usage is already
  * above the limit (pre-existing data from before a plan downgrade, a demo
  * org, etc.) — it never claims a remaining count in that case.

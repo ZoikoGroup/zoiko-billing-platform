@@ -126,13 +126,28 @@ function FreshnessStamp({ checkedAt, latencyMs }) {
   );
 }
 
-function CountChip({ count, severity }) {
+// Doubles as a filter toggle: clicking "2 stale" narrows the list to those two.
+function CountChip({ count, severity, active, onToggle }) {
   return (
-    <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${JOB_SEVERITY_STYLES[severity].chip}`}>
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={() => onToggle(severity)}
+      disabled={count === 0 && !active}
+      className={`rounded-full px-2.5 py-0.5 text-xs font-bold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 disabled:cursor-default disabled:opacity-50 ${
+        JOB_SEVERITY_STYLES[severity].chip
+      } ${active ? "ring-2 ring-slate-700 ring-offset-1" : ""}`}
+    >
       {count} {JOB_SEVERITY_STYLES[severity].label}
-    </span>
+    </button>
   );
 }
+
+const OVERALL_TONES = {
+  red: "border-red-200 bg-red-50 text-red-800",
+  amber: "border-amber-200 bg-amber-50 text-amber-800",
+  emerald: "border-emerald-200 bg-emerald-50 text-emerald-800",
+};
 
 export default function ReliabilityPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -157,6 +172,10 @@ export default function ReliabilityPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [jobFilter, setJobFilter] = useState("");
+  const [severityFilter, setSeverityFilter] = useState(null);
+  const toggleSeverity = useCallback((severity) => {
+    setSeverityFilter((current) => (current === severity ? null : severity));
+  }, []);
   // Ticks only while the health tab is on screen so the "as of" stamps keep
   // counting up, without re-fetching or leaving a timer running behind the
   // other two tabs. The value itself is never read — re-render is the point.
@@ -228,15 +247,27 @@ export default function ReliabilityPage() {
       return String(a.display_name || a.job_name).localeCompare(String(b.display_name || b.job_name));
     });
     const needle = jobFilter.trim().toLowerCase();
-    if (!needle) return ordered;
-    return ordered.filter((job) =>
-      `${job.display_name || ""} ${job.job_name || ""}`.toLowerCase().includes(needle)
+    return ordered.filter(
+      (job) =>
+        (!severityFilter || jobSeverity(job) === severityFilter) &&
+        (!needle || `${job.display_name || ""} ${job.job_name || ""}`.toLowerCase().includes(needle))
     );
-  }, [jobs, jobFilter]);
+  }, [jobs, jobFilter, severityFilter]);
 
   const failing = (jobs || []).filter((job) => jobSeverity(job) !== "fresh");
   const dbConnected = health?.database === "connected";
   const redisConnected = health?.redis === "connected";
+
+  // One sentence the operator can read before any card: is anything wrong?
+  const overall = healthError || !dbConnected
+    ? { tone: "red", title: "Service health check failing", detail: healthError ? "The health endpoint could not be reached." : "The database is not reachable from the API." }
+    : jobsError
+    ? { tone: "amber", title: "Job telemetry unavailable", detail: "The API is up, but background job health could not be read." }
+    : counts.failed > 0
+    ? { tone: "red", title: `${counts.failed} background job${counts.failed === 1 ? " is" : "s are"} failing`, detail: "Open the Incidents tab to retry failed jobs with a recorded reason." }
+    : counts.stale + counts.unknown > 0
+    ? { tone: "amber", title: "Some jobs are overdue or have no recent runs", detail: `${counts.stale} overdue · ${counts.unknown} without a recent run.` }
+    : { tone: "emerald", title: "All systems operational", detail: "Database connected and every tracked job ran on schedule." };
 
   return (
     <div className="p-4 sm:p-6 lg:p-8">
@@ -247,9 +278,13 @@ export default function ReliabilityPage() {
         accent="teal"
         meta={activeHubTab === "health" && healthCheckedAt ? `Last checked ${formatAge(healthCheckedAt)}` : null}
         actions={
-          <Button variant="secondary" icon={RefreshCw} loading={loading || refreshing} onClick={handleRefresh}>
-            {loading || refreshing ? "Refreshing…" : "Refresh"}
-          </Button>
+          // The other two tabs carry their own refresh; this one only
+          // re-reads the Health tab's data, so it is only offered there.
+          activeHubTab === "health" ? (
+            <Button variant="secondary" icon={RefreshCw} loading={loading || refreshing} onClick={handleRefresh}>
+              {loading || refreshing ? "Refreshing…" : "Refresh"}
+            </Button>
+          ) : null
         }
       />
 
@@ -270,6 +305,21 @@ export default function ReliabilityPage() {
         </div>
       ) : (
         <div className="mt-6 space-y-6">
+          <div role="status" className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl border px-5 py-4 ${OVERALL_TONES[overall.tone]}`}>
+            <div className="flex items-start gap-3">
+              {overall.tone === "emerald" ? <CheckCircle2 size={20} className="mt-0.5 shrink-0" /> : <XCircle size={20} className="mt-0.5 shrink-0" />}
+              <div>
+                <p className="text-sm font-bold">{overall.title}</p>
+                <p className="mt-0.5 text-xs opacity-90">{overall.detail}</p>
+              </div>
+            </div>
+            {counts.failed > 0 && !jobsError && (
+              <Button size="sm" variant="secondary" onClick={() => setActiveHubTab("incidents")}>
+                Go to Incidents
+              </Button>
+            )}
+          </div>
+
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <SectionCard variant="hero" accent="teal" icon={Database} title="Database Connectivity">
               {healthError ? (
@@ -345,10 +395,15 @@ export default function ReliabilityPage() {
             actions={
               jobs !== null && !jobsError ? (
                 <div className="flex flex-wrap gap-1.5" aria-label="Job health counts">
-                  <CountChip count={counts.failed} severity="failed" />
-                  <CountChip count={counts.stale} severity="stale" />
-                  <CountChip count={counts.unknown} severity="unknown" />
-                  <CountChip count={counts.fresh} severity="fresh" />
+                  {["failed", "stale", "unknown", "fresh"].map((severity) => (
+                    <CountChip
+                      key={severity}
+                      count={counts[severity]}
+                      severity={severity}
+                      active={severityFilter === severity}
+                      onToggle={toggleSeverity}
+                    />
+                  ))}
                 </div>
               ) : null
             }
@@ -384,9 +439,18 @@ export default function ReliabilityPage() {
                   </div>
                 )}
                 {visibleJobs.length === 0 ? (
-                  <p className="text-xs text-slate-500">No job matches “{jobFilter}”.</p>
+                  <p className="text-xs text-slate-500">
+                    No job matches these filters.{" "}
+                    <button
+                      type="button"
+                      className="font-semibold text-brand-600 hover:text-brand-800"
+                      onClick={() => { setJobFilter(""); setSeverityFilter(null); }}
+                    >
+                      Clear filters
+                    </button>
+                  </p>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="space-y-1">
                     {visibleJobs.map((job) => {
                       const severity = jobSeverity(job);
                       const style = FRESHNESS_STYLES[job.freshness] || FRESHNESS_STYLES.unknown;
@@ -394,7 +458,9 @@ export default function ReliabilityPage() {
                       return (
                         <div
                           key={job.job_name}
-                          className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 py-2 text-sm last:border-0"
+                          className={`flex flex-wrap items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-sm ${
+                            severity === "failed" ? "bg-red-50/70" : severity === "fresh" ? "" : "bg-amber-50/40"
+                          }`}
                         >
                           <span className="min-w-0">
                             <span className="font-medium text-slate-700">{job.display_name || job.job_name}</span>

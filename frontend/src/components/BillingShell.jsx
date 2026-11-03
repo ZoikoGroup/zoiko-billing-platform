@@ -55,6 +55,7 @@ import PrivilegedSessionBanner from "./PrivilegedSessionBanner";
 import TriageStrip from "./TriageStrip";
 import CommandPalette from "./CommandPalette";
 import TrialBanner from "./TrialBanner";
+import { PageHeaderAccentContext } from "./billing-ui";
 
 const NAV_SECTIONS = [
   {
@@ -890,9 +891,12 @@ export default function BillingShell({ children }) {
               was added for the old floating AI launcher, which now lives in
               the TopBar; kept so page endings don't shift). */}
           <div className="min-w-0 max-w-full overflow-x-hidden px-4 pt-6 pb-24 sm:px-6 lg:px-8">
-            <Suspense fallback={<ContentSkeleton />}>
-              {children}
-            </Suspense>
+            {/* Super-admin page headers all take the sidebar's navy. */}
+            <PageHeaderAccentContext.Provider value={isSuperAdmin ? "navy" : null}>
+              <Suspense fallback={<ContentSkeleton />}>
+                {children}
+              </Suspense>
+            </PageHeaderAccentContext.Provider>
           </div>
         </main>
 

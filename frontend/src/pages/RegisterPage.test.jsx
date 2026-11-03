@@ -44,10 +44,16 @@ describe("RegisterPage", () => {
       expect(screen.getByRole("heading", { name })).toBeInTheDocument();
     }
     expect(screen.getAllByText("$49").length).toBeGreaterThan(0);
-    // limits per plan: Essentials 5 seats / 5,000 API per day, Business 100 seats / 200,000 API per day
-    expect(screen.getAllByText("5,000").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("200,000").length).toBeGreaterThan(0);
+    // limits per plan: Essentials 5 seats / 100 customers, Professional 1,000 customers, Business 10,000 customers
+    expect(screen.getAllByText("Customers").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("1,000").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("10,000").length).toBeGreaterThan(0);
     expect(screen.getAllByText("100").length).toBeGreaterThan(0);
+    // Features that don't exist in the product yet are not advertised.
+    expect(screen.queryByText(/API requests/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Webhook endpoints/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Legal entities/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Single sign-on/)).not.toBeInTheDocument();
     expect(screen.getByText(/Need Enterprise\?/)).toBeInTheDocument();
   });
 

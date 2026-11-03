@@ -3,7 +3,7 @@ scripts/seed_entitlement_definitions.py
 ---------------------------------------
 Seeds the typed entitlement catalog (§12–§13, ZB-COM-ENT-001):
 
-  1. EntitlementDefinition rows — the 19 canonical keys with their value
+  1. EntitlementDefinition rows — the canonical keys with their value
      types, risk classifications, and enforcement types.
   2. PlanEntitlement rows — concrete values for each key on each published
      CommercialPlanVersion (Essentials / Professional / Business / Enterprise).
@@ -35,19 +35,20 @@ from app.modules.commercial.models import (
     PlanEntitlement,
 )
 
-# §12 — the 19 canonical entitlement keys. Single source of truth lives in
+# §12 — the canonical entitlement keys. Single source of truth lives in
 # entitlement_catalog_spec.py (shared with require_entitlement's validation
 # and the enforcement checklist doc) so this seed script can never drift
 # from what route-time code actually validates against.
 ENTITLEMENT_DEFINITIONS = ENTITLEMENT_CATALOG_SPEC
 
-# §3 + §4 — PlanEntitlement values per plan_code for each of the 19 keys.
+# §3 + §4 — PlanEntitlement values per plan_code for each key.
 # Keys: plan_code -> { entitlement_key: value }
 # Enterprise: all keys -> None (is_contracted=True, value=NULL).
 PLAN_ENTITLEMENT_VALUES = {
     "essentials": {
         # Core billing
         "billing.invoice.create": True,
+        "billing.customer.max": 100,
         "billing.invoice.monthly_limit": 100,
         "billing.recurring.manage": False,
         "billing.subscription.lifecycle": False,
@@ -74,6 +75,7 @@ PLAN_ENTITLEMENT_VALUES = {
     "professional": {
         # Core billing
         "billing.invoice.create": True,
+        "billing.customer.max": 1000,
         "billing.invoice.monthly_limit": 1000,
         "billing.recurring.manage": True,
         "billing.subscription.lifecycle": True,
@@ -100,6 +102,7 @@ PLAN_ENTITLEMENT_VALUES = {
     "business": {
         # Core billing
         "billing.invoice.create": True,
+        "billing.customer.max": 10000,
         "billing.invoice.monthly_limit": 10000,
         "billing.recurring.manage": True,
         "billing.subscription.lifecycle": True,
@@ -124,6 +127,58 @@ PLAN_ENTITLEMENT_VALUES = {
         "sandbox.workspace.max": 10,
     },
 }
+
+
+# Keys added after plans were already published. A subscription resolves
+# against its own pinned catalog version, so seeding only the latest
+# published version would leave every other version without a row, and the
+# resolver's safe default (0) would block the gated action outright. These
+# keys are backfilled onto every version of every plan instead: catalog
+# plans get their PLAN_ENTITLEMENT_VALUES value, Enterprise and custom plans
+# get a contracted NULL (no cap) that a super admin can tighten on a draft.
+BACKFILL_ALL_VERSIONS_KEYS = ("billing.customer.max",)
+
+
+def _catalog_values_for(plan_code: str) -> dict | None:
+    code = (plan_code or "").lower()
+    for catalog_code, values in PLAN_ENTITLEMENT_VALUES.items():
+        if code == catalog_code or code.startswith(f"{catalog_code}_") or code.startswith(f"{catalog_code}-"):
+            return values
+    return None
+
+
+def _backfill_all_versions(db, key_to_def) -> int:
+    inserted = 0
+    for ent_key in BACKFILL_ALL_VERSIONS_KEYS:
+        ent_def = key_to_def.get(ent_key)
+        if ent_def is None:
+            continue
+        for plan in db.query(CommercialPlan).all():
+            values = _catalog_values_for(plan.plan_code)
+            versions = db.query(CommercialPlanVersion).filter(CommercialPlanVersion.plan_id == plan.id).all()
+            for version in versions:
+                exists = (
+                    db.query(PlanEntitlement.id)
+                    .filter(
+                        PlanEntitlement.plan_version_id == version.id,
+                        PlanEntitlement.entitlement_definition_id == ent_def.id,
+                    )
+                    .first()
+                )
+                if exists:
+                    continue
+                if values is not None and ent_key in values:
+                    db.add(PlanEntitlement(
+                        plan_version_id=version.id, entitlement_definition_id=ent_def.id,
+                        value=values[ent_key], is_contracted=False,
+                    ))
+                else:
+                    db.add(PlanEntitlement(
+                        plan_version_id=version.id, entitlement_definition_id=ent_def.id,
+                        value=None, is_contracted=True,
+                    ))
+                inserted += 1
+    return inserted
 
 
 def _get_latest_published_version(db, plan_id: int):
@@ -244,6 +299,11 @@ def main() -> None:
                     )
                     db.add(pe)
                     seeded_count += 1
+
+        db.flush()
+        backfilled = _backfill_all_versions(db, key_to_def)
+        if backfilled:
+            print(f"  Backfilled {backfilled} PlanEntitlement row(s) for {', '.join(BACKFILL_ALL_VERSIONS_KEYS)}.")
 
         db.commit()
         print(

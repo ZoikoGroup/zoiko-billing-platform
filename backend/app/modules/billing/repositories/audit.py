@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from app.modules.billing.models import BillingAuditAction, BillingAuditLog
@@ -56,8 +57,11 @@ class BillingAuditLogRepository(BaseRepository[BillingAuditLog]):
         action: Optional[str] = None,
         actor_id: Optional[int] = None,
         search_fields: Optional[List[str]] = None,
+        since: Optional[datetime] = None,
         **filters: Any,
     ) -> Dict[str, Any]:
+        # `since` is the plan's audit-log search window (audit.search_months).
+        extra_conditions = [BillingAuditLog.timestamp >= since] if since is not None else None
         if entity_type:
             filters["entity_type"] = entity_type
         if entity_id is not None:
@@ -76,5 +80,6 @@ class BillingAuditLogRepository(BaseRepository[BillingAuditLog]):
             active_only=False,
             search_term=search_term,
             search_fields=search_fields or ["entity_type", "ip_address", "request_id"],
+            extra_conditions=extra_conditions,
             **filters,
         )

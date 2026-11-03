@@ -1,7 +1,7 @@
 """
 modules/commercial/entitlement_catalog_spec.py
 ------------------------------------------------
-Single source of truth for the 19 canonical entitlement keys (§12,
+Single source of truth for the canonical entitlement keys (§12,
 ZB-COM-ENT-001). Both `scripts/seed_entitlement_definitions.py` (which
 inserts these as EntitlementDefinition rows) and
 `entitlement_enforcement.require_entitlement`/`EntitlementEnforcementService`
@@ -30,6 +30,13 @@ ENTITLEMENT_CATALOG_SPEC = [
         "risk_classification": EntitlementRiskClassification.STANDARD,
         "enforcement_type": EntitlementEnforcementType.HARD,
         "description": "Maximum number of invoices that can be created per calendar month.",
+    },
+    {
+        "key": "billing.customer.max",
+        "value_type": EntitlementValueType.INTEGER,
+        "risk_classification": EntitlementRiskClassification.STANDARD,
+        "enforcement_type": EntitlementEnforcementType.HARD,
+        "description": "Maximum number of billing customers.",
     },
     {
         "key": "billing.recurring.manage",
@@ -159,3 +166,28 @@ ENTITLEMENT_CATALOG_SPEC = [
 KNOWN_ENTITLEMENT_KEYS = frozenset(spec["key"] for spec in ENTITLEMENT_CATALOG_SPEC)
 
 ENTITLEMENT_CATALOG_BY_KEY = {spec["key"]: spec for spec in ENTITLEMENT_CATALOG_SPEC}
+
+# Customer-facing names, used in the message an org admin sees when a gate
+# blocks them. The raw key never reaches that message.
+ENTITLEMENT_DISPLAY_NAMES = {
+    "billing.invoice.create": "Invoice creation",
+    "billing.invoice.monthly_limit": "Invoices per month",
+    "billing.customer.max": "Customers",
+    "billing.recurring.manage": "Recurring billing",
+    "billing.subscription.lifecycle": "Subscription lifecycle",
+    "billing.proration.manage": "Proration",
+    "billing.usage_metering": "Usage-based billing",
+    "billing.pricing_model_set": "Pricing models",
+    "payments.provider.max": "Payment providers",
+    "reconciliation.automation": "Automated reconciliation",
+    "collections.dunning": "Dunning & collections",
+    "org.entity.max": "Legal entities",
+    "currency.enabled.max": "Currencies",
+    "security.custom_roles": "Role management",
+    "security.sso": "Single sign-on",
+    "api.write": "API write access",
+    "api.requests_per_day": "API requests per day",
+    "webhooks.endpoint.max": "Webhook endpoints",
+    "audit.search_months": "Audit-log search window",
+    "sandbox.workspace.max": "Sandbox workspaces",
+}

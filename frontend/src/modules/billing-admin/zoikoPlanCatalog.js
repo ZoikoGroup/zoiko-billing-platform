@@ -15,25 +15,16 @@ export const PLAN_CATALOG = {
     maxUsers: 5,
     limits: {
       "billing.invoice.monthly_limit": 100,
-      "payments.provider.max": 1,
-      "org.entity.max": 1,
+      "billing.customer.max": 100,
       "currency.enabled.max": 1,
-      "api.requests_per_day": 5000,
-      "webhooks.endpoint.max": 2,
       "audit.search_months": 3,
-      "sandbox.workspace.max": 1,
     },
     features: {
       "billing.invoice.create": true,
       "billing.recurring.manage": false,
-      "billing.subscription.lifecycle": false,
-      "billing.proration.manage": false,
       "billing.usage_metering": false,
-      "reconciliation.automation": false,
       "collections.dunning": false,
       "security.custom_roles": false,
-      "security.sso": false,
-      "api.write": false,
     },
     pricingModels: ["flat"],
   },
@@ -44,25 +35,16 @@ export const PLAN_CATALOG = {
     maxUsers: 25,
     limits: {
       "billing.invoice.monthly_limit": 1000,
-      "payments.provider.max": 2,
-      "org.entity.max": 2,
+      "billing.customer.max": 1000,
       "currency.enabled.max": 5,
-      "api.requests_per_day": 50000,
-      "webhooks.endpoint.max": 10,
       "audit.search_months": 12,
-      "sandbox.workspace.max": 3,
     },
     features: {
       "billing.invoice.create": true,
       "billing.recurring.manage": true,
-      "billing.subscription.lifecycle": true,
-      "billing.proration.manage": true,
       "billing.usage_metering": true,
-      "reconciliation.automation": true,
       "collections.dunning": true,
       "security.custom_roles": true,
-      "security.sso": true,
-      "api.write": true,
     },
     pricingModels: ["flat", "tiered", "volume"],
   },
@@ -73,27 +55,18 @@ export const PLAN_CATALOG = {
     maxUsers: 100,
     limits: {
       "billing.invoice.monthly_limit": 10000,
-      "payments.provider.max": 5,
-      "org.entity.max": 10,
+      "billing.customer.max": 10000,
       "currency.enabled.max": 20,
-      "api.requests_per_day": 200000,
-      "webhooks.endpoint.max": 50,
       "audit.search_months": 24,
-      "sandbox.workspace.max": 10,
     },
     features: {
       "billing.invoice.create": true,
       "billing.recurring.manage": true,
-      "billing.subscription.lifecycle": true,
-      "billing.proration.manage": true,
       "billing.usage_metering": true,
-      "reconciliation.automation": true,
       "collections.dunning": true,
       "security.custom_roles": true,
-      "security.sso": true,
-      "api.write": true,
     },
-    pricingModels: ["flat", "tiered", "volume", "stairstep"],
+    pricingModels: ["flat", "tiered", "volume"],
   },
   enterprise: {
     name: "Enterprise",
@@ -106,29 +79,39 @@ export const PLAN_CATALOG = {
   },
 };
 
+// Only limits and features the product actually has and enforces. The
+// backend catalog also carries keys for features that aren't built yet
+// (payment providers beyond Stripe, legal entities, API keys and request
+// limits, webhooks, sandboxes, SSO, proration, automated reconciliation);
+// those stay off the plan pages until they exist.
 export const LIMIT_META = [
-  { key: "users", label: "Team Members / Seats", unit: "users", hint: "Users who can sign in to this workspace." },
+  { key: "users", label: "Team Members / Seats", unit: "users", hint: "Users who can sign in, including pending invites." },
+  { key: "billing.customer.max", label: "Customers", unit: "customers", hint: "Billing customers in this workspace." },
   { key: "billing.invoice.monthly_limit", label: "Invoices per month", unit: "invoices", hint: "Invoices you can create per calendar month." },
-  { key: "payments.provider.max", label: "Payment providers", unit: "providers", hint: "Connected payment gateways." },
-  { key: "org.entity.max", label: "Legal entities", unit: "entities", hint: "Billing entities in one workspace." },
-  { key: "currency.enabled.max", label: "Currencies", unit: "currencies", hint: "Currencies you can enable for invoicing." },
-  { key: "api.requests_per_day", label: "API requests per day", unit: "requests", hint: "Requests above this are throttled." },
-  { key: "webhooks.endpoint.max", label: "Webhook endpoints", unit: "endpoints", hint: "Active webhook destinations." },
+  { key: "currency.enabled.max", label: "Currencies", unit: "currencies", hint: "Distinct currencies you can set product prices in." },
   { key: "audit.search_months", label: "Audit-log search window", unit: "months", hint: "How far back the audit log is searchable." },
-  { key: "sandbox.workspace.max", label: "Sandbox workspaces", unit: "workspaces", hint: "Test workspaces." },
 ];
 
 export const FEATURE_META = [
   { key: "billing.invoice.create", label: "Invoice creation" },
-  { key: "billing.recurring.manage", label: "Recurring billing" },
-  { key: "billing.subscription.lifecycle", label: "Subscription lifecycle" },
-  { key: "billing.proration.manage", label: "Proration" },
-  { key: "billing.usage_metering", label: "Usage metering" },
-  { key: "reconciliation.automation", label: "Automated reconciliation" },
+  { key: "billing.recurring.manage", label: "Recurring billing & subscriptions" },
+  { key: "billing.usage_metering", label: "Usage-based billing" },
   { key: "collections.dunning", label: "Dunning & collections" },
-  { key: "security.custom_roles", label: "Custom roles" },
-  { key: "security.sso", label: "Single sign-on (SSO)" },
-  { key: "api.write", label: "API write access" },
+  { key: "security.custom_roles", label: "Role management" },
 ];
+
+// Plan-facing names for the billing.pricing_model_set families. Each family
+// covers the billing module's matching models (flat includes per-unit,
+// tiered includes graduated). Unknown values are dropped from display.
+export const PRICING_MODEL_LABELS = {
+  flat: "Flat & per-unit",
+  tiered: "Tiered & graduated",
+  volume: "Volume",
+};
+
+export function pricingModelLabels(models) {
+  if (!Array.isArray(models)) return null;
+  return models.map((m) => PRICING_MODEL_LABELS[String(m).toLowerCase()]).filter(Boolean);
+}
 
 export const PRICING_MODEL_KEY = "billing.pricing_model_set";

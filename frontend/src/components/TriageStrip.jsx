@@ -13,6 +13,15 @@ import { useCommandCenter } from "../context/CommandCenterContext";
  * "you are acting in the context of tenant X" must be visible everywhere,
  * not on one page). It renders only while a support-access grant is active.
  */
+// expires_at arrives as a naive UTC datetime (no "Z"); read it as UTC so the
+// tooltip isn't shifted by the viewer's UTC offset.
+function expiryLabel(value) {
+  if (!value) return "its expiry";
+  const text = String(value);
+  const date = new Date(/([zZ]|[+-]\d{2}:?\d{2})$/.test(text) ? text : `${text}Z`);
+  return Number.isNaN(date.getTime()) ? "its expiry" : date.toLocaleTimeString();
+}
+
 export default function TriageStrip() {
   const { activeGrant } = useCommandCenter();
   if (!activeGrant) return null;
@@ -21,7 +30,7 @@ export default function TriageStrip() {
     <div
       role="status"
       className="flex items-center gap-2 border-b border-indigo-200 bg-indigo-50 px-4 py-1.5 text-xs font-semibold text-indigo-800 sm:px-6"
-      title={`Privileged access to organization #${activeGrant.organization_id} is ACTIVE until ${new Date(activeGrant.expires_at).toLocaleTimeString()}`}
+      title={`Privileged access to organization #${activeGrant.organization_id} is ACTIVE until ${expiryLabel(activeGrant.expires_at)}`}
     >
       <Building2 size={13} className="shrink-0" />
       <span className="min-w-0 truncate">Support access active — scope: organization #{activeGrant.organization_id}</span>

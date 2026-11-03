@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { NAVY_SURFACE } from "../../components/billing-ui";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   Activity,
@@ -37,7 +38,7 @@ const LENSES = [
     href: "/super-admin/triage",
     icon: Crosshair,
     description:
-      "Severity-ranked attention queue with SLA clocks — incidents, job failures, integrity signals.",
+      "Incidents, failed jobs and integrity signals ranked by severity, with response-time clocks.",
   },
   {
     name: "Commercial",
@@ -45,7 +46,7 @@ const LENSES = [
     href: "/super-admin/organizations",
     icon: TrendingUp,
     description:
-      "Domain A — accounts, plans, platform subscriptions, entitlements. Per-currency MRR, never FX-summed.",
+      "Customer accounts, plans, platform subscriptions and entitlements. Revenue is shown per currency, never converted and summed.",
   },
   {
     name: "Financial Operations",
@@ -53,7 +54,7 @@ const LENSES = [
     href: "/super-admin/financial-operations",
     icon: Activity,
     description:
-      "Domain B money-in-motion — billings, recovery, leakage and ledger-integrity composite state.",
+      "Tenant billing in motion — invoices, payment recovery, revenue leakage and ledger integrity.",
   },
   {
     name: "Reliability",
@@ -61,7 +62,7 @@ const LENSES = [
     href: "/super-admin/reliability",
     icon: Gauge,
     description:
-      "Domain C telemetry — job health, processing failures, API latency/error window.",
+      "Background job health, processing failures and API latency / error rates.",
   },
   {
     name: "Governance & Security",
@@ -69,7 +70,7 @@ const LENSES = [
     href: "/super-admin/governance",
     icon: ShieldCheck,
     description:
-      "Attention lifecycle, approval queue (maker-checker), privileged sessions, audit evidence.",
+      "Approval queue (two-person review), privileged support sessions and the audit trail.",
   },
 ];
 
@@ -121,6 +122,8 @@ const TONES = {
   amber: "from-amber-400 to-orange-500",
   red: "from-rose-500 to-red-500",
   emerald: "from-emerald-500 to-teal-500",
+  // Neutral: "no signal" must not borrow the green of a healthy one.
+  slate: "from-slate-400 to-slate-500",
 };
 
 function KpiTile({ icon: Icon, tone = "brand", label, value, hint, onClick, delay }) {
@@ -128,10 +131,11 @@ function KpiTile({ icon: Icon, tone = "brand", label, value, hint, onClick, dela
     <button
       type="button"
       onClick={onClick}
+      aria-label={`${label}: ${value}. ${hint}`}
       className={`pd-rise group rounded-3xl border border-slate-200/80 bg-white p-5 text-left shadow-[0_4px_24px_rgba(15,23,42,0.04)] transition duration-200 hover:-translate-y-1 hover:shadow-[0_14px_30px_-12px_rgba(15,23,42,0.18)] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40`}
       style={{ animationDelay: `${delay}ms` }}
     >
-      <span className={`flex h-10 w-10 items-center justify-center rounded-2xl bg-linear-to-br text-white shadow-sm ${TONES[tone]}`}>
+      <span className={`flex h-10 w-10 items-center justify-center rounded-2xl bg-linear-to-br text-white shadow-sm ${TONES[tone] || TONES.slate}`}>
         <Icon size={18} />
       </span>
       <span className="mt-4 block text-xs font-semibold uppercase tracking-wider text-slate-500">{label}</span>
@@ -161,82 +165,110 @@ export default function CommandCenterHubPage() {
   const [sourceErrors, setSourceErrors] = useState({});
   const [autoPoll, setAutoPoll] = useState(true);
   const [lastSyncedAt, setLastSyncedAt] = useState(null);
-  const loadedOnceRef = useRef(false);
-  const firstTickRef = useRef(true);
   const [justRefreshed, setJustRefreshed] = useState(false);
+  const refreshTimerRef = useRef(null);
+  useEffect(() => () => clearTimeout(refreshTimerRef.current), []);
   const handleRefreshClick = () => {
     requestRefresh();
     setJustRefreshed(true);
-    setTimeout(() => setJustRefreshed(false), 700);
+    clearTimeout(refreshTimerRef.current);
+    refreshTimerRef.current = setTimeout(() => setJustRefreshed(false), 700);
   };
 
-  const load = useRef(() => {}).current;
-  load.current = () => {
-    getTriageSummary()
+  // Per-source request sequence: a slow response from an older cycle must
+  // never overwrite a newer one (or flip a recovered source back to failed).
+  const seqRef = useRef({ triage: 0, api: 0, emailDelivery: 0 });
+  const fetchSource = (key, fetcher, setter) => {
+    const seq = ++seqRef.current[key];
+    fetcher()
       .then((res) => {
-        setSummary(res);
-        setSourceErrors((prev) => ({ ...prev, triage: false }));
+        if (seq !== seqRef.current[key]) return;
+        setter(res);
+        setSourceErrors((prev) => ({ ...prev, [key]: false }));
         setLastSyncedAt(new Date());
       })
-      .catch(() => setSourceErrors((prev) => ({ ...prev, triage: true })));
-    getApiTelemetry()
-      .then((res) => {
-        setTelemetry(res);
-        setSourceErrors((prev) => ({ ...prev, api: false }));
-        setLastSyncedAt(new Date());
-      })
-      .catch(() => setSourceErrors((prev) => ({ ...prev, api: true })));
-    getEmailDeliveryOverview()
-      .then((res) => {
-        setEmailDelivery(res);
-        setSourceErrors((prev) => ({ ...prev, emailDelivery: false }));
-        setLastSyncedAt(new Date());
-      })
-      .catch(() => setSourceErrors((prev) => ({ ...prev, emailDelivery: true })));
+      .catch(() => {
+        if (seq !== seqRef.current[key]) return;
+        setSourceErrors((prev) => ({ ...prev, [key]: true }));
+      });
   };
 
+  // One load per refresh tick (mount included). The old pair of effects
+  // loaded twice on mount and again on every Auto-poll toggle.
   useEffect(() => {
-    if (!loadedOnceRef.current || !firstTickRef.current) {
-      loadedOnceRef.current = true;
-      if (firstTickRef.current) firstTickRef.current = false;
-      load.current();
-    }
-  }, [requestRefresh, autoPoll]);
+    fetchSource("triage", getTriageSummary, setSummary);
+    fetchSource("api", getApiTelemetry, setTelemetry);
+    fetchSource("emailDelivery", getEmailDeliveryOverview, setEmailDelivery);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshTick]);
 
   usePolling(() => requestRefresh({ auto: true }), POLL_INTERVAL_MS, { enabled: autoPoll });
 
-  useEffect(() => {
-    if (firstTickRef.current) return;
-    load.current();
-  }, [refreshTick]);
-
   // ── Derived values (every figure traces to a real backend signal) ──
+  // null = not loaded yet (or the source failed before ever loading): shown
+  // as "—", never as a reassuring 0.
   const counts = summary?.incidents?.counts || null;
-  const criticalOpen = (counts?.p0 ?? 0) + (counts?.p1 ?? 0);
-  const totalOpen = counts?.total_open ?? 0;
+  const criticalOpen = counts ? (counts.p0 ?? 0) + (counts.p1 ?? 0) : null;
+  const totalOpen = counts ? counts.total_open ?? 0 : null;
 
-  const controls = Array.isArray(summary?.safety_controls) ? summary.safety_controls : [];
-  const engaged = controls.filter((control) => control.enabled === false).length;
+  const controls = Array.isArray(summary?.safety_controls) ? summary.safety_controls : null;
+  // enabled=false means the breaker is ENGAGED (that billing path is paused).
+  const engaged = controls ? controls.filter((control) => control.enabled === false).length : null;
 
-  const p95 = telemetry?.p95_ms;
-  const budget = telemetry?.p95_budget_ms;
+  const p95 = telemetry?.p95_ms ?? null;
+  // An empty telemetry window omits the top-level budget; the SLO block
+  // always carries it.
+  const budget = telemetry?.p95_budget_ms ?? telemetry?.slo?.p95_budget_ms ?? null;
   const overBudget = p95 != null && budget != null && p95 > budget;
 
   const health = emailDelivery?.smtp_health;
   const failureRate = emailDelivery?.last_24h?.failure_rate_pct;
   const failedCount = emailDelivery?.last_24h?.failed;
 
-  const sourceErrorCount = Object.keys(sourceErrors).length;
+  // Only sources whose LAST attempt failed — a key set to false means the
+  // source recovered, so counting keys reported every healthy source as down.
+  const sourceErrorCount = Object.values(sourceErrors).filter(Boolean).length;
 
   const syncLabel = lastSyncedAt
-    ? `${Math.max(0, Math.round((Date.now() - lastSyncedAt.getTime()) / 1000))}s ago`
+    ? `Last synced ${lastSyncedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`
     : "Waiting for first sync";
 
-  const statusLabel = criticalOpen > 0
+  const statusLabel = criticalOpen == null
+    ? sourceErrors.triage
+      ? "Attention queue unavailable"
+      : "Checking status…"
+    : criticalOpen > 0
     ? `${criticalOpen} critical incident${criticalOpen === 1 ? "" : "s"} open`
     : sourceErrorCount > 0
     ? "Partial visibility"
-    : "All systems operational";
+    : "No critical incidents open";
+  const statusTone = criticalOpen > 0 ? "critical" : criticalOpen === 0 && sourceErrorCount === 0 ? "ok" : "neutral";
+
+  const display = (value) => (value == null ? "—" : value);
+
+  let freshnessValue = "Not tracked";
+  let freshnessHint = "Scheduler disabled or job telemetry not available to your role";
+  if (worstFreshness === "unknown") {
+    freshnessValue = "Unknown";
+    freshnessHint = "No job run recorded yet for at least one job";
+  } else if (worstFreshness === "stale") {
+    freshnessValue = "Stale";
+    freshnessHint = "At least one job missed its expected interval";
+  } else if (worstFreshness === "fresh") {
+    freshnessValue = "Fresh";
+    freshnessHint = "Every tracked job ran on schedule";
+  }
+
+  let emailValue = "—";
+  let emailHint = sourceErrors.emailDelivery ? "Email delivery data unavailable" : "Loading…";
+  if (emailDelivery) {
+    emailValue = health === "unknown" ? "Unknown" : `${failedCount ?? 0} failed (24h)`;
+    emailHint = health === "degraded"
+      ? "SMTP failure rate elevated"
+      : health === "unknown"
+      ? "Not enough recent sends to judge"
+      : `Failure rate: ${failureRate == null ? "—" : `${failureRate}%`}`;
+  }
 
   return (
     <div className="min-w-0 max-w-full overflow-x-hidden bg-[#F8FAFC] p-4 text-slate-900 sm:p-6 lg:p-8">
@@ -248,7 +280,7 @@ export default function CommandCenterHubPage() {
         <div className="mx-auto max-w-[1440px] space-y-8">
 
           {/* ── Hero: navy command banner ── */}
-        <div className="pd-rise relative overflow-hidden rounded-[2rem] bg-linear-to-br from-slate-950 via-blue-900 to-blue-700 p-6 text-white shadow-[0_20px_50px_-20px_rgba(15,23,42,0.55)] sm:p-8">
+        <div className={`pd-rise relative overflow-hidden rounded-[2rem] ${NAVY_SURFACE} p-6 text-white shadow-[0_20px_50px_-20px_rgba(15,23,42,0.55)] sm:p-8`}>
           {/* Decorative depth — purely visual. */}
           <div className="pointer-events-none absolute -right-16 -top-24 h-72 w-72 rounded-full bg-white/10 blur-3xl" aria-hidden="true" />
           <div className="pointer-events-none absolute -bottom-28 left-1/3 h-72 w-72 rounded-full bg-blue-400/20 blur-3xl" aria-hidden="true" />
@@ -266,15 +298,18 @@ export default function CommandCenterHubPage() {
                 <span
                   role="status"
                   className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-bold ${
-                    criticalOpen > 0 ? "bg-rose-500/90 text-white" : "bg-white/15 text-white"
+                    statusTone === "critical" ? "bg-rose-500/90 text-white" : "bg-white/15 text-white"
                   }`}
                 >
                   <span className="relative flex h-2.5 w-2.5">
-                    <span className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-75 ${criticalOpen > 0 ? "bg-white" : "bg-emerald-300"}`} />
-                    <span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${criticalOpen > 0 ? "bg-white" : "bg-emerald-300"}`} />
+                    {statusTone !== "neutral" && (
+                      <span className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-75 motion-reduce:hidden ${statusTone === "critical" ? "bg-white" : "bg-emerald-300"}`} />
+                    )}
+                    <span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${statusTone === "critical" ? "bg-white" : statusTone === "ok" ? "bg-emerald-300" : "bg-white/60"}`} />
                   </span>
                   {statusLabel}
                 </span>
+                <span className="text-[11px] font-medium text-white/70">{syncLabel}</span>
                 <div className="flex items-center gap-2">
                   <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs font-medium text-white/90">
                     <input type="checkbox" checked={autoPoll} onChange={(event) => setAutoPoll(event.target.checked)} className="h-3.5 w-3.5 rounded bg-white/20 border-white/30 accent-blue-300" />
@@ -298,29 +333,31 @@ export default function CommandCenterHubPage() {
                 <span className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-white/75">
                   <Crosshair size={14} /> Critical incidents
                 </span>
-                <span className="mt-2 block text-3xl font-extrabold tracking-tight text-white">{criticalOpen}</span>
-                <span className="mt-0.5 block truncate text-[11px] text-white/70">P0/P1 attention queue</span>
+                <span className="mt-2 block text-3xl font-extrabold tracking-tight text-white" data-testid="hero-critical">{display(criticalOpen)}</span>
+                <span className="mt-0.5 block truncate text-[11px] text-white/70">P0/P1 items in the attention queue</span>
               </div>
               <div className="rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur-sm transition hover:bg-white/15">
                 <span className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-white/75">
                   <Activity size={14} /> Open attention items
                 </span>
-                <span className="mt-2 block text-3xl font-extrabold tracking-tight text-white">{totalOpen}</span>
-                <span className="mt-0.5 block truncate text-[11px] text-white/70">Severity-ranked</span>
+                <span className="mt-2 block text-3xl font-extrabold tracking-tight text-white" data-testid="hero-open">{display(totalOpen)}</span>
+                <span className="mt-0.5 block truncate text-[11px] text-white/70">All severities</span>
               </div>
               <div className="rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur-sm transition hover:bg-white/15">
                 <span className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-white/75">
-                  <ShieldCheck size={14} /> Controls disengaged
+                  <ShieldCheck size={14} /> Breakers engaged
                 </span>
-                <span className="mt-2 block text-3xl font-extrabold tracking-tight text-white">{engaged}</span>
-                <span className="mt-0.5 block truncate text-[11px] text-white/70">Circuit breakers paused</span>
+                <span className="mt-2 block text-3xl font-extrabold tracking-tight text-white" data-testid="hero-engaged">{display(engaged)}</span>
+                <span className="mt-0.5 block truncate text-[11px] text-white/70">Billing paths currently paused</span>
               </div>
               <div className="rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur-sm transition hover:bg-white/15">
                 <span className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-white/75">
                   <Activity size={14} /> API P95
                 </span>
                 <span className="mt-2 block text-3xl font-extrabold tracking-tight text-white">{p95 == null ? "—" : `${p95.toLocaleString()} ms`}</span>
-                <span className="mt-0.5 block truncate text-[11px] text-white/70">{budget == null ? "no budget" : `budget ${budget.toLocaleString()} ms`}</span>
+                <span className="mt-0.5 block truncate text-[11px] text-white/70">
+                  {telemetry && p95 == null ? "No requests in the window yet" : budget == null ? "Budget unavailable" : `Budget ${budget.toLocaleString()} ms`}
+                </span>
               </div>
             </div>
           </div>
@@ -328,7 +365,13 @@ export default function CommandCenterHubPage() {
 
         {sourceErrorCount > 0 && (
           <p role="alert" className="pd-rise flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs font-medium text-amber-800" style={{ animationDelay: "300ms" }}>
-            <AlertTriangle size={14} /> {sourceErrorCount} data source{sourceErrorCount > 1 ? "s" : ""} couldn't be reached — the affected panels show what was last loaded.
+            <AlertTriangle size={14} className="shrink-0" />
+            <span className="flex-1">
+              {sourceErrorCount} data source{sourceErrorCount > 1 ? "s" : ""} couldn't be reached — the affected panels show what was last loaded (or "—").
+            </span>
+            <button type="button" onClick={handleRefreshClick} className="shrink-0 font-semibold underline hover:text-amber-900">
+              Retry
+            </button>
           </p>
         )}
 
@@ -342,37 +385,41 @@ export default function CommandCenterHubPage() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 lg:grid-cols-5">
             <KpiTile
               icon={Crosshair}
-              tone="blue"
+              tone={totalOpen == null ? "slate" : "blue"}
               label="Attention Queue"
-              value={`${totalOpen} open`}
-              hint="Severity-ranked incidents and signals"
+              value={totalOpen == null ? "—" : `${totalOpen} open`}
+              hint={totalOpen == null && sourceErrors.triage ? "Attention queue unavailable" : "Severity-ranked incidents and signals"}
               onClick={() => navigate("/super-admin/triage")}
               delay={100}
             />
             <KpiTile
               icon={ShieldCheck}
-              tone={engaged > 0 ? "amber" : "emerald"}
+              tone={engaged == null ? "slate" : engaged > 0 ? "amber" : "emerald"}
               label="Safety Controls"
-              value={engaged > 0 ? `${engaged} engaged` : "Disengaged"}
-              hint="Circuit breakers paused for affected controls"
+              value={engaged == null ? "—" : engaged > 0 ? `${engaged} engaged` : "None engaged"}
+              hint={engaged == null ? "Breaker state unavailable" : engaged > 0 ? "Some billing paths are paused" : "All billing paths running"}
               onClick={() => navigate("/super-admin/kill-switch")}
               delay={140}
             />
             <KpiTile
               icon={Activity}
-              tone={overBudget ? "red" : "emerald"}
+              tone={p95 == null ? "slate" : overBudget ? "red" : "emerald"}
               label="API Performance"
               value={p95 == null ? "—" : `${p95.toLocaleString()} ms`}
-              hint={overBudget ? "P95 exceeds budget" : "Within target budget"}
+              hint={
+                p95 == null
+                  ? telemetry ? "No requests measured yet" : sourceErrors.api ? "Telemetry unavailable" : "Loading…"
+                  : overBudget ? "P95 exceeds budget" : "P95 within budget"
+              }
               onClick={() => navigate("/super-admin/reliability")}
               delay={180}
             />
             <KpiTile
               icon={Mail}
-              tone={health === "degraded" ? "red" : "emerald"}
+              tone={!emailDelivery || health === "unknown" ? "slate" : health === "degraded" ? "red" : "emerald"}
               label="Email Delivery"
-              value={health === "unknown" ? "—" : `${failedCount ?? 0} failed (24h)`}
-              hint={health === "degraded" ? "SMTP failure rate elevated" : `Failure rate: ${failureRate == null ? "—" : failureRate}%`}
+              value={emailValue}
+              hint={emailHint}
               onClick={() => navigate("/super-admin/email-delivery")}
               delay={220}
             />
@@ -380,8 +427,8 @@ export default function CommandCenterHubPage() {
               icon={RefreshCw}
               tone={worstFreshness === "stale" ? "amber" : worstFreshness === "fresh" ? "emerald" : "slate"}
               label="Job Freshness"
-              value={worstFreshness === "unknown" ? "Unavailable" : worstFreshness === "stale" ? "Stale" : "Fresh"}
-              hint="Scheduler telemetry"
+              value={freshnessValue}
+              hint={freshnessHint}
               onClick={() => navigate("/super-admin/integrations/jobs")}
               delay={260}
             />

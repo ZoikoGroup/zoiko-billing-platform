@@ -149,7 +149,7 @@ def test_compatibility_checklist_has_eight_rows_in_fixed_order(db_session):
     results = run_compatibility_checks(db_session, org.id, sub, to_plan)
     assert [r.check_id for r in results] == [
         "internal_users_vs_max_users",
-        "legal_entities_vs_org_entity_max",
+        "customers_vs_billing_customer_max",
         "currencies_vs_currency_enabled_max",
         "payment_providers_vs_payments_provider_max",
         "usage_billing_contracts_vs_billing_usage_metering",
@@ -206,7 +206,7 @@ def test_compatibility_override_prevents_false_blocker(db_session):
     from app.modules.commercial.enums import EntitlementValueType
 
     from_plan, to_plan, to_def = _two_plans_with_shared_entitlement(
-        db_session, "OVRFFROM", "OVRFTO", "org.entity.max", 100, 1, EntitlementValueType.INTEGER,
+        db_session, "OVRFFROM", "OVRFTO", "billing.customer.max", 100, 1, EntitlementValueType.INTEGER,
     )
     org, account, sub = _org_active_subscription(db_session, "OVRFORG", from_plan)
     # 2 customers, which would exceed the target plan's base limit of 1.
@@ -222,7 +222,7 @@ def test_compatibility_override_prevents_false_blocker(db_session):
     db_session.commit()
 
     results = run_compatibility_checks(db_session, org.id, sub, to_plan)
-    entity_check = next(r for r in results if r.check_id == "legal_entities_vs_org_entity_max")
+    entity_check = next(r for r in results if r.check_id == "customers_vs_billing_customer_max")
     assert entity_check.severity == "pass"
     assert entity_check.target_limit == 10
 

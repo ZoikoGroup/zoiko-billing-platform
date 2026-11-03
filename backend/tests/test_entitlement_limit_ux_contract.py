@@ -5,7 +5,7 @@ Covers the additive `entity=` parameter on
 EntitlementEnforcementService.assert_within_limit() and the
 EntitlementLimitExceededException it raises when supplied
 (backend/app/modules/commercial/entitlement_enforcement.py), plus the two
-real call sites that opt into it: POST /billing/customers (org.entity.max)
+real call sites that opt into it: POST /billing/customers (billing.customer.max)
 and POST /billing/invoices (billing.invoice.monthly_limit).
 
 This is UX/error-contract hardening only — assert_within_limit's actual
@@ -39,7 +39,7 @@ from tests.test_commercial_entitlements import _org_with_active_subscription, _p
 
 def test_within_limit_creation_succeeds_no_error(db_session):
     plan, definition = _plan_with_entitlement(
-        db_session, "UXOKPKG", "org.entity.max", 2, value_type=EntitlementValueType.INTEGER,
+        db_session, "UXOKPKG", "billing.customer.max", 2, value_type=EntitlementValueType.INTEGER,
     )
     org, account, sub = _org_with_active_subscription(db_session, "UXOKORG", plan)
     db_session.commit()
@@ -52,7 +52,7 @@ def test_within_limit_creation_succeeds_no_error(db_session):
 
 def test_limit_exactly_reached_raises_structured_payload(db_session):
     plan, definition = _plan_with_entitlement(
-        db_session, "UXLIMPKG", "org.entity.max", 2, value_type=EntitlementValueType.INTEGER,
+        db_session, "UXLIMPKG", "billing.customer.max", 2, value_type=EntitlementValueType.INTEGER,
     )
     org, account, sub = _org_with_active_subscription(db_session, "UXLIMORG", plan)
     make_customer(db_session, org.id, code="UXLIMCUST1")
@@ -74,12 +74,12 @@ def test_limit_exactly_reached_raises_structured_payload(db_session):
         assert exc.extra["limit"] == 2
         assert exc.extra["remaining"] == 0
         assert exc.extra["plan_name"] == "Uxlimpkg"  # _plan() sets plan_name = plan_code.title()
-        assert exc.extra["entitlement_key"] == "org.entity.max"
+        assert exc.extra["entitlement_key"] == "billing.customer.max"
         # The raw technical key must not be the primary message shown to
         # an org admin — only present in the structured 'entitlement_key'
         # metadata field for engineering/support debugging.
         non_key_values = "".join(str(v) for k, v in exc.extra.items() if k != "entitlement_key")
-        assert "org.entity.max" not in non_key_values
+        assert "billing.customer.max" not in non_key_values
     # No partial row left behind by the blocked write.
     assert db_session.query(BillingCustomer).filter_by(organization_id=org.id).count() == 2
 
@@ -90,7 +90,7 @@ def test_usage_already_above_limit_clamps_remaining_to_zero(db_session):
     negative, and the wording data must still be accurate (current_usage
     reflects the real existing count, not the limit)."""
     plan, definition = _plan_with_entitlement(
-        db_session, "UXOVERPKG", "org.entity.max", 2, value_type=EntitlementValueType.INTEGER,
+        db_session, "UXOVERPKG", "billing.customer.max", 2, value_type=EntitlementValueType.INTEGER,
     )
     org, account, sub = _org_with_active_subscription(db_session, "UXOVERORG", plan)
     for i in range(5):
@@ -114,7 +114,7 @@ def test_entity_omitted_preserves_plain_blocked_exception(db_session):
     keep raising the plain EntitlementBlockedException with the original
     free-text message, not the new structured subclass."""
     plan, definition = _plan_with_entitlement(
-        db_session, "UXBWCPKG", "org.entity.max", 1, value_type=EntitlementValueType.INTEGER,
+        db_session, "UXBWCPKG", "billing.customer.max", 1, value_type=EntitlementValueType.INTEGER,
     )
     org, account, sub = _org_with_active_subscription(db_session, "UXBWCORG", plan)
     make_customer(db_session, org.id, code="UXBWCCUST1")
@@ -122,19 +122,19 @@ def test_entity_omitted_preserves_plain_blocked_exception(db_session):
 
     svc = EntitlementEnforcementService(db_session)
     try:
-        svc.assert_within_limit(organization_id=org.id, key="org.entity.max", current_count=1)
+        svc.assert_within_limit(organization_id=org.id, key="billing.customer.max", current_count=1)
         assert False, "expected EntitlementBlockedException"
     except EntitlementLimitExceededException:
         assert False, "must not raise the structured subclass when entity= is omitted"
     except EntitlementBlockedException as exc:
         assert exc.error_code == "FORBIDDEN"
         assert exc.extra == {}
-        assert str(exc.detail) == "'org.entity.max' limit (1) exceeded."
+        assert str(exc.detail) == "'billing.customer.max' limit (1) exceeded."
 
 
 def test_tenant_isolation_org_at_limit_does_not_block_other_org(db_session):
     plan, definition = _plan_with_entitlement(
-        db_session, "UXISOPKG", "org.entity.max", 1, value_type=EntitlementValueType.INTEGER,
+        db_session, "UXISOPKG", "billing.customer.max", 1, value_type=EntitlementValueType.INTEGER,
     )
     org_a, _, _ = _org_with_active_subscription(db_session, "UXISOA", plan)
     org_b, _, _ = _org_with_active_subscription(db_session, "UXISOB", plan)

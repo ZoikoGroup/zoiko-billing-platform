@@ -437,6 +437,9 @@ def create_user(
     current_user=Depends(get_current_org_admin),
     db: Session = Depends(get_db),
 ):
+    from app.modules.commercial.entitlement_enforcement import EntitlementEnforcementService
+
+    EntitlementEnforcementService(db).assert_seat_available(organization_id=current_user.organization_id)
     return service.invite_user(db, current_user, data)
 
 
@@ -456,6 +459,12 @@ def update_user(
     if user is None:
         from app.core.exceptions import NotFoundException
         raise NotFoundException("User", "id")
+
+    if data.is_active is True and not user.is_active:
+        # Reactivating a suspended user takes a seat back.
+        from app.modules.commercial.entitlement_enforcement import EntitlementEnforcementService
+
+        EntitlementEnforcementService(db).assert_seat_available(organization_id=org_id)
 
     if data.role is not None and data.role != user.role:
         if not can_create_role(current_user.role.value, data.role.value):

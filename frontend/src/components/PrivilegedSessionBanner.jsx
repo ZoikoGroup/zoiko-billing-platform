@@ -8,9 +8,16 @@ import { useCommandCenter } from "../context/CommandCenterContext";
 // the backend (see docs/SUPER_ADMIN_CURRENT_STATE.md).
 const ENVIRONMENT_LABEL = (import.meta.env.MODE || "development").toUpperCase();
 
+// expires_at arrives as naive UTC (no "Z"); read bare, the browser treats it
+// as local time and the countdown is off by the viewer's UTC offset. Same
+// rule as SupportAccessPage's parseServerTime (not imported, to keep that
+// page's bundle out of the always-mounted shell).
 function msRemaining(expiresAt) {
   if (!expiresAt) return 0;
-  return Math.max(0, new Date(expiresAt).getTime() - Date.now());
+  const text = String(expiresAt);
+  const hasZone = /([zZ]|[+-]\d{2}:?\d{2})$/.test(text);
+  const ts = new Date(hasZone ? text : `${text}Z`).getTime();
+  return Number.isNaN(ts) ? 0 : Math.max(0, ts - Date.now());
 }
 
 function formatCountdown(ms) {

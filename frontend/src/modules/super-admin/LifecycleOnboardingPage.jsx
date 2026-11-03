@@ -1,9 +1,9 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Layers, RefreshCw, ArrowRight, ShieldAlert } from "lucide-react";
+import { Layers, RefreshCw, ArrowRight, ShieldAlert, X } from "lucide-react";
 
 import { getPlatformLifecycle } from "../../service/commercialService";
-import { PageHeader, DataTable } from "../../components/billing-ui";
+import { PageHeader, DataTable, SearchInput, Button } from "../../components/billing-ui";
 import { ErrorState, StatusBadge } from "../../components/billing-shared";
 import {
   LIFECYCLE_STATE_BADGES,
@@ -31,6 +31,21 @@ const READINESS_LABELS = {
   integration: "Integration",
 };
 
+// The API serializes naive UTC datetimes (no offset); read as-is the browser
+// would show them in the wrong hour for anyone not on UTC.
+export function asUtc(value) {
+  if (!value || typeof value !== "string") return value ?? null;
+  if (!value.includes("T") || /([zZ]|[+-]\d{2}:?\d{2})$/.test(value)) return value;
+  return `${value}Z`;
+}
+const fmtDateTime = (value) => formatDateTime(asUtc(value));
+
+const matches = (term, ...fields) => {
+  if (!term) return true;
+  const needle = term.trim().toLowerCase();
+  return fields.some((f) => String(f || "").toLowerCase().includes(needle));
+};
+
 function PipelineCard({ item }) {
   const navigate = useNavigate();
   return (
@@ -39,7 +54,7 @@ function PipelineCard({ item }) {
         <div className="min-w-0">
           <p className="truncate text-sm font-bold text-slate-800">{item.organization_name}</p>
           <p className="mt-0.5 text-xs text-slate-500">
-            {item.organization_code} · registered {formatDateTime(item.registered_at)}
+            {item.organization_code} · registered {fmtDateTime(item.registered_at)}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -83,19 +98,47 @@ export default function LifecycleOnboardingPage() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
+  const [searchKey, setSearchKey] = useState(0);
+  const seqRef = useRef(0);
 
   const load = useCallback(() => {
+    const seq = ++seqRef.current;
     setLoading(true);
     setError("");
     getPlatformLifecycle()
-      .then((payload) => setData(payload))
-      .catch((err) => setError(err?.message || "Failed to load platform lifecycle."))
-      .finally(() => setLoading(false));
+      .then((payload) => {
+        if (seq === seqRef.current) setData(payload);
+      })
+      .catch((err) => {
+        if (seq === seqRef.current) setError(err?.message || "Failed to load platform lifecycle.");
+      })
+      .finally(() => {
+        if (seq === seqRef.current) setLoading(false);
+      });
   }, []);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  const clearSearch = useCallback(() => {
+    setSearch("");
+    setSearchKey((k) => k + 1);
+  }, []);
+
+  const pipeline = useMemo(
+    () => (data?.onboarding_pipeline || []).filter((i) => matches(search, i.organization_name, i.organization_code)),
+    [data, search]
+  );
+  const blocked = useMemo(
+    () => (data?.blocked_organizations || []).filter((i) => matches(search, i.organization_name, i.organization_code)),
+    [data, search]
+  );
+  const transitions = useMemo(
+    () => (data?.recent_transitions || []).filter((i) => matches(search, i.organization_name, i.organization_code, i.actor_email, i.reason)),
+    [data, search]
+  );
 
   const blockedColumns = [
     {
@@ -114,7 +157,7 @@ export default function LifecycleOnboardingPage() {
       label: "Last Transition Reason",
       render: (row) => displayValue(row.last_transition_reason),
     },
-    { key: "last_transition_at", label: "When", render: (row) => formatDateTime(row.last_transition_at), width: 180 },
+    { key: "last_transition_at", label: "When", render: (row) => fmtDateTime(row.last_transition_at), width: 180 },
     {
       key: "actions",
       label: "",
@@ -124,7 +167,7 @@ export default function LifecycleOnboardingPage() {
   ];
 
   const transitionColumns = [
-    { key: "created_at", label: "When", render: (row) => formatDateTime(row.created_at), width: 180 },
+    { key: "created_at", label: "When", render: (row) => fmtDateTime(row.created_at), width: 180 },
     {
       key: "organization",
       label: "Organization",
@@ -148,13 +191,18 @@ export default function LifecycleOnboardingPage() {
     },
     { key: "actor_email", label: "Actor", render: (row) => displayValue(row.actor_email) },
     { key: "reason", label: "Reason", render: (row) => displayValue(row.reason) },
-    { key: "correlation_id", label: "Correlation ID", render: (row) => displayValue(row.correlation_id), width: 160 },
+    {
+      key: "correlation_id",
+      label: "Audit reference",
+      width: 160,
+      render: (row) => <span className="break-all font-mono text-[11px] text-slate-500">{displayValue(row.correlation_id)}</span>,
+    },
   ];
 
   if (loading && !data) {
     return (
       <div className="p-4 sm:p-6 lg:p-8">
-        <PageHeader title="Lifecycle & Onboarding" description="Fleet-wide tenant lifecycle composition and evidence-based onboarding readiness." icon={Layers} />
+        <PageHeader title="Lifecycle & Onboarding" description="Where every organization is in its lifecycle, and what each new one still needs to finish onboarding." icon={Layers} />
         <div className="mt-8 flex items-center justify-center py-12">
           <RefreshCw size={24} className="animate-spin text-brand-500" />
         </div>
@@ -166,37 +214,48 @@ export default function LifecycleOnboardingPage() {
     <div className="p-4 sm:p-6 lg:p-8">
       <PageHeader
         title="Lifecycle & Onboarding"
-        description={
-          <>
-            Fleet-wide lifecycle composition, the onboarding pipeline with its evidence-based readiness checklist, and every
-            governed transition in the platform audit trail. Tenant financial data stays behind privileged access.
-          </>
-        }
+        description="Where every organization is in its lifecycle, what each new one still needs to finish onboarding, who is blocked from signing in, and the latest lifecycle changes. Tenant financial data stays behind privileged access."
         icon={Layers}
-        meta={data ? `${data.total_organizations} organization(s) · plane ${data.plane}` : ""}
+        meta={data ? `${data.total_organizations} organization(s)${data.generated_at ? ` · as of ${fmtDateTime(data.generated_at)}` : ""}` : ""}
         actions={
-          <button
-            type="button"
-            onClick={load}
-            disabled={loading}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
-          >
-            <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
+          <Button variant="secondary" icon={RefreshCw} onClick={() => load()} loading={loading}>
             Refresh
-          </button>
+          </Button>
         }
       />
 
-      {error && (
+      {/* A failed refresh keeps the last loaded data on screen. */}
+      {error && data && (
+        <div role="alert" className="mt-6 flex items-start justify-between gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <span>Couldn't refresh — showing the last loaded data. {error}</span>
+          <button type="button" onClick={() => setError("")} className="shrink-0 text-xs font-semibold underline">Dismiss</button>
+        </div>
+      )}
+      {error && !data && (
         <div className="mt-6 rounded-2xl border border-red-200 bg-white">
-          <ErrorState message={error} onRetry={load} title="Unable to load platform lifecycle" />
+          <ErrorState message={error} onRetry={() => load()} title="Unable to load platform lifecycle" />
         </div>
       )}
 
-      {data && !error && (
+      {data && (
         <>
+          <div className="mt-6 flex flex-wrap items-center gap-3">
+            <SearchInput
+              key={searchKey}
+              value={search}
+              onChange={setSearch}
+              placeholder="Filter by organization, code, actor or reason…"
+              className="w-full min-w-0 flex-1 sm:max-w-md"
+            />
+            {search && (
+              <Button variant="secondary" size="sm" icon={X} onClick={clearSearch}>
+                Clear filter
+              </Button>
+            )}
+          </div>
+
           {/* ── Per-state counts ─────────────────────────────────────── */}
-          <section aria-label="Organizations by lifecycle state" className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-6">
+          <section aria-label="Organizations by lifecycle state" className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-6">
             {Object.entries(LIFECYCLE_STATE_BADGES).map(([state, meta]) => (
               <div key={state} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
                 <StatusBadge status={state} options={[{ value: state, ...meta }]} />
@@ -212,17 +271,19 @@ export default function LifecycleOnboardingPage() {
             <div className="mb-3 flex items-center gap-2 px-1">
               <h2 className="text-sm font-bold uppercase tracking-wider text-slate-600">Onboarding Pipeline</h2>
               <span className="text-xs text-slate-500">
-                ({data.onboarding_pipeline.length} organization{data.onboarding_pipeline.length === 1 ? "" : "s"})
+                ({search ? `${pipeline.length} of ${data.onboarding_pipeline.length}` : data.onboarding_pipeline.length} organization{data.onboarding_pipeline.length === 1 ? "" : "s"})
               </span>
               <span className="h-px flex-1 bg-slate-200/70" />
             </div>
-            {data.onboarding_pipeline.length === 0 ? (
+            {pipeline.length === 0 ? (
               <p className="rounded-2xl border border-dashed border-slate-200 bg-white px-6 py-8 text-center text-xs text-slate-500">
-                No organizations are currently provisioning or onboarding.
+                {search && data.onboarding_pipeline.length > 0
+                  ? "No onboarding organization matches the filter."
+                  : "No organizations are currently provisioning or onboarding."}
               </p>
             ) : (
               <div className="grid gap-4 xl:grid-cols-2">
-                {data.onboarding_pipeline.map((item) => (
+                {pipeline.map((item) => (
                   <PipelineCard key={item.id} item={item} />
                 ))}
               </div>
@@ -232,16 +293,20 @@ export default function LifecycleOnboardingPage() {
           {/* ── Access-blocked tenants ───────────────────────────────── */}
           <section aria-label="Access-blocked organizations" className="mt-8">
             <div className="mb-3 flex items-center gap-2 px-1">
-              <h2 className="text-sm font-bold uppercase tracking-wider text-slate-600">Access-Blocked Tenants</h2>
+              <h2 className="text-sm font-bold uppercase tracking-wider text-slate-600">Blocked From Signing In</h2>
               <span className="h-px flex-1 bg-slate-200/70" />
             </div>
             <DataTable
               columns={blockedColumns}
-              data={data.blocked_organizations}
+              data={blocked}
               loading={loading}
               rowKey={(row) => row.id}
-              emptyTitle="No blocked tenants"
-              emptyMessage="No organizations are currently suspended, deactivating or deactivated."
+              emptyTitle={search && data.blocked_organizations.length > 0 ? "No matches" : "No blocked tenants"}
+              emptyMessage={
+                search && data.blocked_organizations.length > 0
+                  ? "No blocked organization matches the filter."
+                  : "No organizations are currently suspended, deactivating or deactivated."
+              }
               minWidth={760}
             />
           </section>
@@ -249,16 +314,21 @@ export default function LifecycleOnboardingPage() {
           {/* ── Recent governed transitions ──────────────────────────── */}
           <section aria-label="Recent lifecycle transitions" className="mt-8">
             <div className="mb-3 flex items-center gap-2 px-1">
-              <h2 className="text-sm font-bold uppercase tracking-wider text-slate-600">Recent Governed Transitions</h2>
+              <h2 className="text-sm font-bold uppercase tracking-wider text-slate-600">Recent Lifecycle Changes</h2>
+              <span className="text-xs text-slate-500">(latest {data.recent_transitions.length})</span>
               <span className="h-px flex-1 bg-slate-200/70" />
             </div>
             <DataTable
               columns={transitionColumns}
-              data={data.recent_transitions}
+              data={transitions}
               loading={loading}
               rowKey={(row) => row.id}
-              emptyTitle="No transitions recorded yet"
-              emptyMessage="Governed lifecycle transitions will appear here as they happen."
+              emptyTitle={search && data.recent_transitions.length > 0 ? "No matches" : "No lifecycle changes recorded yet"}
+              emptyMessage={
+                search && data.recent_transitions.length > 0
+                  ? "No recent lifecycle change matches the filter."
+                  : "Lifecycle changes made from an organization's page will appear here."
+              }
               minWidth={980}
             />
           </section>

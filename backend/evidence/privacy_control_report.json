@@ -1,8 +1,265 @@
 {
-  "generated_at": "2026-10-26T06:17:09.458024",
-  "git_commit_sha": "a229c45c25f695127a9db7ec9aa544dc67a66d82",
-  "total_tests": 22,
+  "generated_at": "2026-11-02T06:01:53.071587",
+  "git_commit_sha": "f801ec9420df5c6d3b5c05d120dc1d2a7ef8b437",
+  "total_tests": 76,
   "records": [
+    {
+      "test": "tests/privacy/test_access_denied_audit.py::test_denied_capability_writes_audit_log",
+      "controls": [
+        "AUD-02"
+      ],
+      "outcome": "passed",
+      "duration": 0.005,
+      "timestamp": "2026-11-02T05:49:43.092918"
+    },
+    {
+      "test": "tests/privacy/test_access_denied_audit.py::test_denied_capability_deduplication",
+      "controls": [
+        "AUD-02"
+      ],
+      "outcome": "passed",
+      "duration": 0.0054,
+      "timestamp": "2026-11-02T05:49:43.181801"
+    },
+    {
+      "test": "tests/privacy/test_audit_chain.py::test_genesis_first_row",
+      "controls": [
+        "AUD-01"
+      ],
+      "outcome": "passed",
+      "duration": 0.0025,
+      "timestamp": "2026-11-02T05:49:43.266021"
+    },
+    {
+      "test": "tests/privacy/test_audit_chain.py::test_chain_verifies_after_writes",
+      "controls": [
+        "AUD-01"
+      ],
+      "outcome": "passed",
+      "duration": 0.0066,
+      "timestamp": "2026-11-02T05:49:43.358993"
+    },
+    {
+      "test": "tests/privacy/test_audit_chain.py::test_modified_row_breaks_chain",
+      "controls": [
+        "AUD-01"
+      ],
+      "outcome": "passed",
+      "duration": 0.0071,
+      "timestamp": "2026-11-02T05:49:43.456397"
+    },
+    {
+      "test": "tests/privacy/test_audit_chain.py::test_verify_empty_chain",
+      "controls": [
+        "AUD-01"
+      ],
+      "outcome": "passed",
+      "duration": 0.0013,
+      "timestamp": "2026-11-02T05:49:43.541938"
+    },
+    {
+      "test": "tests/privacy/test_audit_chain.py::test_deleted_user_and_org_do_not_break_chain",
+      "controls": [
+        "AUD-01"
+      ],
+      "outcome": "passed",
+      "duration": 0.007,
+      "timestamp": "2026-11-02T05:49:43.642941"
+    },
+    {
+      "test": "tests/privacy/test_audit_chain.py::test_verify_audit_chain_endpoint",
+      "controls": [
+        "AUD-01"
+      ],
+      "outcome": "passed",
+      "duration": 0.0323,
+      "timestamp": "2026-11-02T05:49:43.760204"
+    },
+    {
+      "test": "tests/privacy/test_detection.py::test_detection_repeated_denials",
+      "controls": [
+        "AUD-03",
+        "GOV-08"
+      ],
+      "outcome": "passed",
+      "duration": 0.0207,
+      "timestamp": "2026-11-02T05:49:43.870674"
+    },
+    {
+      "test": "tests/privacy/test_detection.py::test_detection_many_tenants_short_window",
+      "controls": [
+        "AUD-03",
+        "GOV-08"
+      ],
+      "outcome": "passed",
+      "duration": 0.0183,
+      "timestamp": "2026-11-02T05:49:43.978063"
+    },
+    {
+      "test": "tests/privacy/test_detection.py::test_detection_heavy_viewing",
+      "controls": [
+        "AUD-03",
+        "GOV-08"
+      ],
+      "outcome": "passed",
+      "duration": 0.0179,
+      "timestamp": "2026-11-02T05:49:44.086853"
+    },
+    {
+      "test": "tests/privacy/test_detection.py::test_detection_audit_chain_tamper",
+      "controls": [
+        "AUD-03",
+        "GOV-08"
+      ],
+      "outcome": "passed",
+      "duration": 0.0116,
+      "timestamp": "2026-11-02T05:49:44.186780"
+    },
+    {
+      "test": "tests/privacy/test_detection.py::test_detection_dormant_account",
+      "controls": [
+        "AUD-03",
+        "GOV-08"
+      ],
+      "outcome": "passed",
+      "duration": 0.0131,
+      "timestamp": "2026-11-02T05:49:44.289678"
+    },
+    {
+      "test": "tests/privacy/test_log_redaction.py::test_credit_card_redacted",
+      "controls": [
+        "API-07"
+      ],
+      "outcome": "passed",
+      "duration": 0.0001,
+      "timestamp": "2026-11-02T05:49:44.291227"
+    },
+    {
+      "test": "tests/privacy/test_log_redaction.py::test_email_redacted",
+      "controls": [
+        "API-07"
+      ],
+      "outcome": "passed",
+      "duration": 0.0001,
+      "timestamp": "2026-11-02T05:49:44.291806"
+    },
+    {
+      "test": "tests/privacy/test_log_redaction.py::test_jwt_token_redacted",
+      "controls": [
+        "API-07"
+      ],
+      "outcome": "passed",
+      "duration": 0.0001,
+      "timestamp": "2026-11-02T05:49:44.292566"
+    },
+    {
+      "test": "tests/privacy/test_log_redaction.py::test_secrets_and_passwords_redacted",
+      "controls": [
+        "API-07"
+      ],
+      "outcome": "passed",
+      "duration": 0.0001,
+      "timestamp": "2026-11-02T05:49:44.293227"
+    },
+    {
+      "test": "tests/privacy/test_log_redaction.py::test_ssn_and_tax_id_redacted",
+      "controls": [
+        "API-07"
+      ],
+      "outcome": "passed",
+      "duration": 0.0001,
+      "timestamp": "2026-11-02T05:49:44.293785"
+    },
+    {
+      "test": "tests/privacy/test_log_redaction.py::test_bank_account_redacted",
+      "controls": [
+        "API-07"
+      ],
+      "outcome": "passed",
+      "duration": 0.0001,
+      "timestamp": "2026-11-02T05:49:44.294341"
+    },
+    {
+      "test": "tests/privacy/test_log_redaction.py::test_normal_text_and_dates_unchanged",
+      "controls": [
+        "API-07"
+      ],
+      "outcome": "passed",
+      "duration": 0.0001,
+      "timestamp": "2026-11-02T05:49:44.294872"
+    },
+    {
+      "test": "tests/privacy/test_log_redaction.py::test_logger_integration_with_filter",
+      "controls": [
+        "API-07"
+      ],
+      "outcome": "passed",
+      "duration": 0.0002,
+      "timestamp": "2026-11-02T05:49:44.295535"
+    },
+    {
+      "test": "tests/privacy/test_no_record_identifiers_in_platform_api.py::test_no_forbidden_field_names_in_super_admin_response_models",
+      "controls": [
+        "PRV-03"
+      ],
+      "outcome": "passed",
+      "duration": 0.0035,
+      "timestamp": "2026-11-02T05:49:44.299501"
+    },
+    {
+      "test": "tests/privacy/test_platform_endpoints_do_not_leak_customer_data.py::test_aggregate_endpoints_do_not_leak[platform_admin]",
+      "controls": [
+        "PRV-03"
+      ],
+      "outcome": "passed",
+      "duration": 0.0915,
+      "timestamp": "2026-11-02T05:49:44.543908"
+    },
+    {
+      "test": "tests/privacy/test_platform_endpoints_do_not_leak_customer_data.py::test_aggregate_endpoints_do_not_leak[auditor]",
+      "controls": [
+        "PRV-03"
+      ],
+      "outcome": "passed",
+      "duration": 0.0817,
+      "timestamp": "2026-11-02T05:49:44.774567"
+    },
+    {
+      "test": "tests/privacy/test_platform_endpoints_do_not_leak_customer_data.py::test_aggregate_endpoints_do_not_leak[finance_readonly]",
+      "controls": [
+        "PRV-03"
+      ],
+      "outcome": "passed",
+      "duration": 0.1152,
+      "timestamp": "2026-11-02T05:49:45.041216"
+    },
+    {
+      "test": "tests/privacy/test_platform_endpoints_do_not_leak_customer_data.py::test_reconciliation_run_detail_does_not_leak[platform_admin]",
+      "controls": [
+        "PRV-03"
+      ],
+      "outcome": "passed",
+      "duration": 0.0086,
+      "timestamp": "2026-11-02T05:49:45.196727"
+    },
+    {
+      "test": "tests/privacy/test_platform_endpoints_do_not_leak_customer_data.py::test_reconciliation_run_detail_does_not_leak[auditor]",
+      "controls": [
+        "PRV-03"
+      ],
+      "outcome": "passed",
+      "duration": 0.0079,
+      "timestamp": "2026-11-02T05:49:45.370350"
+    },
+    {
+      "test": "tests/privacy/test_platform_endpoints_do_not_leak_customer_data.py::test_aggregate_rows_are_per_tenant",
+      "controls": [
+        "PRV-03"
+      ],
+      "outcome": "passed",
+      "duration": 0.008,
+      "timestamp": "2026-11-02T05:49:45.528109"
+    },
     {
       "test": "tests/privacy/test_privileged_access_governance.py::test_at_08_requester_cannot_approve_own_request",
       "controls": [
@@ -10,8 +267,8 @@
         "AT-08"
       ],
       "outcome": "passed",
-      "duration": 7.1586,
-      "timestamp": "2026-10-26T06:12:38.047188"
+      "duration": 6.9513,
+      "timestamp": "2026-11-02T05:49:52.568001"
     },
     {
       "test": "tests/privacy/test_privileged_access_governance.py::test_at_08_self_approval_db_check_constraint_enforced",
@@ -21,7 +278,7 @@
       ],
       "outcome": "passed",
       "duration": 0.0047,
-      "timestamp": "2026-10-26T06:12:38.139511"
+      "timestamp": "2026-11-02T05:49:52.654339"
     },
     {
       "test": "tests/privacy/test_privileged_access_governance.py::test_org_admin_approval_starts_session_immediately",
@@ -31,8 +288,8 @@
         "PRV-02"
       ],
       "outcome": "passed",
-      "duration": 6.194,
-      "timestamp": "2026-10-26T06:12:44.425561"
+      "duration": 8.8683,
+      "timestamp": "2026-11-02T05:50:01.614217"
     },
     {
       "test": "tests/privacy/test_privileged_access_governance.py::test_org_admin_can_decline_with_reason",
@@ -41,8 +298,8 @@
         "PRV-02"
       ],
       "outcome": "passed",
-      "duration": 5.7619,
-      "timestamp": "2026-10-26T06:12:50.273878"
+      "duration": 6.338,
+      "timestamp": "2026-11-02T05:50:08.039784"
     },
     {
       "test": "tests/privacy/test_privileged_access_governance.py::test_request_refused_when_org_has_no_admin",
@@ -50,8 +307,8 @@
         "GOV-04"
       ],
       "outcome": "passed",
-      "duration": 0.0075,
-      "timestamp": "2026-10-26T06:12:50.375324"
+      "duration": 0.0065,
+      "timestamp": "2026-11-02T05:50:08.130894"
     },
     {
       "test": "tests/privacy/test_privileged_access_governance.py::test_approval_expiry_unused_request_older_than_60m",
@@ -60,8 +317,8 @@
         "PRV-01"
       ],
       "outcome": "passed",
-      "duration": 3.5395,
-      "timestamp": "2026-10-26T06:12:54.004194"
+      "duration": 3.8329,
+      "timestamp": "2026-11-02T05:50:12.043213"
     },
     {
       "test": "tests/privacy/test_privileged_access_governance.py::test_org_admin_of_another_org_cannot_approve",
@@ -70,8 +327,8 @@
         "AT-18"
       ],
       "outcome": "passed",
-      "duration": 3.2473,
-      "timestamp": "2026-10-26T06:12:57.338641"
+      "duration": 3.0993,
+      "timestamp": "2026-11-02T05:50:15.239149"
     },
     {
       "test": "tests/privacy/test_privileged_access_governance.py::test_at_18_tenant_revoke_takes_effect_immediately",
@@ -80,8 +337,8 @@
         "AT-18"
       ],
       "outcome": "passed",
-      "duration": 11.6617,
-      "timestamp": "2026-10-26T06:13:09.087883"
+      "duration": 12.321,
+      "timestamp": "2026-11-02T05:50:27.638724"
     },
     {
       "test": "tests/privacy/test_privileged_access_governance.py::test_at_18_tenant_admin_of_another_org_gets_404",
@@ -90,8 +347,8 @@
         "AT-18"
       ],
       "outcome": "passed",
-      "duration": 5.5579,
-      "timestamp": "2026-10-26T06:13:14.749663"
+      "duration": 6.5663,
+      "timestamp": "2026-11-02T05:50:34.284722"
     },
     {
       "test": "tests/privacy/test_privileged_access_governance.py::test_at_16_break_glass_full_lifecycle",
@@ -100,8 +357,8 @@
         "AT-16"
       ],
       "outcome": "passed",
-      "duration": 0.236,
-      "timestamp": "2026-10-26T06:13:15.097339"
+      "duration": 1.2611,
+      "timestamp": "2026-11-02T05:50:35.626270"
     },
     {
       "test": "tests/privacy/test_privileged_access_governance.py::test_overdue_break_glass_review_escalates_to_p0",
@@ -110,8 +367,8 @@
         "AT-16"
       ],
       "outcome": "passed",
-      "duration": 0.2003,
-      "timestamp": "2026-10-26T06:13:15.396824"
+      "duration": 0.1846,
+      "timestamp": "2026-11-02T05:50:35.892192"
     },
     {
       "test": "tests/privacy/test_privileged_access_governance.py::test_logout_ends_active_grant_and_emails_all_org_admins",
@@ -121,8 +378,108 @@
         "AT-16"
       ],
       "outcome": "passed",
-      "duration": 8.7378,
-      "timestamp": "2026-10-26T06:13:24.223740"
+      "duration": 10.4359,
+      "timestamp": "2026-11-02T05:50:46.409632"
+    },
+    {
+      "test": "tests/privacy/test_public_links.py::test_v2_token_valid",
+      "controls": [
+        "FIN-07",
+        "AT-15"
+      ],
+      "outcome": "passed",
+      "duration": 0.0163,
+      "timestamp": "2026-11-02T05:50:46.513601"
+    },
+    {
+      "test": "tests/privacy/test_public_links.py::test_v2_token_tampered",
+      "controls": [
+        "FIN-07",
+        "AT-15"
+      ],
+      "outcome": "passed",
+      "duration": 0.0069,
+      "timestamp": "2026-11-02T05:50:46.599754"
+    },
+    {
+      "test": "tests/privacy/test_public_links.py::test_v2_token_expired",
+      "controls": [
+        "FIN-07",
+        "AT-15"
+      ],
+      "outcome": "passed",
+      "duration": 0.0071,
+      "timestamp": "2026-11-02T05:50:46.686398"
+    },
+    {
+      "test": "tests/privacy/test_public_links.py::test_v2_token_wrong_version",
+      "controls": [
+        "FIN-07",
+        "AT-15"
+      ],
+      "outcome": "passed",
+      "duration": 0.0123,
+      "timestamp": "2026-11-02T05:50:46.781883"
+    },
+    {
+      "test": "tests/privacy/test_public_links.py::test_v2_token_revocation_and_resend",
+      "controls": [
+        "FIN-07",
+        "AT-15"
+      ],
+      "outcome": "passed",
+      "duration": 0.0167,
+      "timestamp": "2026-11-02T05:50:46.878936"
+    },
+    {
+      "test": "tests/privacy/test_public_links.py::test_v2_token_voided_and_cancelled_invoice",
+      "controls": [
+        "FIN-07",
+        "AT-15"
+      ],
+      "outcome": "passed",
+      "duration": 0.0299,
+      "timestamp": "2026-11-02T05:50:46.990253"
+    },
+    {
+      "test": "tests/privacy/test_public_links.py::test_token_invoice_a_never_returns_b",
+      "controls": [
+        "FIN-07",
+        "AT-15"
+      ],
+      "outcome": "passed",
+      "duration": 0.0141,
+      "timestamp": "2026-11-02T05:50:47.088336"
+    },
+    {
+      "test": "tests/privacy/test_public_links.py::test_cross_type_token_confusion_blocked",
+      "controls": [
+        "FIN-07",
+        "AT-15"
+      ],
+      "outcome": "passed",
+      "duration": 0.0099,
+      "timestamp": "2026-11-02T05:50:47.197348"
+    },
+    {
+      "test": "tests/privacy/test_public_links.py::test_legacy_token_behavior_and_cutoff",
+      "controls": [
+        "FIN-07",
+        "AT-15"
+      ],
+      "outcome": "passed",
+      "duration": 0.0118,
+      "timestamp": "2026-11-02T05:50:47.290635"
+    },
+    {
+      "test": "tests/privacy/test_public_links.py::test_quote_v2_token_lifecycle",
+      "controls": [
+        "FIN-07",
+        "AT-15"
+      ],
+      "outcome": "passed",
+      "duration": 0.0132,
+      "timestamp": "2026-11-02T05:50:47.384005"
     },
     {
       "test": "tests/privacy/test_role_model.py::test_null_platform_role_has_no_capability",
@@ -131,8 +488,8 @@
         "IAM-02"
       ],
       "outcome": "passed",
-      "duration": 0.0042,
-      "timestamp": "2026-10-26T06:13:24.317385"
+      "duration": 0.0035,
+      "timestamp": "2026-11-02T05:50:47.476082"
     },
     {
       "test": "tests/privacy/test_role_model.py::test_null_role_super_admin_gets_403_on_capability_routes[/api/super-admin/financial-consistency]",
@@ -141,8 +498,8 @@
         "IAM-02"
       ],
       "outcome": "passed",
-      "duration": 0.01,
-      "timestamp": "2026-10-26T06:13:24.416943"
+      "duration": 0.0096,
+      "timestamp": "2026-11-02T05:50:47.567128"
     },
     {
       "test": "tests/privacy/test_role_model.py::test_null_role_super_admin_gets_403_on_capability_routes[/api/super-admin/billing-command-center/overdue-invoices]",
@@ -151,8 +508,8 @@
         "IAM-02"
       ],
       "outcome": "passed",
-      "duration": 0.0079,
-      "timestamp": "2026-10-26T06:13:24.510757"
+      "duration": 0.0067,
+      "timestamp": "2026-11-02T05:50:47.654089"
     },
     {
       "test": "tests/privacy/test_role_model.py::test_platform_administrator_not_blocked_by_role_check",
@@ -160,8 +517,8 @@
         "IAM-01"
       ],
       "outcome": "passed",
-      "duration": 0.013,
-      "timestamp": "2026-10-26T06:13:24.615398"
+      "duration": 0.01,
+      "timestamp": "2026-11-02T05:50:47.749983"
     },
     {
       "test": "tests/privacy/test_role_model.py::test_explicit_only_set_contains_break_glass",
@@ -170,7 +527,7 @@
       ],
       "outcome": "passed",
       "duration": 0.0001,
-      "timestamp": "2026-10-26T06:13:24.617241"
+      "timestamp": "2026-11-02T05:50:47.751332"
     },
     {
       "test": "tests/privacy/test_role_model.py::test_explicit_only_capability_not_implicitly_held_by_platform_admin",
@@ -178,8 +535,8 @@
         "IAM-04"
       ],
       "outcome": "passed",
-      "duration": 0.0033,
-      "timestamp": "2026-10-26T06:13:24.713980"
+      "duration": 0.0036,
+      "timestamp": "2026-11-02T05:50:47.836515"
     },
     {
       "test": "tests/privacy/test_role_model.py::test_explicit_only_capability_can_be_held_when_admin_is_listed",
@@ -187,8 +544,8 @@
         "IAM-04"
       ],
       "outcome": "passed",
-      "duration": 0.0024,
-      "timestamp": "2026-10-26T06:13:24.815118"
+      "duration": 0.0023,
+      "timestamp": "2026-11-02T05:50:47.921213"
     },
     {
       "test": "tests/privacy/test_role_model.py::test_invite_without_role_is_rejected",
@@ -197,8 +554,8 @@
         "IAM-02"
       ],
       "outcome": "passed",
-      "duration": 0.0128,
-      "timestamp": "2026-10-26T06:13:24.925055"
+      "duration": 0.0102,
+      "timestamp": "2026-11-02T05:50:48.014222"
     },
     {
       "test": "tests/privacy/test_role_model.py::test_invite_with_role_persists_it",
@@ -206,8 +563,8 @@
         "IAM-01"
       ],
       "outcome": "passed",
-      "duration": 0.192,
-      "timestamp": "2026-10-26T06:13:25.212140"
+      "duration": 0.1855,
+      "timestamp": "2026-11-02T05:50:48.281672"
     },
     {
       "test": "tests/privacy/test_role_model.py::test_invite_cannot_create_super_admin",
@@ -216,8 +573,164 @@
         "IAM-02"
       ],
       "outcome": "passed",
-      "duration": 0.0083,
-      "timestamp": "2026-10-26T06:13:25.311754"
+      "duration": 0.0086,
+      "timestamp": "2026-11-02T05:50:48.371148"
+    },
+    {
+      "test": "tests/privacy/test_small_cell_suppression.py::test_mask_small_cell_masks_below_threshold[1]",
+      "controls": [
+        "PRV-03"
+      ],
+      "outcome": "passed",
+      "duration": 0.0001,
+      "timestamp": "2026-11-02T05:50:48.372762"
+    },
+    {
+      "test": "tests/privacy/test_small_cell_suppression.py::test_mask_small_cell_masks_below_threshold[2]",
+      "controls": [
+        "PRV-03"
+      ],
+      "outcome": "passed",
+      "duration": 0.0001,
+      "timestamp": "2026-11-02T05:50:48.373372"
+    },
+    {
+      "test": "tests/privacy/test_small_cell_suppression.py::test_mask_small_cell_masks_below_threshold[3]",
+      "controls": [
+        "PRV-03"
+      ],
+      "outcome": "passed",
+      "duration": 0.0001,
+      "timestamp": "2026-11-02T05:50:48.373884"
+    },
+    {
+      "test": "tests/privacy/test_small_cell_suppression.py::test_mask_small_cell_masks_below_threshold[4]",
+      "controls": [
+        "PRV-03"
+      ],
+      "outcome": "passed",
+      "duration": 0.0001,
+      "timestamp": "2026-11-02T05:50:48.374482"
+    },
+    {
+      "test": "tests/privacy/test_small_cell_suppression.py::test_mask_small_cell_shows_at_or_above_threshold[5]",
+      "controls": [
+        "PRV-03"
+      ],
+      "outcome": "passed",
+      "duration": 0.0001,
+      "timestamp": "2026-11-02T05:50:48.375047"
+    },
+    {
+      "test": "tests/privacy/test_small_cell_suppression.py::test_mask_small_cell_shows_at_or_above_threshold[6]",
+      "controls": [
+        "PRV-03"
+      ],
+      "outcome": "passed",
+      "duration": 0.0001,
+      "timestamp": "2026-11-02T05:50:48.375568"
+    },
+    {
+      "test": "tests/privacy/test_small_cell_suppression.py::test_mask_small_cell_shows_at_or_above_threshold[100]",
+      "controls": [
+        "PRV-03"
+      ],
+      "outcome": "passed",
+      "duration": 0.0001,
+      "timestamp": "2026-11-02T05:50:48.376075"
+    },
+    {
+      "test": "tests/privacy/test_small_cell_suppression.py::test_zero_stays_zero",
+      "controls": [
+        "PRV-03"
+      ],
+      "outcome": "passed",
+      "duration": 0.0001,
+      "timestamp": "2026-11-02T05:50:48.376526"
+    },
+    {
+      "test": "tests/privacy/test_small_cell_suppression.py::test_threshold_is_configurable",
+      "controls": [
+        "PRV-03"
+      ],
+      "outcome": "passed",
+      "duration": 0.0001,
+      "timestamp": "2026-11-02T05:50:48.377052"
+    },
+    {
+      "test": "tests/privacy/test_small_cell_suppression.py::test_helpers_mask_cells_and_never_merge_currencies",
+      "controls": [
+        "PRV-03"
+      ],
+      "outcome": "passed",
+      "duration": 0.0001,
+      "timestamp": "2026-11-02T05:50:48.377526"
+    },
+    {
+      "test": "tests/privacy/test_small_cell_suppression.py::test_endpoint_masks_small_tenant_and_shows_large_tenant",
+      "controls": [
+        "PRV-03"
+      ],
+      "outcome": "passed",
+      "duration": 0.0606,
+      "timestamp": "2026-11-02T05:50:48.520570"
+    },
+    {
+      "test": "tests/privacy/test_small_cell_suppression.py::test_limit_means_max_tenants",
+      "controls": [
+        "PRV-03"
+      ],
+      "outcome": "passed",
+      "duration": 0.0644,
+      "timestamp": "2026-11-02T05:50:48.667548"
+    },
+    {
+      "test": "tests/privacy/test_tenant_isolation_sweep.py::test_route_discovery_and_tenant_surface",
+      "controls": [
+        "ISO-01",
+        "ISO-03",
+        "AT-02",
+        "E06"
+      ],
+      "outcome": "passed",
+      "duration": 0.0006,
+      "timestamp": "2026-11-02T05:51:35.030125"
+    },
+    {
+      "test": "tests/privacy/test_tenant_isolation_sweep.py::test_cross_tenant_invoice_repo_isolation",
+      "controls": [
+        "ISO-01",
+        "ISO-03",
+        "AT-02",
+        "E06"
+      ],
+      "outcome": "passed",
+      "duration": 0.0091,
+      "timestamp": "2026-11-02T05:51:35.117866"
+    },
+    {
+      "test": "tests/privacy/test_tenant_isolation_sweep.py::test_cross_tenant_quote_repo_isolation",
+      "controls": [
+        "ISO-01",
+        "ISO-03",
+        "AT-02",
+        "E06"
+      ],
+      "outcome": "passed",
+      "duration": 0.0087,
+      "timestamp": "2026-11-02T05:51:35.207726"
+    },
+    {
+      "test": "tests/privacy/test_tenant_isolation_sweep.py::test_cross_tenant_api_link_lookup_blocked",
+      "controls": [
+        "ISO-01",
+        "ISO-03",
+        "AT-02",
+        "E06"
+      ],
+      "outcome": "passed",
+      "duration": 0.0124,
+      "timestamp": "2026-11-02T05:51:35.298988"
     }
   ]
 }

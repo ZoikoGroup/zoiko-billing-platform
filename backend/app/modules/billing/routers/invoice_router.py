@@ -71,24 +71,12 @@ def create_invoice(
     # AC-01 (ZB-COM-ENT-001 Part 2): billing.invoice.monthly_limit — a limit
     # check via get_limit-style resolution, not a boolean gate. Window is the
     # current UTC calendar month, matching the key's own name.
-    from datetime import datetime as _datetime
+    from app.modules.commercial.entitlement_enforcement import count_invoices_this_month
 
-    from app.modules.billing.models import Invoice
-
-    period_start = _datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    invoices_this_period = (
-        db.query(Invoice)
-        .filter(
-            Invoice.organization_id == current_user.organization_id,
-            Invoice.created_at >= period_start,
-            Invoice.deleted_at.is_(None),
-        )
-        .count()
-    )
     EntitlementEnforcementService(db).assert_within_limit(
         organization_id=current_user.organization_id,
         key="billing.invoice.monthly_limit",
-        current_count=invoices_this_period,
+        current_count=count_invoices_this_month(db, current_user.organization_id),
         actor_id=current_user.id,
         entity="invoice",
     )

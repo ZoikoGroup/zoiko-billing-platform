@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.core.dependencies import get_current_user, get_current_billing_admin
 from app.modules.billing.services.pricing_service import CurrencyPricingService
+from app.modules.commercial.entitlement_enforcement import EntitlementEnforcementService
 from app.modules.billing.schemas import (
     CurrencyPricingCreate, CurrencyPricingUpdate, CurrencyPricingResponse,
     CurrencyPricingListResponse,
@@ -15,8 +16,44 @@ from app.modules.billing.schemas import (
 router = APIRouter(prefix="/currency-pricing", tags=["💱 Currency Pricing"])
 
 
+def _assert_currency_allowed(db: Session, current_user, currency: str, exclude_id: int | None = None) -> None:
+    """currency.enabled.max counts distinct currencies across the org's
+    active currency pricing (the same count the plan-change compatibility
+    check uses). Only a currency the org doesn't already price in uses up a
+    slot, so adding more prices in an existing currency is always allowed."""
+    from sqlalchemy import func
+
+    from app.modules.billing.models import CurrencyPricing
+
+    org_id = current_user.organization_id
+    if org_id is None or not currency:
+        return
+    active = (
+        db.query(CurrencyPricing)
+        .filter(
+            CurrencyPricing.organization_id == org_id,
+            CurrencyPricing.is_active.is_(True),
+            CurrencyPricing.deleted_at.is_(None),
+        )
+    )
+    if exclude_id is not None:
+        active = active.filter(CurrencyPricing.id != exclude_id)
+    code = currency.upper()
+    if active.filter(func.upper(CurrencyPricing.currency) == code).first() is not None:
+        return
+    in_use = active.with_entities(func.count(func.distinct(func.upper(CurrencyPricing.currency)))).scalar() or 0
+    EntitlementEnforcementService(db).assert_within_limit(
+        organization_id=org_id,
+        key="currency.enabled.max",
+        current_count=in_use,
+        actor_id=current_user.id,
+        entity="currency",
+    )
+
+
 @router.post("", response_model=CurrencyPricingResponse, status_code=status.HTTP_201_CREATED, summary="Create currency pricing", dependencies=[Depends(get_current_billing_admin)])
 def create_currency_pricing(data: CurrencyPricingCreate, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    _assert_currency_allowed(db, current_user, data.currency)
     svc = CurrencyPricingService(db)
     return svc.create(organization_id=current_user.organization_id, created_by=current_user.id, **data.model_dump())
 
@@ -51,6 +88,8 @@ def get_currency_pricing(pk: int, db: Session = Depends(get_db), current_user=De
 
 @router.put("/{pk}", response_model=CurrencyPricingResponse, summary="Update currency pricing", dependencies=[Depends(get_current_billing_admin)])
 def update_currency_pricing(pk: int, data: CurrencyPricingUpdate, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    if getattr(data, "currency", None):
+        _assert_currency_allowed(db, current_user, data.currency, exclude_id=pk)
     svc = CurrencyPricingService(db)
     return svc.update(pk, organization_id=current_user.organization_id, updated_by=current_user.id, **data.model_dump(exclude_unset=True))
 

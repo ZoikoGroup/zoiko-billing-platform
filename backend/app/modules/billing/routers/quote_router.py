@@ -18,6 +18,8 @@ from app.core.dependencies import (
     require_new_revenue_generation_allowed,
 )
 from app.modules.billing.services import QuoteService
+from app.modules.billing.models import Quotation
+from app.modules.commercial.entitlement_enforcement import assert_trial_resource_limit
 from app.modules.billing.schemas import (
     QuotationCreate,
     QuotationUpdate,
@@ -47,6 +49,9 @@ def create_quote(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
+    assert_trial_resource_limit(
+        db, organization_id=current_user.organization_id, entity="quote", model=Quotation,
+    )
     svc = QuoteService(db)
     return svc.create_quote(
         organization_id=current_user.organization_id,

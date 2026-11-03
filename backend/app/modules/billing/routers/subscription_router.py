@@ -19,7 +19,10 @@ from app.core.dependencies import (
     require_new_revenue_generation_allowed,
 )
 from app.modules.billing.services import SubscriptionService
+from app.modules.commercial.entitlement_enforcement import EntitlementEnforcementService
 from app.modules.billing.models import BillingSubscriptionStatus
+from app.modules.billing.models import SubscriptionPlan
+from app.modules.commercial.entitlement_enforcement import assert_trial_resource_limit
 from app.modules.billing.schemas import (
     SubscriptionPlanCreate,
     SubscriptionPlanUpdate,
@@ -44,6 +47,12 @@ def create_plan(
     current_user=Depends(get_current_user),
     _admin=Depends(get_current_billing_admin),
 ):
+    assert_trial_resource_limit(
+        db, organization_id=current_user.organization_id, entity="subscription plan", model=SubscriptionPlan,
+    )
+    EntitlementEnforcementService(db).assert_pricing_model_allowed(
+        organization_id=current_user.organization_id, pricing_model=body.pricing_model,
+    )
     svc = SubscriptionService(db)
     return svc.create_plan(
         organization_id=current_user.organization_id,
@@ -100,6 +109,20 @@ def update_plan(
     current_user=Depends(get_current_user),
     _admin=Depends(get_current_billing_admin),
 ):
+    if body.pricing_model is not None:
+        # Only a change of model is gated: plans already on a model keep
+        # working after a downgrade.
+        from app.modules.billing.models import SubscriptionPlan
+
+        current = (
+            db.query(SubscriptionPlan.pricing_model)
+            .filter(SubscriptionPlan.id == plan_id, SubscriptionPlan.organization_id == current_user.organization_id)
+            .scalar()
+        )
+        if current is None or str(getattr(current, "value", current)) != str(getattr(body.pricing_model, "value", body.pricing_model)):
+            EntitlementEnforcementService(db).assert_pricing_model_allowed(
+                organization_id=current_user.organization_id, pricing_model=body.pricing_model,
+            )
     svc = SubscriptionService(db)
     return svc.update_plan(
         plan_id=plan_id,
@@ -154,6 +177,14 @@ def create_subscription(
     header_key = (idempotency_key_header or "").strip() or None
     if body_key and header_key and body_key != header_key:
         raise BadRequestException("Body idempotency_key and Idempotency-Key header must match")
+
+    # Starting a new recurring subscription needs recurring billing on the
+    # plan. Existing subscriptions keep running and can still be managed.
+    EntitlementEnforcementService(db).assert_boolean(
+        organization_id=current_user.organization_id,
+        key="billing.recurring.manage",
+        actor_id=current_user.id,
+    )
 
     svc = SubscriptionService(db)
     return svc.create_subscription(

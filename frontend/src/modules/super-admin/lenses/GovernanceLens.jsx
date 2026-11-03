@@ -8,25 +8,29 @@ export default function GovernanceLens({ readiness, activity }) {
   const [pendingCount, setPendingCount] = useState(null);
   const [pendingTypes, setPendingTypes] = useState({});
   const [approvalLoading, setApprovalLoading] = useState(true);
+  const [approvalError, setApprovalError] = useState(false);
 
   const loadApprovals = useCallback(() => {
     setApprovalLoading(true);
+    setApprovalError(false);
     listApprovalRequests({ status: "pending", limit: 200 })
       .then((data) => {
-        const requests = data.requests || [];
+        const requests = data?.requests || [];
         // Use the server's authoritative `total`, not requests.length — the
         // fetch is capped at limit:200, so length alone undercounts once
         // more than 200 requests are pending.
-        setPendingCount(data.total ?? requests.length);
+        setPendingCount(data?.total ?? requests.length);
         const types = {};
         for (const r of requests) {
-          types[r.request_type] = (types[r.request_type] || 0) + 1;
+          const key = r.request_type || "other";
+          types[key] = (types[key] || 0) + 1;
         }
         setPendingTypes(types);
       })
       .catch(() => {
         setPendingCount(null);
         setPendingTypes({});
+        setApprovalError(true);
       })
       .finally(() => setApprovalLoading(false));
   }, []);
@@ -63,10 +67,13 @@ export default function GovernanceLens({ readiness, activity }) {
             className={`rounded-full px-3 py-1 text-xs font-extrabold ${
               hasAction
                 ? "bg-amber-100 text-amber-800"
+                : approvalLoading || approvalError
+                ? "bg-slate-100 text-slate-700"
                 : "bg-emerald-100 text-emerald-800"
             }`}
           >
-            {hasAction ? "Action Required" : "Queue Empty"}
+            {/* A failed fetch is "unavailable", never a reassuring "Queue Empty". */}
+            {hasAction ? "Action Required" : approvalLoading ? "Checking…" : approvalError ? "Unavailable" : "Queue Empty"}
           </span>
         </div>
         {Object.keys(pendingTypes).length > 0 && (
@@ -140,7 +147,9 @@ export default function GovernanceLens({ readiness, activity }) {
                 <span className="ml-1 text-slate-600">on {log.entity_type}</span>
               </div>
               <span className="text-[10px] text-slate-500">
-                {new Date(log.created_at).toLocaleTimeString()}
+                {log.created_at
+                  ? new Date(/([zZ]|[+-]\d{2}:?\d{2})$/.test(String(log.created_at)) ? log.created_at : `${log.created_at}Z`).toLocaleTimeString()
+                  : "—"}
               </span>
             </div>
           ))}

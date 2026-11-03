@@ -189,9 +189,9 @@ def test_require_entitlement_rejects_unknown_key_at_definition_time():
         require_entitlement("not.a.real.catalog.key")
 
 
-# ── Route: org.entity.max on POST /billing/customers ────────────────────────
+# ── Route: billing.customer.max on POST /billing/customers ────────────────────────
 # Phase 5 (Billing E2E reliability remediation) — this router body's
-# EntitlementEnforcementService.assert_within_limit(key="org.entity.max")
+# EntitlementEnforcementService.assert_within_limit(key="billing.customer.max")
 # call is exactly what a real environment missing the seeded entitlement
 # catalog (scripts/seed_entitlement_definitions.py never run) surfaces as an
 # unhandled EntitlementKeyNotFoundError -> 500 on customer creation. Fixed by
@@ -201,7 +201,7 @@ def test_require_entitlement_rejects_unknown_key_at_definition_time():
 # designed (see entitlement_enforcement.py's own "fail-open vs fail-closed"
 # docstring: a write whose entitlement can't be resolved must never silently
 # succeed). These tests lock in that the *router* wiring is correct and
-# document the real, deliberate business rule (a plan's org.entity.max caps
+# document the real, deliberate business rule (a plan's billing.customer.max caps
 # how many BillingCustomer rows an org may have) that the E2E lifecycle test
 # had to become tenant-per-run to respect, rather than fight.
 
@@ -214,7 +214,7 @@ def _customer_payload(code):
 
 def test_customer_creation_blocked_when_entity_limit_reached(db_session):
     plan, definition = _plan_with_entitlement(
-        db_session, "ENT1PKG", "org.entity.max", 1, value_type=EntitlementValueType.INTEGER,
+        db_session, "ENT1PKG", "billing.customer.max", 1, value_type=EntitlementValueType.INTEGER,
     )
     org, account, sub = _org_with_active_subscription(db_session, "ENT1ORG", plan)
     make_customer(db_session, org.id, code="ENT1CUST1")  # already at the limit of 1
@@ -230,7 +230,7 @@ def test_customer_creation_blocked_when_entity_limit_reached(db_session):
 
 def test_customer_creation_allowed_within_entity_limit(db_session):
     plan, definition = _plan_with_entitlement(
-        db_session, "ENT2PKG", "org.entity.max", 1, value_type=EntitlementValueType.INTEGER,
+        db_session, "ENT2PKG", "billing.customer.max", 1, value_type=EntitlementValueType.INTEGER,
     )
     org, account, sub = _org_with_active_subscription(db_session, "ENT2ORG", plan)
     db_session.commit()
@@ -244,7 +244,7 @@ def test_customer_creation_allowed_within_entity_limit(db_session):
 
 def test_customer_creation_fails_closed_without_seeded_entitlement_catalog(db_session):
     """Reproduces the exact Phase 5 defect: no EntitlementDefinition row for
-    'org.entity.max' at all (the seed script was never run) makes customer
+    'billing.customer.max' at all (the seed script was never run) makes customer
     creation raise, by design (see entitlement_resolver.py's own docstring:
     this is treated as a coding bug / missing setup, not a tenant condition,
     and never silently resolves). This is the failure the real fix

@@ -9,7 +9,7 @@ import {
   HelpCircle,
 } from "lucide-react";
 import { getConfigurationInventory } from "../../service/commandCenterService";
-import { PageHeader, Button, SectionCard } from "../../components/billing-ui";
+import { PageHeader, Button, SectionCard, SearchInput } from "../../components/billing-ui";
 import { ErrorState, Spinner } from "../../components/billing-shared";
 
 /**
@@ -184,6 +184,7 @@ export default function ConfigurationGovernancePage({ embedded = false } = {}) {
   const [inventory, setInventory] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [query, setQuery] = useState("");
 
   const load = useCallback(() => {
     setLoading(true);
@@ -200,14 +201,17 @@ export default function ConfigurationGovernancePage({ embedded = false } = {}) {
 
   const grouped = useMemo(() => {
     const map = { platform_setting: [], operational_threshold: [], environment_capability: [] };
+    const needle = query.trim().toLowerCase();
     for (const entry of inventory?.entries ?? []) {
+      if (needle && !`${entry.name} ${entry.description || ""} ${entry.source || ""}`.toLowerCase().includes(needle)) continue;
       (map[entry.category] ??= []).push(entry);
     }
     for (const list of Object.values(map)) {
       list.sort((a, b) => a.name.localeCompare(b.name));
     }
     return map;
-  }, [inventory]);
+  }, [inventory, query]);
+  const matchCount = Object.values(grouped).reduce((sum, list) => sum + list.length, 0);
 
   return (
     <div className={embedded ? "" : "p-4 sm:p-6 lg:p-8"}>
@@ -270,10 +274,28 @@ export default function ConfigurationGovernancePage({ embedded = false } = {}) {
             title="Unable to load configuration governance"
           />
         ) : (
-          Object.entries(CATEGORY_META).map(([category, meta]) => {
+          <>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="w-full max-w-sm">
+              <SearchInput
+                value={query}
+                onChange={setQuery}
+                debounceMs={0}
+                placeholder="Search settings, thresholds, capabilities…"
+                aria-label="Search configuration"
+              />
+            </div>
+            {query.trim() && (
+              <p className="text-xs text-slate-500">
+                {matchCount} match{matchCount === 1 ? "" : "es"}
+              </p>
+            )}
+          </div>
+          {Object.entries(CATEGORY_META).map(([category, meta]) => {
             const entries = grouped[category] ?? [];
             const Icon = meta.icon;
-            const count = inventory?.summary?.[category] ?? entries.length;
+            const count = query.trim() ? entries.length : inventory?.summary?.[category] ?? entries.length;
+            if (query.trim() && entries.length === 0) return null;
             return (
               <SectionCard
                 key={category}
@@ -291,13 +313,21 @@ export default function ConfigurationGovernancePage({ embedded = false } = {}) {
                 {entries.length === 0 ? (
                   <p className="text-xs text-slate-500">None present.</p>
                 ) : (
-                  entries.map((entry, idx) => (
-                    <EntryRow key={`${category}-${entry.name}`} entry={entry} isFirst={idx === 0} />
-                  ))
+                  <div className="overflow-hidden rounded-xl border border-slate-100">
+                    {entries.map((entry, idx) => (
+                      <EntryRow key={`${category}-${entry.name}`} entry={entry} isFirst={idx === 0} />
+                    ))}
+                  </div>
                 )}
               </SectionCard>
             );
-          })
+          })}
+          {query.trim() && matchCount === 0 && (
+            <p className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
+              Nothing in the inventory matches “{query.trim()}”.
+            </p>
+          )}
+          </>
         )}
       </div>
     </div>

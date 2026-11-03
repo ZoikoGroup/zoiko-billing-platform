@@ -18,7 +18,6 @@ import pytest
 from app.modules.billing.services.customer_import_service import (
     CustomerImportService,
 )
-from tests.conftest import make_organization
 
 CSV_BYTES = (
     "Company Name *,Customer Code,Email,Customer Type,Status,Currency,Payment Terms\n"
@@ -30,7 +29,17 @@ LEGACY_XLS_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"  # OLE2/CFB header
 
 @pytest.fixture()
 def org(db_session):
-    return make_organization(db_session)
+    # Import confirm checks billing.customer.max (fail-closed, like single
+    # customer creation), so the org needs a seeded catalog and a plan: here
+    # one with no customer cap.
+    from app.modules.commercial.enums import EntitlementValueType
+    from tests.test_commercial_entitlements import _org_with_active_subscription, _plan_with_entitlement
+
+    plan, _ = _plan_with_entitlement(
+        db_session, "IMPPREVPKG", "billing.customer.max", None, value_type=EntitlementValueType.INTEGER,
+    )
+    org, _, _ = _org_with_active_subscription(db_session, "IMPPREVORG", plan)
+    return org
 
 
 @pytest.fixture()

@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
+  AlertTriangle,
+  ArrowLeft,
   Building2,
   ShieldCheck,
   Settings2,
@@ -21,7 +23,7 @@ import {
   getCommercialAccountTrialStatus,
 } from "../../service/commercialService";
 import { PageHeader, DataTable, Modal, Field, Select, Button } from "../../components/billing-ui";
-import { StatusBadge, ErrorState, PageSkeleton, EmptyState, SuccessMessage, useConfirmationDialog } from "../../components/billing-shared";
+import { StatusBadge, ErrorState, PageSkeleton, EmptyState, SuccessMessage } from "../../components/billing-shared";
 import {
   ACCOUNT_STATUS_OPTIONS,
   PLAN_STATUS_OPTIONS,
@@ -38,6 +40,39 @@ import {
   ReadinessBadge,
 } from "./constants";
 
+// The API serializes naive UTC datetimes (no offset); without normalizing,
+// the browser reads them as local time and every timestamp shifts by the
+// viewer's UTC offset.
+export function asUtc(value) {
+  if (!value || typeof value !== "string") return value ?? null;
+  if (!value.includes("T") || /([zZ]|[+-]\d{2}:?\d{2})$/.test(value)) return value;
+  return `${value}Z`;
+}
+const fmtDateTime = (value) => formatDateTime(asUtc(value));
+const fmtDate = (value) => formatDateOnly(asUtc(value));
+
+// Plan effective_from/effective_to are calendar dates ("YYYY-MM-DD"). new Date()
+// reads those as UTC midnight, which renders as the previous day anywhere west
+// of UTC — build a local date from the parts instead.
+export function formatCalendarDate(value) {
+  const match = typeof value === "string" && /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return fmtDate(value);
+  return formatDateOnly(new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+}
+
+// Lifecycle targets that block every tenant user at login (the backend's
+// _ACCESS_BLOCKED_STATES) — moving into one needs an explicit acknowledgement.
+const ACCESS_BLOCKING_STATES = ["suspended", "deactivating", "deactivated"];
+const TRANSITION_HINTS = {
+  onboarding: "Registered, setup still in progress. Users keep access.",
+  active: "Fully operational. Users can sign in.",
+  suspended: "Blocks every user of this organization from signing in. Records are kept and it can be reactivated.",
+  deactivating: "Starts a controlled wind-down and blocks sign-in. Can still be cancelled back to Active.",
+  deactivated: "Permanent: sign-in is removed for good and no further transitions are possible. History is kept.",
+};
+
+const stateLabel = (value) => LIFECYCLE_STATE_BADGES[value]?.label || String(value || "unknown").replace(/_/g, " ");
+
 function ChangeClassificationModal({ open, onClose, currentValue, onSaved }) {
   const [value, setValue] = useState(currentValue || "");
   const [reason, setReason] = useState("");
@@ -52,12 +87,17 @@ function ChangeClassificationModal({ open, onClose, currentValue, onSaved }) {
     }
   }, [open, currentValue]);
 
+  // The backend treats an unchanged value as a silent no-op (no audit row), so
+  // saving it would report a change that never happened.
+  const unchanged = value === (currentValue || "");
+
   async function handleSubmit(e) {
     e.preventDefault();
+    if (busy || unchanged || !reason.trim()) return;
     setBusy(true);
     setError(null);
     try {
-      const updated = await onSaved(value, reason);
+      const updated = await onSaved(value, reason.trim());
       if (updated !== false) onClose();
     } catch (err) {
       setError(err?.message || "Failed to update billing classification.");
@@ -70,11 +110,12 @@ function ChangeClassificationModal({ open, onClose, currentValue, onSaved }) {
     <Modal open={open} onClose={onClose} title="Change billing classification" icon={ShieldCheck} size="sm">
       <form onSubmit={handleSubmit} className="space-y-4">
         <p className="text-xs text-slate-500">
-          Per ZB-COM-BILL-001 Table 9 — only Commercial Standalone may create a live standalone commercial charge.
-          This change is audited with a required reason and an effective timestamp.
+          Only <strong>Commercial Standalone</strong> organizations can be charged directly for a subscription. The change is
+          recorded in the platform audit trail with your reason and the time it took effect.
         </p>
         <Field label="New classification" htmlFor="new-classification" required>
           <Select id="new-classification" value={value} onChange={setValue} options={COMMERCIAL_CLASSIFICATION_OPTIONS} placeholder="Select…" />
+          {unchanged && value && <p className="mt-1 text-xs text-slate-500">This is the current classification — pick a different one.</p>}
         </Field>
         <Field label="Reason" htmlFor="classification-reason" required hint="Required for the audit record.">
           <textarea
@@ -93,7 +134,7 @@ function ChangeClassificationModal({ open, onClose, currentValue, onSaved }) {
         )}
         <div className="flex items-center justify-end gap-2">
           <Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button type="submit" variant="primary" loading={busy} disabled={!value || !reason}>Save change</Button>
+          <Button type="submit" variant="primary" loading={busy} disabled={!value || unchanged || !reason.trim()}>Save change</Button>
         </div>
       </form>
     </Modal>
@@ -107,9 +148,10 @@ function ChangeClassificationModal({ open, onClose, currentValue, onSaved }) {
  * human-readable reason is mandatory; the response's correlation id links
  * the platform-audit trail entry.
  */
-function LifecycleTransitionModal({ open, onClose, currentState, allowedTransitions, onSubmit }) {
+function LifecycleTransitionModal({ open, onClose, orgName, currentState, allowedTransitions, onSubmit }) {
   const [target, setTarget] = useState("");
   const [reason, setReason] = useState("");
+  const [acknowledged, setAcknowledged] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
@@ -117,9 +159,18 @@ function LifecycleTransitionModal({ open, onClose, currentState, allowedTransiti
     if (open) {
       setTarget("");
       setReason("");
+      setAcknowledged(false);
       setError(null);
     }
   }, [open]);
+
+  // A new target needs its own acknowledgement.
+  useEffect(() => setAcknowledged(false), [target]);
+
+  const blocksAccess = ACCESS_BLOCKING_STATES.includes(target);
+  // Mirrors the backend: min_length=3 and a non-blank reason after trimming.
+  const reasonValid = reason.trim().length >= 3;
+  const canSubmit = Boolean(target) && reasonValid && (!blocksAccess || acknowledged) && !busy;
 
   const options = useMemo(
     () =>
@@ -132,10 +183,11 @@ function LifecycleTransitionModal({ open, onClose, currentState, allowedTransiti
 
   async function handleSubmit(e) {
     e.preventDefault();
+    if (!canSubmit) return;
     setBusy(true);
     setError(null);
     try {
-      await onSubmit(target, reason);
+      await onSubmit(target, reason.trim());
       onClose();
     } catch (err) {
       setError(err?.message || "Transition rejected by the server.");
@@ -148,17 +200,20 @@ function LifecycleTransitionModal({ open, onClose, currentState, allowedTransiti
     <Modal open={open} onClose={onClose} title="Lifecycle transition" icon={GitBranch} size="sm">
       <form onSubmit={handleSubmit} className="space-y-4">
         <p className="text-xs text-slate-500">
-          Current state: <strong>{LIFECYCLE_STATE_BADGES[currentState]?.label || currentState}</strong>. Transitions are governed by the
-          backend state machine, recorded with your reason, actor identity and a correlation id, and keep tenant login access in sync.
+          Current state: <strong>{stateLabel(currentState)}</strong>. Only the moves allowed from this state are listed. Each
+          change is recorded in the audit trail with your reason, and tenant sign-in access follows the new state.
         </p>
         <Field label="Target state" htmlFor="lifecycle-target" required>
           {options.length > 0 ? (
-            <Select id="lifecycle-target" value={target} onChange={setTarget} options={options} placeholder="Select…" />
+            <>
+              <Select id="lifecycle-target" value={target} onChange={setTarget} options={options} placeholder="Select…" />
+              {target && TRANSITION_HINTS[target] && <p className="mt-1 text-xs text-slate-500">{TRANSITION_HINTS[target]}</p>}
+            </>
           ) : (
             <p className="text-sm text-slate-500">This organization is in a terminal state — no further transitions are possible.</p>
           )}
         </Field>
-        <Field label="Reason" htmlFor="lifecycle-reason" required hint="Mandatory — stored verbatim in the platform audit trail.">
+        <Field label="Reason" htmlFor="lifecycle-reason" required hint="At least 3 characters — stored verbatim in the platform audit trail.">
           <textarea
             id="lifecycle-reason"
             required
@@ -169,6 +224,21 @@ function LifecycleTransitionModal({ open, onClose, currentState, allowedTransiti
             className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100"
           />
         </Field>
+        {blocksAccess && (
+          <label className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            <input
+              type="checkbox"
+              checked={acknowledged}
+              onChange={(e) => setAcknowledged(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-amber-300"
+            />
+            <span>
+              <AlertTriangle size={12} className="mr-1 inline" aria-hidden="true" />
+              I understand every user of <strong>{orgName}</strong> will be blocked from signing in
+              {target === "deactivated" ? ", permanently" : ""}.
+            </span>
+          </label>
+        )}
         {error && (
           <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
             {error}
@@ -176,7 +246,9 @@ function LifecycleTransitionModal({ open, onClose, currentState, allowedTransiti
         )}
         <div className="flex items-center justify-end gap-2">
           <Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button type="submit" variant="primary" loading={busy} disabled={!target || !reason}>Apply transition</Button>
+          <Button type="submit" variant={blocksAccess ? "destructive" : "primary"} loading={busy} disabled={!canSubmit}>
+            {target ? `Move to ${stateLabel(target)}` : "Apply transition"}
+          </Button>
         </div>
       </form>
     </Modal>
@@ -212,6 +284,13 @@ function SectionCard({ icon: Icon, title, subtitle, children, action, className 
   );
 }
 
+// "manual" / "auto_convert" → "Manual" / "Auto convert"; null stays an honest dash.
+function humanize(value) {
+  if (value === null || value === undefined || value === "") return "—";
+  const text = String(value).replace(/_/g, " ").toLowerCase();
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 const READINESS_LABELS = {
   administrator: "Administrator",
   configuration: "Billing configuration",
@@ -232,10 +311,12 @@ export default function OrganizationDetailPage() {
   const [notice, setNotice] = useState(null);
   const [classificationModalOpen, setClassificationModalOpen] = useState(false);
   const [transitionModalOpen, setTransitionModalOpen] = useState(false);
-  const { confirm, ConfirmationDialog } = useConfirmationDialog();
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  // `silent` refreshes after a mutation without swapping the page for a
+  // skeleton — and a failed silent refresh is reported inline, never by
+  // replacing a page whose change already succeeded with a load error.
+  const load = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     setError(null);
     try {
       // The overview is authoritative for identity/lifecycle/users; the
@@ -253,6 +334,10 @@ export default function OrganizationDetailPage() {
       setProfile(p);
       setTrialStatus(ts);
     } catch (err) {
+      if (silent) {
+        setActionError(`The change was saved, but the page couldn't refresh: ${err?.message || "unknown error"}. Reload to see the latest state.`);
+        return;
+      }
       setError(err?.message || "Failed to load organization.");
       setOverview(null);
       setDetail(null);
@@ -267,6 +352,13 @@ export default function OrganizationDetailPage() {
     load();
   }, [load]);
 
+  // Success notices dismiss themselves; the X still closes one early.
+  useEffect(() => {
+    if (!notice) return undefined;
+    const timer = setTimeout(() => setNotice(null), 8000);
+    return () => clearTimeout(timer);
+  }, [notice]);
+
   const orgName = overview?.organization?.organization_name || detail?.organization_name || profile?.organization_name || `Organization #${organizationId}`;
   const orgCode = overview?.organization?.organization_code || detail?.organization_code || profile?.organization_code || "—";
 
@@ -275,8 +367,9 @@ export default function OrganizationDetailPage() {
       setActionError(null);
       try {
         await updateBillingClassification(organizationId, newClassification, reason);
-        setNotice(`Billing classification changed.`);
-        await load();
+        const label = COMMERCIAL_CLASSIFICATION_OPTIONS.find((o) => o.value === newClassification)?.label || newClassification;
+        setNotice(`Billing classification changed to ${label}.`);
+        await load({ silent: true });
       } catch (err) {
         throw new Error(err?.message || "Failed to update billing classification.");
       }
@@ -290,9 +383,10 @@ export default function OrganizationDetailPage() {
       try {
         const result = await transitionOrganizationLifecycle(organizationId, target, reason);
         setNotice(
-          `Lifecycle moved ${result.previous_state.replace(/_/g, " ")} → ${result.current_state.replace(/_/g, " ")}. Audit correlation: ${result.correlation_id}`
+          `Lifecycle changed from ${stateLabel(result?.previous_state)} to ${stateLabel(result?.current_state ?? target)}.` +
+            (result?.correlation_id ? ` Audit reference: ${result.correlation_id}` : "")
         );
-        await load();
+        await load({ silent: true });
       } catch (err) {
         throw new Error(err?.message || "Failed to apply lifecycle transition.");
       }
@@ -323,7 +417,7 @@ export default function OrganizationDetailPage() {
       <div className="p-4 sm:p-6 lg:p-8">
         <PageHeader title="Organization" icon={Building2} />
         <div className="mt-6 rounded-3xl border border-slate-200 bg-white">
-          <ErrorState message={error} onRetry={load} title="Unable to load organization" />
+          <ErrorState message={error} onRetry={() => load()} title="Unable to load organization" />
         </div>
       </div>
     );
@@ -358,7 +452,7 @@ export default function OrganizationDetailPage() {
       label: "Period",
       render: (row) => (
         <span className="text-xs text-slate-600">
-          {formatDateOnly(row.start_at)} — {formatDateOnly(row.end_at)}
+          {fmtDate(row.start_at)} — {fmtDate(row.end_at)}
         </span>
       ),
     },
@@ -367,19 +461,19 @@ export default function OrganizationDetailPage() {
       label: "Current Period",
       render: (row) => (
         <span className="text-xs text-slate-600">
-          {formatDateOnly(row.current_period_start)} — {formatDateOnly(row.current_period_end)}
+          {fmtDate(row.current_period_start)} — {fmtDate(row.current_period_end)}
         </span>
       ),
     },
     {
       key: "created_at",
       label: "Created",
-      render: (row) => <span className="text-xs text-slate-500">{formatDateTime(row.created_at)}</span>,
+      render: (row) => <span className="text-xs text-slate-500">{fmtDateTime(row.created_at)}</span>,
     },
     {
       key: "updated_at",
       label: "Updated",
-      render: (row) => <span className="text-xs text-slate-500">{formatDateTime(row.updated_at)}</span>,
+      render: (row) => <span className="text-xs text-slate-500">{fmtDateTime(row.updated_at)}</span>,
     },
   ];
 
@@ -391,7 +485,7 @@ export default function OrganizationDetailPage() {
           { label: orgCode },
         ]}
         title={orgName}
-        description={`Tenant plane · lifecycle ${LIFECYCLE_STATE_BADGES[overview.lifecycle_state]?.label || overview.lifecycle_state}${overview.access_blocked ? " · tenant access blocked" : ""}`}
+        description={`Lifecycle: ${stateLabel(overview.lifecycle_state)} · ${overview.access_blocked ? "users are blocked from signing in" : "users can sign in"}`}
         icon={Building2}
         meta={
           <span className="inline-flex items-center gap-2">
@@ -401,24 +495,30 @@ export default function OrganizationDetailPage() {
           </span>
         }
         actions={
-          <button
-            type="button"
-            onClick={() => setTransitionModalOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-brand-200 bg-brand-50 px-3.5 py-2 text-sm font-semibold text-brand-700 transition-colors hover:bg-brand-100"
-          >
-            <GitBranch size={15} />
-            Lifecycle action
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="secondary" icon={ArrowLeft} onClick={() => navigate("/super-admin/organizations")}>
+              All organizations
+            </Button>
+            <Button
+              variant="secondary"
+              icon={GitBranch}
+              onClick={() => setTransitionModalOpen(true)}
+              disabled={(overview.allowed_transitions || []).length === 0}
+              title={(overview.allowed_transitions || []).length === 0 ? "Deactivated is a final state — no further changes are possible" : undefined}
+            >
+              Change lifecycle
+            </Button>
+          </div>
         }
       />
 
       {notice && <div className="mt-4"><SuccessMessage message={notice} onDismiss={() => setNotice(null)} /></div>}
       {actionError && (
-        <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
-          {actionError}
+        <div className="mt-4 flex items-start justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
+          <span>{actionError}</span>
+          <button type="button" onClick={() => setActionError(null)} className="shrink-0 text-xs font-semibold underline">Dismiss</button>
         </div>
       )}
-      {ConfirmationDialog}
       <ChangeClassificationModal
         open={classificationModalOpen}
         currentValue={org.billing_classification}
@@ -428,6 +528,7 @@ export default function OrganizationDetailPage() {
       <LifecycleTransitionModal
         open={transitionModalOpen}
         onClose={() => setTransitionModalOpen(false)}
+        orgName={orgName}
         currentState={overview.lifecycle_state}
         allowedTransitions={overview.allowed_transitions}
         onSubmit={handleTransition}
@@ -439,16 +540,16 @@ export default function OrganizationDetailPage() {
           <SectionCard
             icon={GitBranch}
             title="Lifecycle & Onboarding"
-            subtitle={`Last activity evidence: ${org.last_activity_at ? formatDateTime(org.last_activity_at) : "unknown"}`}
+            subtitle={`Last recorded activity: ${org.last_activity_at ? fmtDateTime(org.last_activity_at) : "unknown"}`}
           >
             <InfoRow label="Lifecycle state" value={<LifecycleStateBadge value={overview.lifecycle_state} />} />
-            <InfoRow label="Tenant login access" value={overview.access_blocked ? "Blocked" : "Permitted"} />
+            <InfoRow label="User sign-in" value={overview.access_blocked ? "Blocked" : "Allowed"} />
             <InfoRow
-              label="Legal transitions"
+              label="Can move to"
               value={
-                overview.allowed_transitions.length > 0
-                  ? overview.allowed_transitions.map((t) => LIFECYCLE_STATE_BADGES[t]?.label || t).join(", ")
-                  : "None — terminal state"
+                (overview.allowed_transitions || []).length > 0
+                  ? overview.allowed_transitions.map(stateLabel).join(", ")
+                  : "Nothing — final state"
               }
             />
             <div className="mt-4 mb-2 flex flex-wrap items-center gap-2">
@@ -479,7 +580,7 @@ export default function OrganizationDetailPage() {
                     <p className="text-sm font-semibold text-slate-700">{[a.first_name, a.last_name].filter(Boolean).join(" ") || a.email}</p>
                     <p className="text-xs text-slate-500">
                       {a.email} ·{" "}
-                      {a.last_login_at ? `last login ${formatDateTime(a.last_login_at)}` : "never logged in"}
+                      {a.last_login_at ? `last login ${fmtDateTime(a.last_login_at)}` : "never logged in"}
                     </p>
                   </div>
                 ))
@@ -495,10 +596,10 @@ export default function OrganizationDetailPage() {
                 {overview.recent_privileged_grants.map((g) => (
                   <div key={g.id} className="rounded-2xl border border-slate-100 bg-slate-50/60 px-3 py-2">
                     <p className="text-xs font-semibold text-slate-700">
-                      {g.ticket_reference} · <StatusBadge status={g.status} options={[{ value: g.status, label: g.status.replace(/_/g, " ") }]} fallbackColor="bg-slate-100 text-slate-600" />
+                      {g.ticket_reference} · <StatusBadge status={g.status} options={[{ value: g.status, label: String(g.status || "unknown").replace(/_/g, " ") }]} fallbackColor="bg-slate-100 text-slate-600" />
                     </p>
                     <p className="mt-0.5 line-clamp-2 text-xs text-slate-500">{g.reason}</p>
-                    {g.expires_at && <p className="text-[11px] text-slate-400">Expired/expiring {formatDateTime(g.expires_at)}</p>}
+                    {g.expires_at && <p className="text-[11px] text-slate-400">{new Date(asUtc(g.expires_at)).getTime() > Date.now() ? "Expires" : "Expired"} {fmtDateTime(g.expires_at)}</p>}
                   </div>
                 ))}
               </div>
@@ -506,7 +607,7 @@ export default function OrganizationDetailPage() {
               <EmptyState
                 icon={LifeBuoy}
                 title="No privileged grants"
-                message="No JIT support-access sessions have been requested for this organization."
+                message="No just-in-time support access has been requested for this organization."
               />
             )}
             <button
@@ -588,7 +689,7 @@ export default function OrganizationDetailPage() {
                 { key: "actor_role", label: "Actor Role", render: (row) => <span className="text-xs text-slate-600">{displayValue(row.actor_role)}</span> },
                 { key: "reason", label: "Reason", render: (row) => <span className="line-clamp-2 max-w-md text-xs text-slate-600">{displayValue(row.reason)}</span> },
                 { key: "correlation_id", label: "Correlation", render: (row) => <span className="font-mono text-[11px] text-slate-400">{displayValue(row.correlation_id)}</span> },
-                { key: "created_at", label: "When", render: (row) => <span className="text-xs text-slate-500">{formatDateTime(row.created_at)}</span> },
+                { key: "created_at", label: "When", render: (row) => <span className="text-xs text-slate-500">{fmtDateTime(row.created_at)}</span> },
               ]}
               data={overview.recent_audit_events}
               loading={false}
@@ -636,9 +737,9 @@ export default function OrganizationDetailPage() {
                 <InfoRow label="Billing interval" value={displayValue(plan.billing_interval)} />
                 <InfoRow label="Currency" value={displayValue(plan.currency)} />
                 <InfoRow label="Price" value={plan.price_amount === null || plan.price_amount === undefined ? "—" : `${plan.currency} ${Number(plan.price_amount).toLocaleString()}`} />
-                <InfoRow label="Effective" value={plan.effective_from ? `${formatDateOnly(plan.effective_from)} — ${formatDateOnly(plan.effective_to)}` : "—"} />
-                <InfoRow label="Period" value={`${formatDateOnly(subscription.start_at)} — ${formatDateOnly(subscription.end_at)}`} />
-                <InfoRow label="Current period" value={`${formatDateOnly(subscription.current_period_start)} — ${formatDateOnly(subscription.current_period_end)}`} />
+                <InfoRow label="Effective" value={plan.effective_from ? `${formatCalendarDate(plan.effective_from)} — ${formatCalendarDate(plan.effective_to)}` : "—"} />
+                <InfoRow label="Period" value={`${fmtDate(subscription.start_at)} — ${fmtDate(subscription.end_at)}`} />
+                <InfoRow label="Current period" value={`${fmtDate(subscription.current_period_start)} — ${fmtDate(subscription.current_period_end)}`} />
                 <InfoRow label="Subscription ID" value={displayValue(subscription.id)} />
               </>
             ) : (
@@ -661,9 +762,8 @@ export default function OrganizationDetailPage() {
                 <InfoRow label="Max users" value={displayValue(entitlements.limits?.max_users)} />
                 <InfoRow label="Max storage (GB)" value={displayValue(entitlements.limits?.max_storage_gb)} />
                 <p className="mt-2 text-xs text-slate-500">
-                  Missing (—) values are unset, not unlimited. These legacy plan-level limits (max users / max storage)
-                  are not enforced. The typed entitlement catalog now enforces 5 of 19 keys at real routes — see the
-                  Entitlement Catalog page and docs/ENTITLEMENT_ENFORCEMENT_CHECKLIST.md for what's wired.
+                  A dash means the limit is not set — not unlimited. These plan-level limits are informational and not
+                  enforced; enforced limits are managed on the Entitlement Catalog page.
                 </p>
               </div>
               <div>
@@ -689,25 +789,28 @@ export default function OrganizationDetailPage() {
           )}
         </SectionCard>
 
-        <SectionCard icon={GitBranch} title="Trial Status" subtitle="ZB-COM-ENT-001 Part 3 §16 — eligibility and conversion/expiry state">
+        <SectionCard icon={GitBranch} title="Trial Status" subtitle="Whether a trial is running or still available, and what happens when it ends">
           {trialStatus ? (
             <div className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
               <InfoRow
                 label="Trial eligibility"
                 value={trialStatus.is_trial_eligible ? "Eligible (no prior trial recorded)" : "Not eligible (already had a trial)"}
               />
-              <InfoRow label="Subscription status" value={displayValue(trialStatus.subscription_status)} />
-              <InfoRow label="Trial ends at" value={trialStatus.trial_ends_at ? formatDateTime(trialStatus.trial_ends_at) : "—"} />
-              <InfoRow label="Recovery window ends" value={trialStatus.recovery_ends_at ? formatDateTime(trialStatus.recovery_ends_at) : "—"} />
-              <InfoRow label="Conversion policy" value={displayValue(trialStatus.evaluation_conversion_policy)} />
-              <InfoRow label="Expiry action" value={displayValue(trialStatus.evaluation_expiry_action)} />
+              <InfoRow
+                label="Subscription status"
+                value={trialStatus.subscription_status ? <StatusBadge status={trialStatus.subscription_status} options={SUBSCRIPTION_STATUS_OPTIONS} /> : "No open subscription"}
+              />
+              <InfoRow label="Trial ends" value={trialStatus.trial_ends_at ? fmtDateTime(trialStatus.trial_ends_at) : "—"} />
+              <InfoRow label="Recovery window ends" value={trialStatus.recovery_ends_at ? fmtDateTime(trialStatus.recovery_ends_at) : "—"} />
+              <InfoRow label="On conversion" value={humanize(trialStatus.evaluation_conversion_policy)} />
+              <InfoRow label="When the trial expires" value={humanize(trialStatus.evaluation_expiry_action)} />
               {Array.isArray(trialStatus.trial_granted_entitlements) && trialStatus.trial_granted_entitlements.length > 0 && (
                 <div className="sm:col-span-2">
                   <p className="mb-1.5 mt-3 text-xs font-bold uppercase tracking-wider text-slate-600">Trial-granted entitlements (frozen at grant time)</p>
                   {trialStatus.trial_granted_entitlements.map((g) => (
                     <div key={g.key} className="flex items-center justify-between border-b border-slate-100 py-1.5 text-xs last:border-0">
                       <span className="font-mono text-slate-500">{g.key}</span>
-                      <span className="font-medium text-slate-700">{displayValue(g.value)}</span>
+                      <span className="font-medium text-slate-700">{typeof g.value === "boolean" ? (g.value ? "Yes" : "No") : displayValue(g.value)}</span>
                     </div>
                   ))}
                 </div>

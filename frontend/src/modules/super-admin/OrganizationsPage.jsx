@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { AlertTriangle, Building2, ChevronRight, Plus, X } from "lucide-react";
+import { AlertTriangle, Building2, ChevronRight, Clock, CreditCard, MinusCircle, Plus, X } from "lucide-react";
 import {
   createOrganization,
   getCountryDefaults,
@@ -15,11 +15,31 @@ import {
   displayValue,
   CommercialClassificationBadge,
   formatTrialRemaining,
-  TrialProgressBar,
   ORG_ACCOUNT_STATUS as ACCOUNT_STATUS,
   ORG_ACCOUNT_STATUS_ORDER as ACCOUNT_STATUS_ORDER,
   OrgAccountStatusBadge as AccountStatusBadge,
+  SUBSCRIPTION_STATUS_OPTIONS,
 } from "./constants";
+
+// The API serializes naive UTC datetimes (no offset). Read as-is, the browser
+// would treat them as local time and every "Xh ago" / trial countdown would be
+// off by the viewer's UTC offset — normalize to an explicit UTC string first.
+export function asUtc(value) {
+  if (!value || typeof value !== "string") return value ?? null;
+  if (!value.includes("T") || /([zZ]|[+-]\d{2}:?\d{2})$/.test(value)) return value;
+  return `${value}Z`;
+}
+
+// The create endpoint validates `email` as an EmailStr: an empty string is a
+// 422, not "no email". Optional fields left blank are omitted instead.
+export function buildOrganizationPayload(form) {
+  const payload = {};
+  for (const [key, value] of Object.entries(form)) {
+    const text = typeof value === "string" ? value.trim() : value;
+    if (text !== "" && text != null) payload[key] = text;
+  }
+  return payload;
+}
 
 const EMPTY_ORG_FORM = {
   organization_name: "",
@@ -91,10 +111,15 @@ function CreateOrganizationModal({ open, onClose, onCreated }) {
 
   async function handleSubmit(e) {
     e.preventDefault();
+    if (busy) return;
+    if (!form.organization_name.trim()) {
+      setError("Enter the organization's name.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      const org = await createOrganization(form);
+      const org = await createOrganization(buildOrganizationPayload(form));
       onCreated(org);
     } catch (err) {
       setError(err?.message || "Failed to create organization.");
@@ -266,7 +291,7 @@ function OrgAvatar({ name, seed }) {
 
 function relativeTime(value) {
   if (!value) return null;
-  const ts = new Date(value).getTime();
+  const ts = new Date(asUtc(value)).getTime();
   if (Number.isNaN(ts)) return null;
   const minutes = Math.floor((Date.now() - ts) / 60000);
   if (minutes < 1) return "just now";
@@ -282,7 +307,7 @@ function relativeTime(value) {
 function UsersMeter({ active, total, admins }) {
   const pct = total > 0 ? Math.round((active / total) * 100) : 0;
   return (
-    <div className="w-28">
+    <div className="w-full max-w-28">
       <div className="flex items-baseline justify-between text-xs">
         <span className="font-semibold text-slate-700">
           {displayValue(active)}<span className="font-normal text-slate-400">/{displayValue(total)}</span>
@@ -370,7 +395,11 @@ export default function OrganizationsPage() {
   // Fleet-wide count per account status, returned with every directory page.
   const [statusCounts, setStatusCounts] = useState(null);
 
+  // Only the latest request may write state: a slow response for an older
+  // search/filter must not overwrite the list the user is now looking at.
+  const loadSeq = useRef(0);
   const load = useCallback(async (pageNum, term, state) => {
+    const seq = ++loadSeq.current;
     setLoading(true);
     setError(null);
     try {
@@ -380,21 +409,30 @@ export default function OrganizationsPage() {
         search: term,
         account_status: state || undefined,
       });
+      if (seq !== loadSeq.current) return;
       setOrgs(data.organizations || []);
       setTotal(data.total || 0);
       if (data.status_counts) setStatusCounts(data.status_counts);
     } catch (err) {
+      if (seq !== loadSeq.current) return;
       setError(err?.message || "Failed to load organizations.");
       setOrgs([]);
       setTotal(0);
     } finally {
-      setLoading(false);
+      if (seq === loadSeq.current) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     load(page, search, statusFilter);
   }, [load, page, search, statusFilter]);
+
+  // Success notices dismiss themselves; the X still closes one early.
+  useEffect(() => {
+    if (!notice) return undefined;
+    const timer = setTimeout(() => setNotice(null), 6000);
+    return () => clearTimeout(timer);
+  }, [notice]);
 
   useEffect(() => {
     if (location.state?.notice) {
@@ -453,37 +491,86 @@ export default function OrganizationsPage() {
       {
         key: "account_status",
         label: "Status",
-        width: 170,
-        render: (row) => (
-          <div className="flex flex-col items-start gap-1.5">
-            <AccountStatusBadge value={row.account_status} />
-            {row.account_status === "trial" && (
-              <TrialProgressBar trial={formatTrialRemaining(row.trial_ends_at, row.subscription_status, row.recovery_ends_at)} />
-            )}
-            {row.open_incident_count > 0 && (
-              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-600">
-                <AlertTriangle size={11} /> {row.open_incident_count} open incident{row.open_incident_count === 1 ? "" : "s"}
-              </span>
-            )}
-          </div>
-        ),
+        width: "15%",
+        render: (row) => {
+          const trial = row.account_status === "trial"
+            ? formatTrialRemaining(asUtc(row.trial_ends_at), row.subscription_status, asUtc(row.recovery_ends_at))
+            : null;
+          const pastDue = row.subscription_status === "past_due";
+          return (
+            <div className="flex flex-col items-start gap-1.5 min-w-0">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <AccountStatusBadge value={row.account_status} />
+                {pastDue && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-orange-50 px-2 py-0.5 text-[10px] font-bold text-orange-700">
+                    <AlertTriangle size={10} /> Past due
+                  </span>
+                )}
+              </div>
+              {trial && (
+                <div className="w-full min-w-0">
+                  <div className="mb-1 text-[10px] font-semibold text-slate-600 truncate">{trial.label}</div>
+                  <div className="h-1 w-full overflow-hidden rounded-full bg-slate-200">
+                    <div className="h-full rounded-full bg-blue-500 transition-[width]" style={{ width: `${trial.percent ?? 0}%` }} />
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        },
       },
       {
         key: "subscription_plan",
         label: "Plan",
+        width: "17%",
         hideBelow: "md",
-        render: (row) =>
-          row.subscription_plan_code ? (
-            <span className="block truncate font-medium text-slate-700" title={row.subscription_plan_name || row.subscription_plan_code}>
-              {row.subscription_plan_name || row.subscription_plan_code}
-            </span>
-          ) : (
-            <span className="text-xs text-slate-400">No plan assigned</span>
-          ),
+        render: (row) => {
+          const subStatus = SUBSCRIPTION_STATUS_OPTIONS.find((s) => s.value === row.subscription_status);
+          const trial = row.account_status === "trial"
+            ? formatTrialRemaining(asUtc(row.trial_ends_at), row.subscription_status, asUtc(row.recovery_ends_at))
+            : null;
+          const hasPlan = Boolean(row.subscription_plan_code);
+          const planName = row.subscription_plan_name || row.subscription_plan_code || null;
+
+          if (!hasPlan) {
+            return (
+              <div className="flex flex-col items-start gap-1 min-w-0">
+                <span className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-400 bg-slate-50">
+                  <MinusCircle size={12} className="text-slate-400" /> No plan
+                </span>
+                <span className="text-[10px] font-medium text-slate-400">Unassigned</span>
+              </div>
+            );
+          }
+
+          const isTrial = trial && row.subscription_status === "trialing";
+          const isActive = row.subscription_status === "active";
+          const isPastDue = row.subscription_status === "past_due";
+
+          return (
+            <div className="flex flex-col items-start gap-1.5 min-w-0">
+              <div className="flex min-w-0 max-w-full items-center gap-2">
+                <span className={`inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-xl border px-2.5 py-1 text-xs font-semibold ${
+                  isTrial ? "bg-blue-50 border-blue-100 text-blue-700" :
+                  isActive ? "bg-emerald-50 border-emerald-100 text-emerald-700" :
+                  isPastDue ? "bg-orange-50 border-orange-100 text-orange-700" :
+                  subStatus?.color || "bg-slate-100 border-slate-200 text-slate-700"
+                }`} title={planName}>
+                  {isTrial ? <Clock size={12} className="shrink-0 text-blue-600" /> : <CreditCard size={12} className="shrink-0 text-slate-500" />}
+                  <span className="truncate">{planName}</span>
+                </span>
+              </div>
+              <span className="text-[10px] font-medium text-slate-500 truncate" title={subStatus?.label || row.subscription_status}>
+                {subStatus?.label || row.subscription_status || "Status unknown"}
+              </span>
+            </div>
+          );
+        },
       },
       {
         key: "source",
         label: "Billing",
+        width: "11%",
         // Only on very wide screens — it competed with the name for space.
         hideBelow: "2xl",
         render: (row) => (
@@ -493,21 +580,21 @@ export default function OrganizationsPage() {
       {
         key: "users",
         label: "Users",
-        width: 140,
+        width: "9%",
         hideBelow: "lg",
         render: (row) => <UsersMeter active={row.active_users || 0} total={row.total_users || 0} admins={row.org_admins || 0} />,
       },
       {
         key: "activity",
         label: "Last activity",
-        width: 130,
+        width: "9%",
         hideBelow: "lg",
         render: (row) => (
           <span className="block text-xs leading-5">
-            <span className="block font-medium text-slate-700" title={row.last_activity_at ? formatDateTime(row.last_activity_at) : undefined}>
+            <span className="block font-medium text-slate-700" title={row.last_activity_at ? formatDateTime(asUtc(row.last_activity_at)) : undefined}>
               {relativeTime(row.last_activity_at) || <span className="font-normal text-slate-400">No activity</span>}
             </span>
-            <span className="block text-slate-400" title={`Created ${formatDateTime(row.created_at)}`}>
+            <span className="block text-slate-400" title={`Created ${formatDateTime(asUtc(row.created_at))}`}>
               Joined {relativeTime(row.created_at) || "—"}
             </span>
           </span>
@@ -516,8 +603,10 @@ export default function OrganizationsPage() {
       {
         key: "open",
         label: "",
-        width: 36,
-        render: () => <ChevronRight size={15} className="text-slate-300" />,
+        width: "5%",
+        align: "right",
+        headerClassName: "px-2",
+        render: () => <ChevronRight size={15} className="ml-auto text-slate-300" />,
       },
     ],
     []
@@ -528,11 +617,12 @@ export default function OrganizationsPage() {
   const fleetTotal = statusCounts ? Object.values(statusCounts).reduce((a, b) => a + b, 0) : null;
 
   return (
-    <div className="min-w-0 max-w-full space-y-6 overflow-x-hidden">
+    <div className="min-w-0 max-w-full space-y-8 overflow-x-hidden bg-[#0B1F4B]/3 py-8 sm:py-12 px-6 sm:px-8">
       <PageHeader
         title="Organizations"
-        description="Every tenant on the platform — account status, plan, trial time, users and incident load. Financial records stay behind privileged access."
+        description="Every tenant on the platform — account status, plan, trial time and users. Select a row to open the organization. Financial records stay behind privileged access."
         icon={Building2}
+        accent="navy"
         meta={fleetTotal != null ? `${displayValue(fleetTotal)} organization(s) on the platform` : undefined}
         actions={
           <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>
@@ -546,8 +636,8 @@ export default function OrganizationsPage() {
       <AccountStatusOverview counts={statusCounts} selected={statusFilter} onSelect={selectStatus} />
 
       <div className="min-w-0">
-        <section className="min-w-0 rounded-3xl border border-slate-200 bg-white shadow-[0_4px_20px_rgba(0,0,0,0.02)]" aria-label="Organization directory">
-          <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 p-4">
+        <section className="min-w-0 rounded-3xl border border-[#0B1F4B]/20 bg-white shadow-[0_20px_50px_-10px_rgba(11,31,75,0.15)]" aria-label="Organization directory">
+          <div className="flex flex-wrap items-center gap-3 border-b border-[#0B1F4B]/10 p-6 sm:p-8">
             <SearchInput
               key={searchResetKey}
               value={search}
@@ -555,7 +645,7 @@ export default function OrganizationsPage() {
               placeholder="Search by name, code or legal name…"
               className="w-full min-w-0 flex-1 sm:max-w-sm"
             />
-            <span className="text-xs text-slate-500" aria-live="polite">
+            <span className="text-xs font-medium text-slate-500" aria-live="polite">
               {loading ? "Loading…" : `${displayValue(total)} result${total === 1 ? "" : "s"}`}
               {statusFilter && ` · ${ACCOUNT_STATUS[statusFilter]?.label || statusFilter}`}
             </span>
@@ -564,18 +654,18 @@ export default function OrganizationsPage() {
               onClick={clearFilters}
               disabled={!hasActiveFilters}
               title={hasActiveFilters ? "Reset search and status filter" : "No filters applied"}
-              className="ml-auto inline-flex items-center gap-1 whitespace-nowrap rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-brand-600 hover:bg-brand-50 hover:text-brand-700 disabled:cursor-not-allowed disabled:text-slate-400 disabled:hover:bg-transparent"
+              className="ml-auto inline-flex items-center gap-1 whitespace-nowrap rounded-xl border border-[#0B1F4B]/30 px-3 py-2 text-xs font-medium text-[#0B1F4B] hover:bg-[#0B1F4B]/10 hover:text-[#0B1F4B] disabled:cursor-not-allowed disabled:text-slate-400 disabled:border-slate-200 disabled:hover:bg-transparent"
             >
               <X size={14} />
               Clear filters
             </button>
           </div>
 
-          <div className="p-2 sm:p-3">
+          <div className="p-4 sm:p-6">
             {error ? (
               <ErrorState message={error} onRetry={() => load(page, search, statusFilter)} title="Unable to load organizations" />
             ) : loading && orgs.length === 0 ? (
-              <Spinner />
+              <Spinner className="mx-auto" />
             ) : (
               <DataTable
                 columns={columns}
@@ -591,17 +681,16 @@ export default function OrganizationsPage() {
                     <Button variant="primary" size="sm" icon={Plus} onClick={() => setCreating(true)}>New Organization</Button>
                   )
                 }
-                minWidth={0}
-                tableClassName="table-fixed"
-                // One scroll: the page. The table's own 560px scroll box
-                // nested a second scrollbar inside the page.
+                minWidth={720}
+                tableClassName="table-fixed [&_th]:align-middle [&_td]:align-top"
                 stickyHeader={false}
+                striped
               />
             )}
           </div>
 
           {!error && totalPages > 1 && (
-            <div className="border-t border-slate-100 px-4 py-3">
+            <div className="border-t border-[#0B1F4B]/10 px-4 py-4 sm:p-6">
               <Pagination page={page} totalPages={totalPages} onPageChange={setPage}>
                 {displayValue(total)} organization(s)
               </Pagination>
@@ -615,9 +704,10 @@ export default function OrganizationsPage() {
         onClose={() => setCreating(false)}
         onCreated={(org) => {
           setCreating(false);
-          setNotice(`Organization "${org.organization_name}" created.`);
-          setPage(1);
-          load(1, search, statusFilter);
+          setNotice(`Organization "${org?.organization_name || "New organization"}" created.`);
+          // Changing the page re-runs the load effect; on page 1 reload directly.
+          if (page === 1) load(1, search, statusFilter);
+          else setPage(1);
         }}
       />
     </div>

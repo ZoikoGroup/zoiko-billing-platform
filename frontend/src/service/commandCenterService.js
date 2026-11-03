@@ -318,3 +318,8 @@ export const listEmailDeliveryFailures = (skip = 0, limit = 50) =>
 
 export const resendEmailDeliveryFailure = (logId) =>
   api.post(`/api/super-admin/email-delivery/failures/${logId}/resend`, {});
+
+// B6 — synchronous SMTP test send against the effective platform SMTP config.
+// Returns { success, message }; a failed send is success:false, not an HTTP error.
+export const sendSmtpTestEmail = (recipientEmail) =>
+  api.post("/api/super-admin/settings/email/test", { recipient_email: recipientEmail });

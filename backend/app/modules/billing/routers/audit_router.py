@@ -30,8 +30,11 @@ def list_logs(
     action: Optional[str] = Query(None),
     actor_id: Optional[int] = Query(None),
 ):
+    from app.modules.commercial.entitlement_enforcement import audit_search_cutoff
+
     svc = BillingAuditService(db)
     return svc.list_logs(
+        since=audit_search_cutoff(db, current_user.organization_id),
         organization_id=current_user.organization_id,
         page=page,
         per_page=per_page,
