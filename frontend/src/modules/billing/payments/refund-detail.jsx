@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import HRPage from "../../../components/HRPage";
 import { ActivityTimeline, Button, Modal } from "../../../components/billing-ui";
+import { StatusBadge as SharedStatusBadge } from "../../../components/billing-shared";
 import { refundApi } from "../../../service/billingService";
 import { formatDisplayCurrency, formatDisplayDate } from "../../../utils/billing-helpers";
 import { useTerminology } from "../utils/TerminologyContext";
@@ -22,23 +23,8 @@ const CAN_APPROVE_REFUND_ROLES = ["finance_approver", "super_admin"];
 // pdfmake + vfs_fonts are lazy-loaded inside buildRefundPdf() so the
 // ~1.74 MB font bundle is only fetched when the user clicks "Download".
 
-const STATUS_STYLES = {
-  draft: "bg-slate-100 text-slate-600",
-  pending_approval: "bg-amber-100 text-amber-700",
-  approved: "bg-indigo-100 text-indigo-700",
-  processing: "bg-blue-100 text-blue-700",
-  completed: "bg-emerald-100 text-emerald-700",
-  failed: "bg-red-100 text-red-700",
-  rejected: "bg-red-100 text-red-700",
-  cancelled: "bg-slate-200 text-slate-600",
-};
-
 function StatusBadge({ status }) {
-  return (
-    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${STATUS_STYLES[status] || "bg-slate-100 text-slate-600"}`}>
-      {status ? status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "Unknown"}
-    </span>
-  );
+  return <SharedStatusBadge status={status} />;
 }
 
 async function buildRefundPdf(refund, orgSettings = {}) {
