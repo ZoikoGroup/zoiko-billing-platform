@@ -4,55 +4,69 @@ import {
   listAllocationExceptions,
   listCreditApplications,
 } from "../../service/commandCenterService";
-import { PageHeader, DataTable, SectionCard } from "../../components/billing-ui";
-import { ErrorState, Spinner, EmptyState } from "../../components/billing-shared";
+import { PageHeader, SectionCard } from "../../components/billing-ui";
+import { ErrorState, Spinner } from "../../components/billing-shared";
 import { OrganizationLink, CurrencyTotals, CountChips, SupportAccessNote, rowsOf } from "./PrivacyCells";
+import { StaleSectionNote, TenantAggregateTable, TENANT_LIST_LIMIT, settleSections } from "./FinancialSummaryCards";
+import useLiveRefresh, { LiveRefreshStatus } from "./useLiveRefresh";
+
+const EXCEPTION_TYPE_LABELS = { over_allocated: "over-allocated invoices" };
 
 const ALLOCATION_EXCEPTION_COLUMNS = [
   { key: "organization_name", label: "Organization", render: (r) => <OrganizationLink organizationId={r.organization_id} name={r.organization_name} /> },
-  { key: "exception_count_by_type", label: "Exceptions by Type", render: (r) => <CountChips counts={r.exception_count_by_type} /> },
+  {
+    key: "exception_count_by_type",
+    label: "Exceptions by Type",
+    render: (r) => (
+      <CountChips
+        counts={r.exception_count_by_type}
+        labelFor={(k) => EXCEPTION_TYPE_LABELS[k] || String(k).replaceAll("_", " ")}
+      />
+    ),
+  },
 ];
 
 const CREDIT_APPLICATION_COLUMNS = [
   { key: "organization_name", label: "Organization", render: (r) => <OrganizationLink organizationId={r.organization_id} name={r.organization_name} /> },
-  { key: "count_by_status", label: "Applications by Status", render: (r) => <CountChips counts={r.count_by_status} /> },
+  { key: "count_by_status", label: "Applications", render: (r) => <CountChips counts={r.count_by_status} /> },
   { key: "total_by_currency", label: "Total Applied", numeric: true, render: (r) => <CurrencyTotals totals={r.total_by_currency} /> },
 ];
 
 // `embedded` drops this page's own PageHeader and padding when it is mounted
 // as a tab of the Financial Operations hub, whose header already titles it.
-export default function BalancesAllocationsPage({ embedded = false } = {}) {
+export default function BalancesAllocationsPage({ embedded = false, refreshSignal = 0 } = {}) {
   const [exceptions, setExceptions] = useState(null);
   const [applications, setApplications] = useState(null);
   const [errors, setErrors] = useState({});
-  const [loading, setLoading] = useState(true);
 
-  // This page used to open with the F4 Revenue Leakage card — neither a
-  // balance nor an allocation figure, and already on the hub's Overview. It now
-  // opens on its own subject: allocation exceptions.
-  const load = useCallback(() => {
-    setLoading(true);
-    const nextErrors = {};
-    Promise.allSettled([
-      listAllocationExceptions(50),
-      listCreditApplications(50),
-    ]).then(([excRes, appRes]) => {
-      if (excRes.status === "fulfilled") setExceptions(excRes.value);
-      else nextErrors.exceptions = excRes.reason?.message || "Failed to load allocation exceptions.";
+  // This page opens on its own subject: allocation exceptions (the F4 card it
+  // used to open with lives on the hub's Overview).
+  const load = useCallback(
+    (signal) =>
+      Promise.allSettled([
+        listAllocationExceptions(TENANT_LIST_LIMIT),
+        listCreditApplications(TENANT_LIST_LIMIT),
+      ]).then((results) => {
+        if (signal?.aborted) return;
+        const nextErrors = settleSections(
+          results,
+          [["exceptions", setExceptions], ["applications", setApplications]],
+          ["Failed to load allocation exceptions.", "Failed to load credit applications."]
+        );
+        setErrors(nextErrors);
+        const failed = Object.values(nextErrors);
+        if (failed.length) throw new Error(failed[0]);
+      }),
+    []
+  );
 
-      if (appRes.status === "fulfilled") setApplications(appRes.value);
-      else nextErrors.applications = appRes.reason?.message || "Failed to load credit applications.";
-
-      setErrors(nextErrors);
-      setLoading(false);
-    });
-  }, []);
-
+  const live = useLiveRefresh(load);
+  const { refresh } = live;
   useEffect(() => {
-    load();
-  }, [load]);
+    if (refreshSignal) refresh();
+  }, [refreshSignal, refresh]);
 
-  if (loading) {
+  if (!live.hasLoaded) {
     return (
       <div className={embedded ? "" : "p-4 sm:p-6 lg:p-8"}>
         <Spinner />
@@ -65,33 +79,44 @@ export default function BalancesAllocationsPage({ embedded = false } = {}) {
       {!embedded && (
         <PageHeader
           title="Balances & Allocations"
-          description="Payment-allocation integrity invariant (PaymentAllocation ≤ Invoice.total_amount) and the credit-note application ledger, across every tenant."
+          description="Payment-allocation integrity (no invoice may have more payment allocated than its total) and the credit-note application ledger, across every tenant."
           icon={Landmark}
           accent="brand"
         />
       )}
 
-      <div className={`grid grid-cols-1 gap-6 ${embedded ? "" : "mt-6"}`}>
+      <LiveRefreshStatus
+        className={embedded ? "mb-4" : "mt-4"}
+        lastUpdated={live.lastUpdated}
+        refreshing={live.refreshing}
+        refreshError={live.refreshError}
+        onRefresh={refresh}
+      />
+
+      <div className={`grid grid-cols-1 gap-6 ${embedded ? "" : "mt-4"}`}>
         <SectionCard
           variant="hero"
           accent="brand"
           icon={Landmark}
           title="Allocation Exceptions"
-          description="Tenants with invoices whose PaymentAllocation totals exceed the invoice total — a real ledger integrity failure, never a legitimate state. Counts per exception type only."
+          description="Tenants with invoices that have more payment allocated than the invoice total — always a ledger error, never a legitimate state. Counts per exception type only."
         >
-          {errors.exceptions ? (
-            <ErrorState title="Unable to load allocation exceptions" message={errors.exceptions} onRetry={load} />
-          ) : rowsOf(exceptions).length === 0 ? (
-            <EmptyState icon={Landmark} title="No allocation exceptions" message="Every invoice's allocated payments are within its total amount." />
+          {errors.exceptions && !exceptions ? (
+            <ErrorState title="Unable to load allocation exceptions" message={errors.exceptions} onRetry={() => refresh()} />
           ) : (
-            <DataTable
-              columns={ALLOCATION_EXCEPTION_COLUMNS}
-              data={rowsOf(exceptions)}
-              rowKey={(r) => r.organization_id}
-              minWidth={560}
-            />
+            <>
+              {errors.exceptions && <StaleSectionNote message={errors.exceptions} onRetry={refresh} />}
+              <TenantAggregateTable
+                rows={rowsOf(exceptions)}
+                columns={ALLOCATION_EXCEPTION_COLUMNS}
+                limit={TENANT_LIST_LIMIT}
+                emptyIcon={Landmark}
+                emptyTitle="No allocation exceptions"
+                emptyMessage="Every invoice's allocated payments are within its total amount."
+              />
+              <SupportAccessNote />
+            </>
           )}
-          <SupportAccessNote />
         </SectionCard>
 
         <SectionCard
@@ -99,21 +124,24 @@ export default function BalancesAllocationsPage({ embedded = false } = {}) {
           accent="brand"
           icon={Landmark}
           title="Credit Note Applications"
-          description="Credit note applications per tenant, by status, with totals per currency."
+          description="Credit notes applied against invoices, per tenant, with totals per currency."
         >
-          {errors.applications ? (
-            <ErrorState title="Unable to load credit applications" message={errors.applications} onRetry={load} />
-          ) : rowsOf(applications).length === 0 ? (
-            <EmptyState icon={Landmark} title="No credit note applications yet" message="Credit notes applied against invoices will appear here." />
+          {errors.applications && !applications ? (
+            <ErrorState title="Unable to load credit applications" message={errors.applications} onRetry={() => refresh()} />
           ) : (
-            <DataTable
-              columns={CREDIT_APPLICATION_COLUMNS}
-              data={rowsOf(applications)}
-              rowKey={(r) => r.organization_id}
-              minWidth={560}
-            />
+            <>
+              {errors.applications && <StaleSectionNote message={errors.applications} onRetry={refresh} />}
+              <TenantAggregateTable
+                rows={rowsOf(applications)}
+                columns={CREDIT_APPLICATION_COLUMNS}
+                limit={TENANT_LIST_LIMIT}
+                emptyIcon={Landmark}
+                emptyTitle="No credit note applications yet"
+                emptyMessage="Credit notes applied against invoices will appear here."
+              />
+              <SupportAccessNote />
+            </>
           )}
-          <SupportAccessNote />
         </SectionCard>
       </div>
     </div>

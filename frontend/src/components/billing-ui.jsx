@@ -13,7 +13,7 @@
  *          SearchInput, Field, Select, ActivityTimeline, CommunicationHistory
  */
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, useInRouterContext } from "react-router-dom";
 import useMediaQuery, { BELOW_MD, BELOW_SM } from "../hooks/useMediaQuery";
@@ -92,6 +92,12 @@ export const HUB_ACCENTS = {
     tabActive: "border-teal-500 bg-teal-50 text-teal-700",
     ring: "ring-teal-500/30",
   },
+  navy: {
+    iconChip: "bg-white/10 text-white",
+    heroBorder: "border-t-4 border-t-white/30",
+    tabActive: "border-white/30 bg-white/10 text-white",
+    ring: "ring-white/20",
+  },
 };
 
 function resolveAccent(accent) {
@@ -129,18 +135,21 @@ export function Button({
   size = "md",
   icon: Icon,
   loading = false,
+  disabled = false,
   children,
   className = "",
   ...rest
 }) {
+  // `disabled` is pulled out of `rest` so a caller's explicit disabled={false}
+  // can't be spread over it and re-enable the button while `loading`.
   return (
     <button
       type="button"
-      disabled={loading || rest.disabled}
       className={`inline-flex items-center justify-center font-semibold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed ${
         BUTTON_VARIANTS[variant] || BUTTON_VARIANTS.secondary
       } ${BUTTON_SIZES[size] || BUTTON_SIZES.md} ${className}`}
       {...rest}
+      disabled={loading || disabled}
     >
       {loading ? (
         <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
@@ -290,15 +299,23 @@ function HeaderActions({ actions, primaryAction, moreActions = [] }) {
   );
 }
 
+// Lets a shell force one header treatment across every page it hosts (the
+// super_admin shell sets "navy" so every page header matches its sidebar)
+// without each page having to pass accent="navy". null = honor the page's own.
+export const PageHeaderAccentContext = createContext(null);
+
+// The sidebar's own gradient (BillingShell <aside>), shared so navy headers and
+// hero banners are the exact same colour as the navigation beside them.
+export const NAVY_SURFACE = "bg-linear-to-br from-[#0B1220] via-[#101B33] to-[#0A0F1F]";
 // Breadcrumb link: client-side navigation inside the app's router (a real
 // <a href>, so modifier-clicks and the unsaved-changes guard still work);
 // a plain link where a component renders outside a router.
-export function CrumbLink({ href, children }) {
+export function CrumbLink({ href, children, className = "" }) {
   // 44px tap height on phones (the breadcrumb row's bottom margin shrinks to match).
-  const className = "transition-colors hover:text-brand-600 max-sm:inline-flex max-sm:min-h-11 max-sm:items-center";
+  const linkClass = `transition-colors hover:text-brand-600 ${className} max-sm:inline-flex max-sm:min-h-11 max-sm:items-center`;
   return useInRouterContext()
-    ? <Link to={href} className={className}>{children}</Link>
-    : <a href={href} className={className}>{children}</a>;
+    ? <Link to={href} className={linkClass}>{children}</Link>
+    : <a href={href} className={linkClass}>{children}</a>;
 }
 
 export function PageHeader({
@@ -328,20 +345,23 @@ export function PageHeader({
       </div>
     );
   }
-  const tone = resolveAccent(accent);
+  const forcedAccent = useContext(PageHeaderAccentContext);
+  const effectiveAccent = forcedAccent || accent;
+  const tone = resolveAccent(effectiveAccent);
+  const isNavy = effectiveAccent === "navy";
   return (
-    <div className={`rounded-3xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_12px_28px_-8px_rgba(15,23,42,0.08)] sm:p-6 md:p-8 ${className}`}>
+    <div className={`rounded-3xl border p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_12px_28px_-8px_rgba(15,23,42,0.08)] sm:p-6 md:p-8 ${isNavy ? `border-white/10 ${NAVY_SURFACE}` : "border-slate-200 bg-white"} ${className}`}>
       {crumbs.length > 0 && (
-        <nav aria-label="Breadcrumb" className="mb-1 flex items-center gap-1.5 text-xs font-medium text-slate-500 sm:mb-3">
+        <nav aria-label="Breadcrumb" className={`mb-1 flex items-center gap-1.5 text-xs font-medium sm:mb-3 ${isNavy ? "text-white/70" : "text-slate-500"}`}>
           {crumbs.map((crumb, idx) => {
             const isLast = idx === crumbs.length - 1;
             return (
               <span key={crumb.label + idx} className="inline-flex items-center gap-1.5">
-                {idx > 0 && <ChevronRight size={13} className="text-slate-300" />}
+                {idx > 0 && <ChevronRight size={13} className={`${isNavy ? "text-white/50" : "text-slate-300"}`} />}
                 {!isLast && crumb.href ? (
-                  <CrumbLink href={crumb.href}>{crumb.label}</CrumbLink>
+                  <CrumbLink href={crumb.href} className={isNavy ? "hover:text-white" : "hover:text-brand-600"}>{crumb.label}</CrumbLink>
                 ) : (
-                  <span className={isLast ? "font-semibold text-slate-600" : ""}>{crumb.label}</span>
+                  <span className={`font-semibold ${isLast ? (isNavy ? "text-white" : "text-slate-600") : ""}`}>{crumb.label}</span>
                 )}
               </span>
             );
@@ -361,9 +381,9 @@ export function PageHeader({
               <Icon size={21} className="h-4.5 w-4.5 sm:h-5.25 sm:w-5.25" />
             </div>
           )}
-          <h1 className="min-w-0 self-center wrap-break-word text-xl font-bold tracking-tight text-slate-900 sm:self-auto sm:text-2xl md:text-[1.75rem]">{title}</h1>
+          <h1 className={`min-w-0 self-center wrap-break-word text-xl font-bold tracking-tight ${isNavy ? "text-white" : "text-slate-900"} sm:self-auto sm:text-2xl md:text-[1.75rem]`}>{title}</h1>
           {description && (
-            <p className={`mt-1 max-w-2xl text-sm leading-relaxed text-slate-500 ${Icon ? "col-span-2 sm:col-span-1 sm:col-start-2" : ""}`}>{description}</p>
+            <p className={`mt-1 max-w-2xl text-sm leading-relaxed ${isNavy ? "text-white/90" : "text-slate-500"} ${Icon ? "col-span-2 sm:col-span-1 sm:col-start-2" : ""}`}>{description}</p>
           )}
         </div>
         {/* Below xl the actions sit on their own row. Legacy `actions` (and
@@ -374,7 +394,7 @@ export function PageHeader({
       {/* Secondary to the title by design — smaller, lighter weight, muted
           color — so a "Refreshed HH:MM:SS" stamp never competes with the
           page's actual title for attention. */}
-      {meta && <div className="mt-3 text-xs font-medium text-slate-400">{meta}</div>}
+      {meta && <div className={`mt-3 text-xs font-medium ${isNavy ? "text-white/70" : "text-slate-400"}`}>{meta}</div>}
     </div>
   );
 }

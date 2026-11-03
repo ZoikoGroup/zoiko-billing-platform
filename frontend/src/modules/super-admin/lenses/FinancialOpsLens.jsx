@@ -71,7 +71,7 @@ export default function FinancialOpsLens() {
     return (
       <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
         {error}
-        <button type="button" onClick={load} className="ml-3 font-semibold underline">
+        <button type="button" onClick={() => load()} className="ml-3 font-semibold underline">
           Retry
         </button>
       </div>

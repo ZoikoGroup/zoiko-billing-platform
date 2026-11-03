@@ -1013,10 +1013,13 @@ class CustomerService:
                     except (json.JSONDecodeError, TypeError):
                         pass
         
+        from app.modules.commercial.entitlement_enforcement import customer_capacity
+
         imported = 0
         skipped = 0
         errors = []
         seen_codes = set()
+        remaining, limit_message = customer_capacity(self.db, organization_id)
         
         for idx, item in enumerate(parsed_items):
             try:
@@ -1048,9 +1051,15 @@ class CustomerService:
                     cfg_repo = BillingConfigurationRepository(self.db)
                     config = cfg_repo.get_by_organization(organization_id)
                     data["currency"] = config.base_currency.value if config and config.base_currency else "USD"
+                if remaining is not None and remaining <= 0:
+                    skipped += 1
+                    errors.append(f"Row {idx + 1}: {limit_message}")
+                    continue
                 seen_codes.add(code)
                 self.repo.create(organization_id, **data)
                 imported += 1
+                if remaining is not None:
+                    remaining -= 1
             except (IntegrityError, ValueError, TypeError, AlreadyExistsException) as e:
                 self.db.rollback()
                 skipped += 1

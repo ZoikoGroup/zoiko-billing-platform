@@ -1204,8 +1204,8 @@ class InvoiceService:
 
         balance = Decimal(str(inv.balance_due if inv.balance_due is not None else inv.total_amount or 0))
         paid = Decimal(str(inv.paid_amount or 0))
-        payable = balance > 0 and inv.status not in (
-            InvoiceStatus.PAID, InvoiceStatus.CANCELLED, InvoiceStatus.REFUNDED,
+        payable = balance > 0 and inv.status in (
+            InvoiceStatus.SENT, InvoiceStatus.OVERDUE, InvoiceStatus.PARTIALLY_PAID,
         )
         if inv.status == InvoiceStatus.PAID or (balance <= 0 and inv.status in (InvoiceStatus.SENT, InvoiceStatus.PARTIALLY_PAID)):
             payment_status = "paid"
@@ -1308,7 +1308,7 @@ class InvoiceService:
             },
         }
 
-    def create_public_checkout_session(self, token: str, success_url: str, cancel_url: str) -> Dict[str, Any]:
+    def create_public_checkout_session(self, token: str) -> Dict[str, Any]:
         """Create a Stripe Checkout session from the public invoice link.
 
         This is the hook the frontend "Pay now" button calls. When Stripe is
@@ -1328,11 +1328,15 @@ class InvoiceService:
             }
         svc = StripeService(self.db)
         try:
+            # Return only to the configured application origin. Checkout's
+            # redirect parameters are supplied by an unauthenticated browser,
+            # so never trust them as destinations (open-redirect/phishing).
+            invoice_url = f"{settings.FRONTEND_URL.rstrip('/')}/invoice/{token}"
             result = svc.create_checkout_session(
                 organization_id=inv.organization_id,
                 invoice_id=inv.id,
-                success_url=success_url,
-                cancel_url=cancel_url,
+                success_url=f"{invoice_url}?paid=true&session_id={{CHECKOUT_SESSION_ID}}",
+                cancel_url=f"{invoice_url}?cancelled=true",
                 created_by=None,
             )
             result["configured"] = True

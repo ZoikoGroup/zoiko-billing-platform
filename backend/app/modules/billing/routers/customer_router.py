@@ -66,24 +66,15 @@ def create_customer(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    # AC-01 (ZB-COM-ENT-001 Part 2): org.entity.max — a limit check via
-    # get_limit-style resolution. Substituted for the spec's non-existent
-    # "legal entity" concept — BillingCustomer (with its own legal_name
-    # field) is the closest real analogue to a billing entity under the org.
-    from app.modules.billing.models import BillingCustomer
+    # billing.customer.max — the plan's customer cap. (This used to borrow
+    # org.entity.max, the legal-entity limit, which capped Essentials at a
+    # single customer.)
+    from app.modules.commercial.entitlement_enforcement import count_customers
 
-    existing_customers = (
-        db.query(BillingCustomer)
-        .filter(
-            BillingCustomer.organization_id == current_user.organization_id,
-            BillingCustomer.deleted_at.is_(None),
-        )
-        .count()
-    )
     EntitlementEnforcementService(db).assert_within_limit(
         organization_id=current_user.organization_id,
-        key="org.entity.max",
-        current_count=existing_customers,
+        key="billing.customer.max",
+        current_count=count_customers(db, current_user.organization_id),
         actor_id=current_user.id,
         entity="customer",
     )

@@ -204,6 +204,15 @@ class SubscriptionService:
                     )
                 return existing
 
+        # Check after idempotency replay so retries of an already-created
+        # subscription still return the original row at the five-item trial
+        # cap.
+        from app.modules.commercial.entitlement_enforcement import assert_trial_resource_limit
+
+        assert_trial_resource_limit(
+            self.db, organization_id=organization_id, entity="subscription", model=Subscription,
+        )
+
         self.customer_service.get_customer(customer_id, organization_id)
         plan = self.plan_repo.get_by_id(plan_id, organization_id)
         if not plan.is_active:

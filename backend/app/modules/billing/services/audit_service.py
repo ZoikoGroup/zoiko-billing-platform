@@ -97,8 +97,10 @@ class BillingAuditService:
         entity_type: Optional[str] = None, entity_id: Optional[int] = None,
         action: Optional[str] = None, actor_id: Optional[int] = None,
         sort_by: str = "timestamp", sort_order: str = "desc",
+        since: Optional[datetime] = None,
     ) -> Dict[str, Any]:
         return self.repo.list_paginated(
+            since=since,
             organization_id=organization_id, page=page, per_page=per_page,
             sort_by=sort_by, sort_order=sort_order,
             entity_type=entity_type, entity_id=entity_id,

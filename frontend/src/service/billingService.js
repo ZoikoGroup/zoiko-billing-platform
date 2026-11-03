@@ -500,8 +500,8 @@ export const invoiceApi = {
 
 export const publicInvoiceApi = {
   getView: (token) => api.get(ENDPOINTS.INVOICE_PUBLIC_VIEW(token), { auth: false }),
-  createCheckout: (token, successUrl, cancelUrl) =>
-    api.post(ENDPOINTS.INVOICE_PUBLIC_CHECKOUT(token), { success_url: successUrl, cancel_url: cancelUrl }, { auth: false }),
+  createCheckout: (token) =>
+    api.post(ENDPOINTS.INVOICE_PUBLIC_CHECKOUT(token), {}, { auth: false }),
 };
 
 export const stripeApi = {

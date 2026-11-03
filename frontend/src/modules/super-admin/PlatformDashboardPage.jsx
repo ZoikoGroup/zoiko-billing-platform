@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { NAVY_SURFACE } from "../../components/billing-ui";
 import { useNavigate } from "react-router-dom";
 import {
   Activity,
@@ -88,9 +89,20 @@ function AnimatedNumber({ value }) {
   return <>{shown.toLocaleString()}</>;
 }
 
+// The API serializes naive UTC datetimes (no offset); read as-is the browser
+// treats them as local time, shifting every countdown and "Xh ago" by the
+// viewer's UTC offset.
+export function asUtc(value) {
+  if (!value || typeof value !== "string") return value ?? null;
+  if (!value.includes("T") || /([zZ]|[+-]\d{2}:?\d{2})$/.test(value)) return value;
+  return `${value}Z`;
+}
+const timeOf = (value) => new Date(asUtc(value) || 0).getTime();
+const trialOf = (o) => formatTrialRemaining(asUtc(o.trial_ends_at), o.subscription_status, asUtc(o.recovery_ends_at));
+
 function relativeTime(value) {
   if (!value) return null;
-  const ts = new Date(value).getTime();
+  const ts = new Date(asUtc(value)).getTime();
   if (Number.isNaN(ts)) return null;
   const minutes = Math.floor((Date.now() - ts) / 60000);
   if (minutes < 1) return "just now";
@@ -133,6 +145,7 @@ function OrgAvatar({ name, seed, size = "h-11 w-11 text-sm" }) {
 }
 
 const isTrial = (o) => o.account_status === "trial";
+const sampleSizeOf = (orgs, total) => (total != null && total > orgs.length ? orgs.length : null);
 
 /** Higher = needs a Super Admin's eye sooner (cards are ordered by this). */
 function attentionScore(o) {
@@ -141,7 +154,7 @@ function attentionScore(o) {
   if (o.account_status === "past_due") score += 80;
   if (o.account_status === "suspended") score += 60;
   if (isTrial(o) && o.trial_ends_at) {
-    const days = (new Date(o.trial_ends_at).getTime() - Date.now()) / 86400000;
+    const days = (timeOf(o.trial_ends_at) - Date.now()) / 86400000;
     if (days <= 7) score += 50 - Math.max(0, days);
   }
   return score;
@@ -194,54 +207,32 @@ function LinkButton({ onClick, children }) {
 
 function HeroStat({ icon: Icon, label, value, hint }) {
   return (
-    <div className="rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur-sm transition hover:bg-white/15">
-      <span className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-white/75">
-        <Icon size={14} /> {label}
+    <div className="rounded-xl border border-white/15 bg-white/10 p-3 backdrop-blur-sm transition hover:bg-white/15">
+      <span className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-white/75">
+        <Icon size={13} /> {label}
       </span>
-      <span className="mt-2 block text-3xl font-extrabold tracking-tight text-white">
+      <span className="mt-1.5 block text-2xl font-extrabold tracking-tight text-white">
         <AnimatedNumber value={value} />
       </span>
-      {hint && <span className="mt-0.5 block truncate text-[11px] text-white/70">{hint}</span>}
+      {hint && <span className="mt-0.5 block truncate text-[10px] text-white/70">{hint}</span>}
     </div>
   );
 }
 
-function Hero({ statusLabel, critical, lastUpdated, refreshing, onRefresh, stats }) {
+function Hero({ lastUpdated, refreshing, onRefresh, stats }) {
   return (
-    // Navy (#0B1F4B) through royal blue to light sky blue. The light end stops
-    // at sky-500 rather than a paler sky so the white text keeps its contrast.
-    <div className="pd-rise relative overflow-hidden rounded-[2rem] bg-linear-to-br from-[#0B1F4B] via-blue-700 to-sky-500 p-6 text-white shadow-[0_20px_50px_-20px_rgba(14,46,110,0.6)] sm:p-8">
-      {/* Decorative depth — purely visual. */}
-      <div className="pointer-events-none absolute -right-16 -top-24 h-72 w-72 rounded-full bg-sky-300/20 blur-3xl" aria-hidden="true" />
-      <div className="pointer-events-none absolute -bottom-28 left-1/3 h-72 w-72 rounded-full bg-blue-400/20 blur-3xl" aria-hidden="true" />
-      <div
-        className="pointer-events-none absolute inset-0 opacity-[0.07]"
-        style={{ backgroundImage: "radial-gradient(circle at 1px 1px, white 1px, transparent 0)", backgroundSize: "22px 22px" }}
-        aria-hidden="true"
-      />
-
-      <div className="relative flex flex-col gap-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
+    // Navy Platform Overview box in the sidebar's own gradient, compact padding.
+    <div className={`pd-rise relative overflow-hidden rounded-2xl ${NAVY_SURFACE} p-4 sm:p-6 text-white shadow-[0_10px_30px_-10px_rgba(11,31,75,0.5)]`}>
+      <div className="relative flex flex-col gap-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-sm font-medium text-white/80">
+            <p className="text-xs font-medium text-blue-200/90">
               {greeting()} · {new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })}
             </p>
-            <h1 className="mt-1 text-3xl font-extrabold tracking-tight sm:text-4xl">Platform Overview</h1>
+            <h1 className="mt-0.5 text-2xl font-extrabold tracking-tight sm:text-3xl">Platform Overview</h1>
             <p className="mt-1 max-w-xl text-sm text-white/80">Every organization on Zoiko Billing — accounts, plans, trials and platform health at a glance.</p>
           </div>
           <div className="flex flex-col items-start gap-2 sm:items-end">
-            <span
-              role="status"
-              className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-bold ${
-                critical ? "bg-rose-500/90 text-white" : "bg-white/15 text-white"
-              }`}
-            >
-              <span className="relative flex h-2.5 w-2.5">
-                <span className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-75 ${critical ? "bg-white" : "bg-emerald-300"}`} />
-                <span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${critical ? "bg-white" : "bg-emerald-300"}`} />
-              </span>
-              {statusLabel}
-            </span>
             <button
               type="button"
               onClick={onRefresh}
@@ -327,7 +318,7 @@ function StatusDonut({ counts, onSelect }) {
 }
 
 function OrgCard({ org, onOpen, index }) {
-  const trial = isTrial(org) ? formatTrialRemaining(org.trial_ends_at, org.subscription_status, org.recovery_ends_at) : null;
+  const trial = isTrial(org) ? trialOf(org) : null;
   const active = org.active_users || 0;
   const totalUsers = org.total_users || 0;
   return (
@@ -380,7 +371,7 @@ function OrgCard({ org, onOpen, index }) {
   );
 }
 
-function PlanMix({ orgs }) {
+function PlanMix({ orgs, sampleSize }) {
   const rows = useMemo(() => {
     const byPlan = new Map();
     for (const o of orgs) {
@@ -394,7 +385,7 @@ function PlanMix({ orgs }) {
   return (
     <Card className="h-full">
       <h3 className="flex items-center gap-2 text-sm font-bold text-slate-800"><Layers size={15} className="text-brand-600" /> Plan mix</h3>
-      <p className="text-xs text-slate-500">Organizations per plan</p>
+      <p className="text-xs text-slate-500">{sampleSize ? `Organizations per plan · newest ${sampleSize} only` : "Organizations per plan"}</p>
       {rows.length === 0 ? (
         <p className="mt-6 text-center text-xs text-slate-400">No organizations yet.</p>
       ) : (
@@ -444,6 +435,20 @@ function MiniListRow({ org, detail, onOpen }) {
   );
 }
 
+/** A panel whose source has never loaded: says so, instead of an empty or all-clear state. */
+function SourceUnavailable({ what, message, onRetry, className = "" }) {
+  return (
+    <Card className={`flex flex-col items-center justify-center gap-2 py-10 text-center ${className}`}>
+      <AlertTriangle size={24} className="text-amber-500" />
+      <p className="text-sm font-semibold text-slate-800">{what} couldn't be loaded</p>
+      {message && <p className="max-w-md text-xs text-slate-500">{message}</p>}
+      <button type="button" onClick={onRetry} className="mt-1 inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+        <RefreshCw size={13} /> Try again
+      </button>
+    </Card>
+  );
+}
+
 // ── Billing & operations ─────────────────────────────────────────────────────
 
 function KpiTile({ icon: Icon, tone, label, value, hint, onClick, delay }) {
@@ -474,6 +479,9 @@ function KpiTile({ icon: Icon, tone, label, value, hint, onClick, delay }) {
   );
 }
 
+// Keys are upper-case; the API sends AttentionSeverity values in lower case
+// ("p0"), so look them up through severityKey().
+const severityKey = (value) => String(value || "").toUpperCase();
 const SEVERITY_STYLES = {
   P0: "bg-red-600 text-white",
   P1: "bg-orange-500 text-white",
@@ -485,7 +493,7 @@ const SEVERITY_STYLES = {
 
 export default function PlatformDashboardPage() {
   const navigate = useNavigate();
-  const { requestRefresh, refreshTick, periodDateFrom, attentionCounts, worstFreshness } = useCommandCenter();
+  const { requestRefresh, refreshTick, periodDateFrom, worstFreshness } = useCommandCenter();
 
   const [triageData, setTriageData] = useState(null);
   const [finops, setFinops] = useState(null);
@@ -535,8 +543,12 @@ export default function PlatformDashboardPage() {
       if (!mountedRef.current) return;
       setInFlight((n) => Math.max(0, n - 1));
       if (id !== seqRef.current[key]) return;
-      apply(v);
-      setLastUpdated(new Date());
+      // A failed refresh keeps the last good data on screen (the banner says
+      // so) instead of replacing it with empty lists and zero counts.
+      if (!message) {
+        apply(v);
+        setLastUpdated(new Date());
+      }
       setSourceErrors((prev) => {
         if (message) return { ...prev, [key]: message };
         if (!(key in prev)) return prev;
@@ -582,10 +594,6 @@ export default function PlatformDashboardPage() {
   const controls = triageData?.safety_controls || [];
   const schedulerEnabled = triageData?.scheduler_enabled ?? false;
 
-  const p0 = triageData?.incidents?.counts?.p0 ?? 0;
-  const p1 = triageData?.incidents?.counts?.p1 ?? 0;
-  const criticalCount = attentionCounts ? (attentionCounts.p0 || 0) + (attentionCounts.p1 || 0) : p0 + p1;
-
   const totalInvoices = finops?.billings?.total_invoices ?? 0;
   const overdueCount = finops?.billings?.overdue_count ?? 0;
   const failedPayments = finops?.recovery?.failed_payments_count ?? 0;
@@ -613,50 +621,54 @@ export default function PlatformDashboardPage() {
   const featuredOrgs = useMemo(
     () =>
       [...orgs]
-        .sort((a, b) => attentionScore(b) - attentionScore(a) || new Date(b.created_at || 0) - new Date(a.created_at || 0))
+        .sort((a, b) => attentionScore(b) - attentionScore(a) || timeOf(b.created_at) - timeOf(a.created_at))
         .slice(0, ORG_CARD_LIMIT),
     [orgs]
   );
-  const trialsEnding = useMemo(
-    () => orgs.filter((o) => isTrial(o) && o.trial_ends_at).sort((a, b) => new Date(a.trial_ends_at) - new Date(b.trial_ends_at)).slice(0, 5),
+  const allTrials = useMemo(
+    () => orgs.filter((o) => isTrial(o) && o.trial_ends_at).sort((a, b) => timeOf(a.trial_ends_at) - timeOf(b.trial_ends_at)),
     [orgs]
   );
+  const trialsEnding = allTrials.slice(0, 5);
+  // Counted over every loaded trial — not the five shown in the list, which
+  // capped this figure at 5.
+  const endingThisWeek = allTrials.filter((o) => (timeOf(o.trial_ends_at) - Date.now()) / 86400000 <= 7).length;
   const newest = useMemo(
-    () => [...orgs].filter((o) => o.created_at).sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 5),
+    () => [...orgs].filter((o) => o.created_at).sort((a, b) => timeOf(b.created_at) - timeOf(a.created_at)).slice(0, 5),
     [orgs]
   );
+  // The dashboard loads at most 200 organizations (newest first, the API's
+  // page cap); lists built from them say so rather than implying full coverage.
+  const partialSample = sampleSizeOf(orgs, orgTotal);
+  // orgTotal is only ever set by a successful directory load.
+  const orgsLoaded = orgTotal != null;
+  const retry = () => requestRefresh({ auto: false });
 
   const openOrg = (id) => navigate(`/super-admin/organizations/${id}`);
   const openStatus = (status) => navigate(`/super-admin/organizations?status=${status}`);
   const r = ready;
-
-  const statusLabel = criticalCount > 0
-    ? `${criticalCount} critical incident${criticalCount === 1 ? "" : "s"} open`
-    : sourceErrorCount > 0
-    ? "Partial visibility"
-    : "All systems operational";
 
   return (
     <div className="w-full max-w-full space-y-8 overflow-x-hidden pb-24">
       <style>{DASHBOARD_STYLES}</style>
 
       <Hero
-        statusLabel={statusLabel}
-        critical={criticalCount > 0}
         lastUpdated={lastUpdated}
         refreshing={inFlight > 0}
         onRefresh={() => requestRefresh({ auto: false })}
         stats={[
-          { icon: Building2, label: "Organizations", value: r.orgs ? fleetTotal ?? 0 : "—", hint: "On the platform" },
-          { icon: Sparkles, label: "On trial", value: r.orgs ? statusCounts?.trial ?? 0 : "—", hint: `${trialsEnding.filter((o) => (new Date(o.trial_ends_at) - Date.now()) / 86400000 <= 7).length} ending within 7 days` },
-          { icon: CheckCircle2, label: "Paying", value: r.orgs ? statusCounts?.active ?? 0 : "—", hint: "Active subscriptions" },
+          // "—" until the directory has loaded at least once — a failed load is
+          // never shown as zero organizations.
+          { icon: Building2, label: "Organizations", value: orgsLoaded ? fleetTotal ?? 0 : "—", hint: "On the platform" },
+          { icon: Sparkles, label: "On trial", value: orgsLoaded ? statusCounts?.trial ?? 0 : "—", hint: orgsLoaded ? `${endingThisWeek}${partialSample ? "+" : ""} ending within 7 days` : undefined },
+          { icon: CheckCircle2, label: "Paying", value: orgsLoaded ? statusCounts?.active ?? 0 : "—", hint: "Active subscriptions" },
           { icon: TrendingUp, label: "Run rate", value: r.mrr ? formatMrr() : "—", hint: "Monthly, from published prices" },
         ]}
       />
 
       {sourceErrorCount > 0 && (
         <p role="alert" className="flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs font-medium text-amber-800">
-          <AlertTriangle size={14} /> {sourceErrorCount} data source{sourceErrorCount > 1 ? "s" : ""} couldn't be reached — the affected panels show what was last loaded.
+          <AlertTriangle size={14} /> {sourceErrorCount} data source{sourceErrorCount > 1 ? "s" : ""} couldn't be reached — affected panels keep their last loaded data, or say they couldn't load.
         </p>
       )}
 
@@ -667,6 +679,10 @@ export default function PlatformDashboardPage() {
         delay={80}
         action={<LinkButton onClick={() => navigate("/super-admin/organizations")}>View all organizations</LinkButton>}
       >
+        {r.orgs && !orgsLoaded ? (
+          <SourceUnavailable what="Organizations" message={sourceErrors.orgs} onRetry={retry} />
+        ) : (
+        <>
         <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
           {!r.orgs ? <PulseBlock className="h-96" /> : <StatusDonut counts={statusCounts} onSelect={openStatus} />}
           <div className="xl:col-span-2">
@@ -699,7 +715,7 @@ export default function PlatformDashboardPage() {
         </div>
 
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-          {!r.orgs ? <PulseBlock className="h-56" /> : <PlanMix orgs={orgs} />}
+          {!r.orgs ? <PulseBlock className="h-56" /> : <PlanMix orgs={orgs} sampleSize={partialSample} />}
           {!r.orgs ? <PulseBlock className="h-56" /> : (
             <MiniList
               title="Trials ending soon"
@@ -709,7 +725,7 @@ export default function PlatformDashboardPage() {
                 <MiniListRow
                   key={o.id}
                   org={o}
-                  detail={formatTrialRemaining(o.trial_ends_at, o.subscription_status, o.recovery_ends_at)?.label}
+                  detail={trialOf(o)?.label}
                   onOpen={() => openOrg(o.id)}
                 />
               ))}
@@ -731,12 +747,17 @@ export default function PlatformDashboardPage() {
             />
           )}
         </div>
+        </>
+        )}
       </Section>
 
       <Section title="Billing health" subtitle="Invoices and payments across every tenant" icon={CreditCard} delay={160}>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {!r.finops ? (
             [0, 1, 2, 3].map((i) => <PulseBlock key={i} className="h-40" />)
+          ) : !finops ? (
+            // Never a green "Everything is current" tile for data that didn't load.
+            <SourceUnavailable className="sm:col-span-2 xl:col-span-4" what="Billing health" message={sourceErrors.finops} onRetry={retry} />
           ) : (
             <>
               <KpiTile icon={FileText} tone="blue" label="Invoices issued" value={totalInvoices} hint="Across all organizations" onClick={() => navigate("/super-admin/financial-operations")} delay={180} />
@@ -758,7 +779,10 @@ export default function PlatformDashboardPage() {
 
       <Section title="Operations" subtitle="Incidents, safety controls and background processing" icon={Activity} delay={240}>
         <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
-          {!r.triage ? <PulseBlock className="h-64 xl:col-span-2" /> : (
+          {!r.triage ? <PulseBlock className="h-64 xl:col-span-2" /> : !triageData ? (
+            // Not "Nothing needs attention" — the queue simply didn't load.
+            <SourceUnavailable className="xl:col-span-2" what="Incidents, safety controls and the processing pipeline" message={sourceErrors.triage} onRetry={retry} />
+          ) : (
             <Card className="xl:col-span-2">
               <div className="flex items-center justify-between">
                 <h3 className="flex items-center gap-2 text-sm font-bold text-slate-800"><AlertTriangle size={15} className="text-brand-600" /> Attention queue</h3>
@@ -773,7 +797,7 @@ export default function PlatformDashboardPage() {
                   {incidents.slice(0, 5).map((item) => (
                     <li key={item.id}>
                       <button type="button" onClick={() => navigate("/super-admin/triage")} className="group flex w-full items-start gap-3 py-2.5 text-left">
-                        <span className={`mt-0.5 shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-bold ${SEVERITY_STYLES[item.severity] || SEVERITY_STYLES.P3}`}>{item.severity}</span>
+                        <span className={`mt-0.5 shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-bold ${SEVERITY_STYLES[severityKey(item.severity)] || SEVERITY_STYLES.P3}`}>{severityKey(item.severity) || "—"}</span>
                         <span className="min-w-0 flex-1">
                           <span className="block text-sm font-semibold text-slate-800 group-hover:text-brand-700">{item.title}</span>
                           {item.description && <span className="block truncate text-xs text-slate-500">{item.description}</span>}
@@ -787,7 +811,7 @@ export default function PlatformDashboardPage() {
             </Card>
           )}
 
-          {!r.triage ? <PulseBlock className="h-64" /> : (
+          {!r.triage ? <PulseBlock className="h-64" /> : !triageData ? null : (
             <Card>
               <div className="flex items-center justify-between">
                 <h3 className="flex items-center gap-2 text-sm font-bold text-slate-800"><Zap size={15} className="text-brand-600" /> Safety controls</h3>
@@ -811,7 +835,7 @@ export default function PlatformDashboardPage() {
             </Card>
           )}
 
-          {!r.triage ? <PulseBlock className="h-56 xl:col-span-2" /> : (
+          {!r.triage ? <PulseBlock className="h-56 xl:col-span-2" /> : !triageData ? null : (
             <Card className="xl:col-span-2">
               <div className="flex items-center justify-between">
                 <h3 className="flex items-center gap-2 text-sm font-bold text-slate-800"><Activity size={15} className="text-brand-600" /> Processing pipeline</h3>
@@ -833,7 +857,7 @@ export default function PlatformDashboardPage() {
                         <span className="mt-1 block text-xl font-extrabold text-slate-900">{stage.run_count_24h ?? 0}</span>
                         <span className="block text-[10px] text-slate-500">runs / 24h</span>
                         <span className={`mt-1 block text-[10px] font-bold ${stale ? "text-amber-700" : failed ? "text-red-600" : "text-emerald-600"}`}>
-                          {stale ? "Stale" : failed ? `${stage.failure_count_24h} failed` : "Healthy"}
+                          {stale ? "Stale" : (stage.failure_count_24h || 0) > 0 ? `${stage.failure_count_24h} failed` : failed ? "Last run failed" : "Healthy"}
                         </span>
                       </div>
                     );
@@ -849,7 +873,9 @@ export default function PlatformDashboardPage() {
                 <h3 className="flex items-center gap-2 text-sm font-bold text-slate-800"><FileText size={15} className="text-brand-600" /> Recent activity</h3>
                 <LinkButton onClick={() => navigate("/super-admin/audit-logs")}>All</LinkButton>
               </div>
-              {!activity || activity.length === 0 ? (
+              {!activity ? (
+                <p className="mt-6 text-center text-xs text-amber-700">Recent activity couldn't be loaded.</p>
+              ) : activity.length === 0 ? (
                 <p className="mt-6 text-center text-xs text-slate-400">No platform events in this period.</p>
               ) : (
                 <ol className="relative mt-3 space-y-3 border-l border-slate-200 pl-4">

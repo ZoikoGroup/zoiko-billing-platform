@@ -9,7 +9,7 @@
  * consolidation removed the duplicate renders from Invoice Engine, Payments and
  * Balances & Allocations, so each card appears on exactly one tab.
  */
-import React from "react";
+import React, { useMemo, useState } from "react";
 import {
   CircleDollarSign,
   CheckCircle2,
@@ -18,19 +18,175 @@ import {
   CreditCard,
   TrendingDown,
   ShieldCheck,
+  Search,
 } from "lucide-react";
-import { DataTable, SectionCard } from "../../components/billing-ui";
+import { SectionCard, DataTable, SearchInput } from "../../components/billing-ui";
+import { EmptyState } from "../../components/billing-shared";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-export function formatCurrency(strAmount) {
-  const n = parseFloat(strAmount || "0");
-  if (isNaN(n)) return "—";
+// The backend sends money as Decimal strings ("1234.50"). Anything else
+// (null, "", "NaN", a masked cell) is not an amount and renders as "—" — it
+// used to render as "0.00" because `parseFloat(null || "0")` is 0, which
+// presented a missing figure as a real zero.
+const DECIMAL_RE = /^-?\d+(\.\d+)?$/;
+
+export function isDecimalString(value) {
+  return value !== null && value !== undefined && DECIMAL_RE.test(String(value).trim());
+}
+
+// ISO 4217 minor units (JPY 0, USD 2, BHD 3 …) from Intl; unknown codes such
+// as the backend's "UNKNOWN" bucket fall back to 2.
+export function currencyFractionDigits(currency) {
+  if (!currency) return 2;
+  try {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency }).resolvedOptions()
+      .maximumFractionDigits;
+  } catch {
+    return 2;
+  }
+}
+
+/**
+ * Formats a Decimal-string amount for display. `currency` (optional) picks
+ * the currency's own number of decimals instead of always 2, so a JPY total
+ * is not shown as "1,000.00" and a BHD amount is not rounded to cents.
+ * Intl formats the string itself, so no float round-trip is involved.
+ */
+export function formatCurrency(strAmount, currency) {
+  if (!isDecimalString(strAmount)) return "—";
+  const digits = currencyFractionDigits(currency);
   return new Intl.NumberFormat("en-US", {
     style: "decimal",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(n);
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  }).format(String(strAmount).trim());
+}
+
+/**
+ * Exact sum of Decimal strings that all share ONE currency (never call this
+ * across currencies). Uses BigInt fixed-point so "0.1" + "0.2" is "0.3".
+ * Returns null if any value is not a decimal string.
+ */
+export function sumDecimalStrings(values) {
+  const parsed = [];
+  let scale = 0;
+  for (const v of values) {
+    if (!isDecimalString(v)) return null;
+    const s = String(v).trim();
+    const neg = s.startsWith("-");
+    const [int, frac = ""] = (neg ? s.slice(1) : s).split(".");
+    parsed.push({ neg, int, frac });
+    scale = Math.max(scale, frac.length);
+  }
+  let total = BigInt(0);
+  for (const { neg, int, frac } of parsed) {
+    const n = BigInt(int + frac.padEnd(scale, "0"));
+    total += neg ? -n : n;
+  }
+  const neg = total < BigInt(0);
+  const digits = (neg ? -total : total).toString().padStart(scale + 1, "0");
+  const out = scale ? `${digits.slice(0, -scale)}.${digits.slice(-scale)}` : digits;
+  return `${neg ? "-" : ""}${out}`;
+}
+
+// ── Shared pieces for the hub's per-tenant aggregate tabs ─────────────────────
+
+// The backend's maximum page size for the per-tenant lists (Query le=200 in
+// super_admin/router.py). The tabs used to ask for 50, which silently cut
+// every list at 50 tenants with nothing on screen saying so.
+export const TENANT_LIST_LIMIT = 200;
+
+/**
+ * A section whose latest background refresh failed but which still has
+ * earlier data on screen: keep the data and say so, instead of swapping the
+ * table for a full error screen.
+ */
+export function StaleSectionNote({ message, onRetry }) {
+  return (
+    <p role="status" className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+      <AlertTriangle size={13} className="shrink-0" aria-hidden="true" />
+      <span>Couldn&apos;t refresh this section — showing earlier data. {message}</span>
+      {onRetry && (
+        <button type="button" onClick={() => onRetry()} className="font-semibold underline">
+          Retry
+        </button>
+      )}
+    </p>
+  );
+}
+
+/**
+ * Per-tenant aggregate table with an organization search. Distinguishes
+ * "nothing recorded yet" from "no organization matches the search", and
+ * says when the backend's per-request organization cap was reached rather
+ * than letting a truncated list read as complete.
+ */
+export function TenantAggregateTable({
+  rows,
+  columns,
+  limit,
+  minWidth = 560,
+  emptyIcon,
+  emptyTitle,
+  emptyMessage,
+  noun = "organizations",
+}) {
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const filtered = useMemo(
+    () => (q ? rows.filter((r) => String(r.organization_name || "").toLowerCase().includes(q)) : rows),
+    [rows, q]
+  );
+
+  if (rows.length === 0) {
+    return <EmptyState icon={emptyIcon} title={emptyTitle} message={emptyMessage} />;
+  }
+
+  return (
+    <div className="space-y-3">
+      {rows.length > 5 && (
+        <SearchInput
+          value={query}
+          onChange={setQuery}
+          debounceMs={0}
+          placeholder="Search organizations"
+          className="max-w-xs"
+        />
+      )}
+      {filtered.length === 0 ? (
+        <EmptyState
+          icon={Search}
+          title="No organizations match your search"
+          message={`Nothing in this list matches “${query.trim()}”.`}
+          actionLabel="Clear search"
+          onAction={() => setQuery("")}
+        />
+      ) : (
+        <DataTable columns={columns} data={filtered} rowKey={(r) => r.organization_id} minWidth={minWidth} />
+      )}
+      {limit && rows.length >= limit && (
+        <p className="text-[11px] text-slate-500">
+          Showing the {limit} {noun} with the most records — others are not listed here.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Applies Promise.allSettled results section by section. A fulfilled result
+ * replaces that section's data; a rejected one keeps whatever the section
+ * already showed and records the error. Returns the error map.
+ */
+export function settleSections(results, setters, fallbacks) {
+  const errors = {};
+  results.forEach((res, i) => {
+    const [key, setter] = setters[i];
+    if (res.status === "fulfilled") setter(res.value);
+    else errors[key] = res.reason?.message || fallbacks[i];
+  });
+  return errors;
 }
 
 // One F1 metric tile. min-w-0 + tabular figures + wrapping keep large amounts
@@ -88,7 +244,9 @@ function CollectionRateBadge({ invoiced, collected }) {
   const inv = parseFloat(invoiced || "0");
   const col = parseFloat(collected || "0");
   if (!(inv > 0)) return null;
-  const rate = Math.round((col / inv) * 100);
+  // Floor, not round: 99.6% collected must not read as "100% collected"
+  // while money is still owed (and 94.6% must not cross the 95% green bar).
+  const rate = Math.floor((col / inv) * 100);
   return (
     <span
       className={`whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-bold ${
@@ -107,23 +265,41 @@ function CollectionRateBadge({ invoiced, collected }) {
 function CurrencyBucketTable({ currencies }) {
   return (
     <div className="mt-5 overflow-x-auto">
-      <DataTable
-        stickyHeader={false}
-        data={(currencies || [])}
-        rowKey={(c) => c.currency}
-        columns={[
-          { key: "currency", label: "Currency", render: (c) => <span className="font-extrabold text-slate-900">{c.currency}</span> },
-          { key: "invoices", label: "Invoices", render: (c) => <span className="font-semibold text-slate-700">{c.invoice_count}</span> },
-          { key: "invoiced", label: "Invoiced", render: (c) => <span className="font-semibold text-slate-900">{formatCurrency(c.invoiced_amount)}</span> },
-          { key: "collected", label: "Collected", render: (c) => <span className="font-semibold text-emerald-800">{formatCurrency(c.collected_amount)}</span> },
-          { key: "overdue", label: "Overdue", render: (c) => <span className={`py-2.5 font-semibold ${
+      <table className="w-full text-left text-sm">
+        <thead>
+          <tr className="border-b border-slate-200 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            <th className="py-2 pr-4">Currency</th>
+            <th className="py-2 pr-4">Invoices</th>
+            <th className="py-2 pr-4">Invoiced</th>
+            <th className="py-2 pr-4">Collected</th>
+            <th className="py-2">Overdue</th>
+          </tr>
+        </thead>
+        <tbody>
+          {(currencies || []).map((c) => (
+            <tr key={c.currency} className="border-b border-slate-100 last:border-0">
+              <td className="py-2.5 pr-4 font-extrabold text-slate-900">{c.currency}</td>
+              <td className="py-2.5 pr-4 font-semibold text-slate-700">{c.invoice_count}</td>
+              <td className="py-2.5 pr-4 font-semibold text-slate-900">
+                {formatCurrency(c.invoiced_amount, c.currency)}
+              </td>
+              <td className="py-2.5 pr-4 font-semibold text-emerald-800">
+                {formatCurrency(c.collected_amount, c.currency)}
+              </td>
+              <td
+                className={`py-2.5 font-semibold ${
                   c.overdue_count > 0 ? "text-red-800" : "text-slate-700"
-                }`}>{formatCurrency(c.overdue_amount)}
+                }`}
+              >
+                {formatCurrency(c.overdue_amount, c.currency)}
                 {c.overdue_count > 0 && (
                   <span className="ml-1 text-xs text-red-600">({c.overdue_count})</span>
-                )}</span> },
-        ]}
-      />
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
       <p className="mt-3 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-800">
         Amounts are aggregated per currency and deliberately never summed across currencies — a
         combined figure would be meaningless without an exchange-rate source. Invoice counts remain
@@ -211,16 +387,16 @@ export function F1BillingsCard({ billings }) {
           <MetricTile label="Billed Invoices" value={billings?.total_invoices ?? "—"} />
           <MetricTile
             label={`Invoiced${primaryCurrency ? ` (${primaryCurrency})` : ""}`}
-            value={formatCurrency(billings?.invoiced_amount)}
+            value={formatCurrency(billings?.invoiced_amount, primaryCurrency)}
           />
           <MetricTile
             label={`Collected${primaryCurrency ? ` (${primaryCurrency})` : ""}`}
-            value={formatCurrency(billings?.collected_amount)}
+            value={formatCurrency(billings?.collected_amount, primaryCurrency)}
             tone="good"
           />
           <MetricTile
             label={`Overdue${primaryCurrency ? ` (${primaryCurrency})` : ""}`}
-            value={formatCurrency(billings?.overdue_amount)}
+            value={formatCurrency(billings?.overdue_amount, primaryCurrency)}
             sub={`${overdueCount} invoice${overdueCount === 1 ? "" : "s"} past due`}
             tone={overdueCount > 0 ? "bad" : "neutral"}
           />
@@ -374,13 +550,13 @@ export function F3IntegrityCard({ consistency }) {
         </div>
       </div>
 
-      <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
         <span>
-          Scope: <strong className="text-slate-700">Internal PaymentAllocation vs Invoice.total_amount</strong>
+          Checks: <strong className="text-slate-700">payments allocated to each invoice never exceed its total</strong>
         </span>
         <span>
-          Processor/bank reconciliation:{" "}
-          <strong className="text-amber-700">Not integrated (ISS-017)</strong>
+          Stripe comparison:{" "}
+          <strong className="text-slate-700">on demand in Tenant Ledger Reconciliation</strong>
         </span>
       </div>
 
@@ -397,9 +573,12 @@ export function F3IntegrityCard({ consistency }) {
 export function F4LeakageCard({ leakage }) {
   const overAllocated = leakage?.over_allocated_count ?? 0;
   const underAllocated = leakage?.under_allocated_paid_count ?? 0;
-  const unbilledUsage = leakage?.unbilled_usage_anomalies ?? 0;
   const activeCredits = leakage?.active_credit_notes_count ?? 0;
-  const hasAnomaly = overAllocated > 0 || unbilledUsage > 0;
+  // The backend does not measure unbilled usage yet — it always sends a
+  // literal 0 (financial_consistency_service.py, "unbilled_usage_anomalies":
+  // 0). Showing that 0 as a measured "no anomalies" would be a fabricated
+  // all-clear, so the row says "Not measured" instead.
+  const hasAnomaly = overAllocated > 0;
 
   return (
     <SectionCard variant="hero" accent="brand">
@@ -428,7 +607,7 @@ export function F4LeakageCard({ leakage }) {
             label: "Over-allocated Invoices",
             value: overAllocated,
             danger: overAllocated > 0,
-            note: "PaymentAllocation exceeds Invoice total — integrity failure",
+            note: "More payment allocated than the invoice total — a ledger error",
           },
           {
             label: "Under-allocated Paid Invoices (Informational)",
@@ -437,10 +616,10 @@ export function F4LeakageCard({ leakage }) {
             note: "May be explained by credit notes; not a failure signal",
           },
           {
-            label: "Unbilled Usage Anomalies",
-            value: unbilledUsage,
-            danger: unbilledUsage > 0,
-            note: "Usage rated but not yet invoiced",
+            label: "Unbilled Usage",
+            value: "Not measured",
+            danger: false,
+            note: "Detection of rated-but-uninvoiced usage is not implemented yet",
           },
           {
             label: "Active Credit Notes (Outstanding)",

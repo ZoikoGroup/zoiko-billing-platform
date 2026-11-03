@@ -63,7 +63,7 @@ const TABS = [
     icon: BarChart3,
     title: "Financial Operations Overview",
     description:
-      "Plane 2 tenant revenue operations — the F1–F4 integrity and recovery summary, live collections signals, overdue aging and recent activity. Auto-refreshes every minute.",
+      "Tenant billing across the platform — billings and collections, payment recovery, ledger integrity and revenue leakage, plus live collections signals, overdue aging and recent activity. Auto-refreshes every minute.",
   },
   {
     key: "invoice-engine",
@@ -71,7 +71,7 @@ const TABS = [
     icon: Receipt,
     title: "Invoice Engine",
     description:
-      "Platform-wide invoice lifecycle: status distribution across every tenant and outbound delivery health.",
+      "Every tenant invoice by lifecycle status, and how invoice emails to customers are being delivered.",
   },
   {
     key: "payments-recovery",
@@ -87,7 +87,7 @@ const TABS = [
     icon: Wallet,
     title: "Balances & Allocations",
     description:
-      "Payment-allocation integrity exceptions and the credit-note application ledger, across every tenant.",
+      "Invoices with more payment allocated than their total, and credit notes applied against invoices, across every tenant.",
   },
   {
     key: "credits-refunds",
@@ -111,7 +111,7 @@ const TABS = [
     icon: GitMerge,
     title: "Tenant Ledger Reconciliation",
     description:
-      "REC-01 internal ledger reconciliation — invoice balance and payment-allocation invariants, on a daily schedule or on demand.",
+      "Checks every tenant's ledger — invoice balances and payment allocations — daily or on demand, optionally comparing payments with Stripe.",
   },
 ];
 
@@ -142,10 +142,13 @@ export default function FinancialOperationsPage() {
   const resolved = resolveInitialSection(searchParams);
   const activeTab = resolved.section || "overview";
 
-  // Bumping the nonce remounts the active tab, which re-runs its fetches. This
-  // is what makes one Refresh control work for all seven tabs and guarantees a
-  // tab re-fetches when it is activated instead of showing whatever it last
-  // cached while it was hidden.
+  // The header Refresh button bumps this. Tabs built on useLiveRefresh take it
+  // as `refreshSignal` and re-fetch in place — keeping their data, filters
+  // and any open modal on screen. Overview (BillingCommandCenterPage) has no
+  // such prop, so for it the nonce is part of the key and remounts it.
+  // Switching tabs always remounts (the key includes the tab), so a tab
+  // re-fetches when activated and its live-refresh timer stops when it is
+  // left.
   const [refreshNonce, setRefreshNonce] = useState(0);
 
   const setActiveTab = useCallback(
@@ -190,29 +193,29 @@ export default function FinancialOperationsPage() {
         <div className="mt-4 flex items-start gap-3 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-xs text-blue-800">
           <ShieldCheck size={15} className="mt-0.5 shrink-0 text-blue-600" />
           <span>
-            <strong>Domain B — Tenant Revenue Operations.</strong> Access to this view requires
-            platform-level authentication. Monetary amounts are tenant aggregate counts and are NOT exposed
-            to tenant users. Domain A (Platform Commercial / Plane 1) is architecturally isolated — it has
-            its own section under <strong>Finance → Products &amp; Pricing</strong>, not a tab here.
+            <strong>Tenant revenue, platform admins only.</strong> These are aggregate figures across
+            every tenant's own billing — never shown to tenant users, with small counts hidden to protect
+            individual customers. Amounts are always shown per currency. Zoiko's own subscription billing
+            to tenants lives separately under <strong>Finance → Products &amp; Pricing</strong>.
           </span>
         </div>
       )}
 
-      <div className="mt-6" key={`${activeTab}:${refreshNonce}`}>
+      <div className="mt-6" key={isOverview ? `overview:${refreshNonce}` : activeTab}>
         {isOverview ? (
           <BillingCommandCenterPage embedded />
         ) : activeTab === "invoice-engine" ? (
-          <InvoiceEnginePage embedded />
+          <InvoiceEnginePage embedded refreshSignal={refreshNonce} />
         ) : activeTab === "payments-recovery" ? (
-          <PaymentsDisputesPage embedded />
+          <PaymentsDisputesPage embedded refreshSignal={refreshNonce} />
         ) : activeTab === "balances-allocations" ? (
-          <BalancesAllocationsPage embedded />
+          <BalancesAllocationsPage embedded refreshSignal={refreshNonce} />
         ) : activeTab === "credits-refunds" ? (
-          <CreditsRefundsPage embedded />
+          <CreditsRefundsPage embedded refreshSignal={refreshNonce} />
         ) : activeTab === "tax" ? (
-          <TaxEInvoicingPage embedded />
+          <TaxEInvoicingPage embedded refreshSignal={refreshNonce} />
         ) : activeTab === "tenant-ledger-reconciliation" ? (
-          <ReconciliationPage embedded />
+          <ReconciliationPage embedded refreshSignal={refreshNonce} />
         ) : null}
       </div>
     </div>

@@ -55,6 +55,7 @@ import PrivilegedSessionBanner from "./PrivilegedSessionBanner";
 import TriageStrip from "./TriageStrip";
 import CommandPalette from "./CommandPalette";
 import TrialBanner from "./TrialBanner";
+import { PageHeaderAccentContext } from "./billing-ui";
 
 const NAV_SECTIONS = [
   {
@@ -889,14 +890,15 @@ export default function BillingShell({ children }) {
           {/* pb-24 keeps breathing room under every page's last control (it
               was added for the old floating AI launcher, which now lives in
               the TopBar; kept so page endings don't shift). */}
-          {/* overflow-x: clip, not hidden: hidden also makes this div a scroll
-              container (overflow-y computes to auto), so a page's sticky bars
-              (FormPageBar) stuck to it instead of to <main> and never pinned.
-              Browsers without clip keep hidden. */}
+          {/* overflow-x: clip avoids turning this element into a scroll container,
+              which would prevent sticky page bars from pinning to <main>. */}
           <div className="min-w-0 max-w-full overflow-x-hidden supports-[overflow:clip]:overflow-x-clip px-4 pt-6 pb-24 sm:px-6 lg:px-8">
-            <Suspense fallback={<ContentSkeleton />}>
-              {children}
-            </Suspense>
+            {/* Super-admin page headers all take the sidebar's navy. */}
+            <PageHeaderAccentContext.Provider value={isSuperAdmin ? "navy" : null}>
+              <Suspense fallback={<ContentSkeleton />}>
+                {children}
+              </Suspense>
+            </PageHeaderAccentContext.Provider>
           </div>
         </main>
 

@@ -102,18 +102,9 @@ def _resolve_target_plan_value(db: Session, organization_id: int, target_plan_id
 
 
 def _check_internal_users(ctx: CompatibilityCheckContext) -> CompatibilityCheckResult:
-    from app.modules.auth.models import User
+    from app.modules.commercial.entitlement_enforcement import count_seats
 
-    count = (
-        ctx.db.query(User)
-        .filter(
-            User.organization_id == ctx.organization_id,
-            User.is_active.is_(True),
-            # Temporary support-access logins are not customer seats.
-            User.access_expires_at.is_(None),
-        )
-        .count()
-    )
+    count = count_seats(ctx.db, ctx.organization_id)
     limit = ctx.target_plan.max_users
     severity = "pass" if limit is None or count <= limit else "blocker"
     return CompatibilityCheckResult(
@@ -126,40 +117,26 @@ def _check_internal_users(ctx: CompatibilityCheckContext) -> CompatibilityCheckR
     )
 
 
-def _check_legal_entities(ctx: CompatibilityCheckContext) -> CompatibilityCheckResult:
-    from app.modules.billing.models import BillingCustomer
+def _check_customers(ctx: CompatibilityCheckContext) -> CompatibilityCheckResult:
+    from app.modules.commercial.entitlement_enforcement import count_customers
 
-    count = (
-        ctx.db.query(BillingCustomer)
-        .filter(BillingCustomer.organization_id == ctx.organization_id, BillingCustomer.deleted_at.is_(None))
-        .count()
-    )
-    limit = _resolve_target_plan_value(ctx.db, ctx.organization_id, ctx.target_plan.id, "org.entity.max")
+    count = count_customers(ctx.db, ctx.organization_id)
+    limit = _resolve_target_plan_value(ctx.db, ctx.organization_id, ctx.target_plan.id, "billing.customer.max")
     severity = "pass" if limit is None or count <= limit else "blocker"
     return CompatibilityCheckResult(
-        check_id="legal_entities_vs_org_entity_max", label="Legal entities",
+        check_id="customers_vs_billing_customer_max", label="Customers",
         severity=severity, current_count=count, target_limit=limit,
         detail=(
-            f"{count} billing customer(s) (legal-entity proxy); target plan allows "
+            f"{count} billing customer(s); target plan allows "
             + ("unlimited." if limit is None else f"up to {limit}.")
         ),
     )
 
 
 def _check_currencies(ctx: CompatibilityCheckContext) -> CompatibilityCheckResult:
-    from sqlalchemy import func
+    from app.modules.commercial.entitlement_enforcement import count_currencies
 
-    from app.modules.billing.models import CurrencyPricing
-
-    count = (
-        ctx.db.query(func.count(func.distinct(CurrencyPricing.currency)))
-        .filter(
-            CurrencyPricing.organization_id == ctx.organization_id,
-            CurrencyPricing.is_active.is_(True),
-            CurrencyPricing.deleted_at.is_(None),
-        )
-        .scalar()
-    ) or 0
+    count = count_currencies(ctx.db, ctx.organization_id)
     limit = _resolve_target_plan_value(ctx.db, ctx.organization_id, ctx.target_plan.id, "currency.enabled.max")
     severity = "pass" if limit is None or count <= limit else "blocker"
     return CompatibilityCheckResult(
@@ -261,7 +238,7 @@ def _check_sso_noop(ctx: CompatibilityCheckContext) -> CompatibilityCheckResult:
 
 _COMPATIBILITY_CHECKS: list[Callable[[CompatibilityCheckContext], CompatibilityCheckResult]] = [
     _check_internal_users,
-    _check_legal_entities,
+    _check_customers,
     _check_currencies,
     _check_payment_providers,
     _check_usage_billing_contracts,

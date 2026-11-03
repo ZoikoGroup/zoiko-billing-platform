@@ -8,6 +8,14 @@ import { ACCEPTANCE_STATUS_OPTIONS, formatDateTime } from "./constants";
 /** FAIL first — the blocking criteria must never be scrolled past. */
 const STATUS_ORDER = { FAIL: 0, WARNING: 1, NOT_CONFIGURED: 2, PASS: 3, NOT_APPLICABLE: 4 };
 
+const TILE_TONES = {
+  FAIL: "text-red-600",
+  WARNING: "text-amber-600",
+  NOT_CONFIGURED: "text-amber-700",
+  PASS: "text-emerald-700",
+  NOT_APPLICABLE: "text-slate-500",
+};
+
 /** Same rationale: point-in-time assessment, not live monitoring. */
 const STALE_AFTER_MS = 60 * 60 * 1000;
 
@@ -173,10 +181,40 @@ export default function ProductionAcceptancePage({ embedded = false } = {}) {
         {loading ? (
           <Spinner />
         ) : error ? (
-          <ErrorState message={error} onRetry={load} title="Unable to load the production acceptance report" />
+          // Arrow wrapper: passing `load` directly handed it the click event as
+          // `background`, so a successful retry never cleared the error.
+          <ErrorState message={error} onRetry={() => load()} title="Unable to load the production acceptance report" />
         ) : (
           <>
             <SectionCard variant="standard">
+              {items.length > 0 && (() => {
+                // Not-applicable criteria are excluded from the denominator —
+                // they can never pass, so counting them would understate progress.
+                const applicable = items.length - counts.NOT_APPLICABLE;
+                const pct = applicable > 0 ? Math.round((counts.PASS / applicable) * 100) : 0;
+                return (
+                  <div className="mb-5">
+                    <div className="flex flex-wrap items-baseline justify-between gap-2">
+                      <p className="text-sm font-semibold text-slate-800">
+                        {counts.PASS} of {applicable} applicable criteria passing
+                      </p>
+                      <p className={`text-xs font-semibold ${counts.FAIL > 0 ? "text-red-600" : "text-slate-500"}`}>
+                        {counts.FAIL > 0 ? `${counts.FAIL} blocking go-live` : "Nothing blocking go-live"}
+                      </p>
+                    </div>
+                    <div
+                      className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100"
+                      role="progressbar"
+                      aria-label="Acceptance criteria passing"
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={pct}
+                    >
+                      <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} />
+                    </div>
+                  </div>
+                );
+              })()}
               {/* Reordering the tiles so FAIL leads: previously every status got
                   an identical prominent card, which let "Not Applicable" — the
                   least actionable state — carry the same visual weight as a
@@ -192,7 +230,7 @@ export default function ProductionAcceptancePage({ embedded = false } = {}) {
                         counts[status] > 0 && status === "FAIL" ? "border-red-200 bg-red-50/40" : "border-slate-200"
                       }`}
                     >
-                      <p className="text-2xl font-extrabold text-slate-800">{counts[status]}</p>
+                      <p className={`text-2xl font-extrabold ${counts[status] > 0 ? TILE_TONES[status] : "text-slate-300"}`}>{counts[status]}</p>
                       <p className="mt-1 text-xs font-semibold uppercase tracking-wider text-slate-600">{opt.label}</p>
                     </div>
                   );

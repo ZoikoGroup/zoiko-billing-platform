@@ -13,6 +13,8 @@ from app.database import get_db
 from app.core.exceptions import ZoikoException
 from app.core.dependencies import get_current_user, get_current_billing_admin
 from app.modules.billing.services import ProductService
+from app.modules.billing.models import Product, ProductCategory
+from app.modules.commercial.entitlement_enforcement import assert_trial_resource_limit
 from app.modules.billing.schemas import (
     ProductCategoryCreate,
     ProductCategoryUpdate,
@@ -41,6 +43,9 @@ def create_category(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
+    assert_trial_resource_limit(
+        db, organization_id=current_user.organization_id, entity="product category", model=ProductCategory,
+    )
     svc = ProductService(db)
     return svc.create_category(
         organization_id=current_user.organization_id,
@@ -380,6 +385,9 @@ def create_product(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
+    assert_trial_resource_limit(
+        db, organization_id=current_user.organization_id, entity="product", model=Product,
+    )
     svc = ProductService(db)
     return svc.create_product(
         organization_id=current_user.organization_id,

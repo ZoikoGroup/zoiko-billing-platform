@@ -321,8 +321,14 @@ def get_org_plan_limits(
     own organization, so the subscription page can show plan limits even for
     keys that have no UsageCounter row yet. A null value means the entitlement
     is contract-governed (Enterprise). Per-key resolution fails OPEN to an
-    omitted row, never a 500 (§14)."""
+    omitted row, never a 500 (§14).
+
+    `current_usage` is the live count for limits the platform can measure
+    (customers, invoices this month, currencies), and `seats` is users in
+    use against the plan's max_users. Both are counted on every request, so
+    the page always matches what the next gated write will see."""
     from app.modules.commercial.entitlement_catalog_spec import ENTITLEMENT_CATALOG_SPEC
+    from app.modules.commercial.entitlement_enforcement import USAGE_COUNTERS, count_seats, seat_limit
     from app.modules.commercial.entitlement_resolver import resolve_entitlement
 
     if not current_user.organization_id:
@@ -331,12 +337,20 @@ def get_org_plan_limits(
             detail="This view requires an organization context.",
         )
 
+    org_id = current_user.organization_id
     entitlements = []
     for spec in ENTITLEMENT_CATALOG_SPEC:
         try:
-            resolved = resolve_entitlement(db, current_user.organization_id, spec["key"])
+            resolved = resolve_entitlement(db, org_id, spec["key"])
         except Exception:  # noqa: BLE001 - fail-open read (§14)
             continue
+        current_usage = None
+        counter = USAGE_COUNTERS.get(spec["key"])
+        if counter is not None:
+            try:
+                current_usage = counter(db, org_id)
+            except Exception:  # noqa: BLE001 - fail-open read (§14)
+                _logger.exception("plan-limits: usage count failed for %s", spec["key"])
         entitlements.append(
             {
                 "key": spec["key"],
@@ -344,9 +358,15 @@ def get_org_plan_limits(
                 "value_type": spec["value_type"].value,
                 "enforcement_type": spec["enforcement_type"].value,
                 "description": spec["description"],
+                "current_usage": current_usage,
             }
         )
-    return {"entitlements": entitlements}
+    try:
+        seats = {"used": count_seats(db, org_id), "limit": seat_limit(db, org_id)}
+    except Exception:  # noqa: BLE001 - fail-open read (§14)
+        _logger.exception("plan-limits: seat count failed for organization %s", org_id)
+        seats = None
+    return {"entitlements": entitlements, "seats": seats}
 
 
 @router.post("/start-trial", summary="Start the free Essentials trial for an org that has no subscription yet")

@@ -1,10 +1,10 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Activity, CheckCircle2, XCircle, Clock3, RefreshCw, HelpCircle, Briefcase } from "lucide-react";
 import { getTenantHealthOverview, getJobTelemetry } from "../../service/privilegedAccessService";
-import { PageHeader, DataTable } from "../../components/billing-ui";
+import { PageHeader, DataTable, Button, HubTabs, SearchInput, Select } from "../../components/billing-ui";
 import { ErrorState, EmptyState, StatusBadge } from "../../components/billing-shared";
-import { formatDateTime, displayValue, LIFECYCLE_STATE_BADGES, LifecycleStateBadge } from "./constants";
+import { formatDateTime, LIFECYCLE_STATE_BADGES, LifecycleStateBadge } from "./constants";
 import { useAuth } from "../../context/AuthContext";
 import { canReadReliabilityTelemetry } from "../../config/roles";
 
@@ -46,6 +46,16 @@ function SeverityBadge({ value }) {
   return <StatusBadge status={value} options={[{ value, ...option }]} />;
 }
 
+// The API serializes naive UTC datetimes (no "Z"); read them as UTC so the
+// timestamps aren't shifted by the viewer's UTC offset.
+function parseServerDate(value) {
+  if (!value) return null;
+  const text = String(value);
+  return new Date(/([zZ]|[+-]\d{2}:?\d{2})$/.test(text) ? text : `${text}Z`);
+}
+
+const formatServerDateTime = (value) => formatDateTime(parseServerDate(value));
+
 function KpiCard({ label, value, tone = "text-slate-900" }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
@@ -56,6 +66,13 @@ function KpiCard({ label, value, tone = "text-slate-900" }) {
 }
 
 const VALID_TABS = ["health", "jobs"];
+
+const TABS = [
+  { key: "health", label: "Tenant Health", icon: Activity },
+  { key: "jobs", label: "Background Jobs", icon: Briefcase },
+];
+
+const LIFECYCLE_FILTER_OPTIONS = Object.entries(LIFECYCLE_STATE_BADGES).map(([value, meta]) => ({ value, label: meta.label }));
 
 export default function TenantHealthPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -72,26 +89,37 @@ export default function TenantHealthPage() {
   const { user } = useAuth();
   const canReadTelemetry = canReadReliabilityTelemetry(user?.platform_role);
   const [overview, setOverview] = useState(null);
-  const [jobs, setJobs] = useState([]);
-  const [schedulerEnabled, setSchedulerEnabled] = useState(false);
+  const [jobFeed, setJobFeed] = useState(null); // { jobs, scheduler_enabled } once loaded
   const [loading, setLoading] = useState(true);
+  // Two independent sources: a failed job feed must not blank the tenant
+  // table (it used to — Promise.all rejected the whole page), and vice versa.
   const [error, setError] = useState("");
+  const [jobsError, setJobsError] = useState("");
+  const [search, setSearch] = useState("");
+  const [lifecycleFilter, setLifecycleFilter] = useState("");
+  const seqRef = useRef(0);
 
+  // Takes no arguments on purpose — always invoked as () => load().
   const load = useCallback(() => {
     if (!canReadTelemetry) {
       setLoading(false);
       return;
     }
+    const seq = ++seqRef.current;
     setLoading(true);
     setError("");
-    Promise.all([getTenantHealthOverview(), getJobTelemetry()])
-      .then(([healthRes, jobRes]) => {
-        setOverview(healthRes);
-        setJobs(jobRes.jobs || []);
-        setSchedulerEnabled(!!jobRes.scheduler_enabled);
-      })
-      .catch((e) => setError(e?.message || "Failed to load tenant telemetry."))
-      .finally(() => setLoading(false));
+    setJobsError("");
+    Promise.allSettled([getTenantHealthOverview(), getJobTelemetry()]).then(([healthRes, jobRes]) => {
+      if (seq !== seqRef.current) return;
+      if (healthRes.status === "fulfilled") setOverview(healthRes.value);
+      else setError(healthRes.reason?.message || "Failed to load tenant telemetry.");
+      if (jobRes.status === "fulfilled") {
+        setJobFeed({ jobs: jobRes.value?.jobs || [], scheduler_enabled: !!jobRes.value?.scheduler_enabled });
+      } else {
+        setJobsError(jobRes.reason?.message || "Failed to load background job telemetry.");
+      }
+      setLoading(false);
+    });
   }, [canReadTelemetry]);
 
   useEffect(() => {
@@ -105,7 +133,11 @@ export default function TenantHealthPage() {
       key: "organization_name",
       label: "Organization",
       render: (row) => (
-        <button type="button" onClick={() => navigate(`/super-admin/organizations/${row.id}`)} className="text-left">
+        <button
+          type="button"
+          onClick={() => navigate(`/super-admin/organizations/${row.id}`)}
+          className="rounded-md text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
+        >
           <span className="block font-medium text-brand-600 hover:text-brand-700">{row.organization_name}</span>
           <span className="block text-xs text-slate-500">{row.organization_code}</span>
         </button>
@@ -114,11 +146,11 @@ export default function TenantHealthPage() {
     { key: "lifecycle_state", label: "Lifecycle", render: (row) => <LifecycleStateBadge value={row.lifecycle_state} /> },
     {
       key: "users",
-      label: "Users",
+      label: "Active / Total Users",
       render: (row) => (
         <span className="text-sm text-slate-700">
           {row.active_users}/{row.total_users}
-          {row.suspended_users > 0 && <span className="ml-1 text-xs text-red-600">({row.suspended_users} off)</span>}
+          {row.suspended_users > 0 && <span className="ml-1 text-xs text-red-600">({row.suspended_users} suspended)</span>}
         </span>
       ),
     },
@@ -135,22 +167,41 @@ export default function TenantHealthPage() {
           <span className="text-xs text-slate-400">None</span>
         ),
     },
-    { key: "last_incident_at", label: "Last Incident", width: 170, render: (row) => formatDateTime(row.last_incident_at) },
-    { key: "last_activity_at", label: "Last Activity", width: 170, render: (row) => formatDateTime(row.last_activity_at) },
+    { key: "last_incident_at", label: "Last Incident", width: 170, render: (row) => formatServerDateTime(row.last_incident_at) },
+    { key: "last_activity_at", label: "Last Activity", width: 170, render: (row) => formatServerDateTime(row.last_activity_at) },
   ];
 
-  const fleetSummarySection = overview && (
+  const organizations = useMemo(() => overview?.organizations || [], [overview]);
+  const filtersActive = Boolean(search.trim() || lifecycleFilter);
+  const filteredOrganizations = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return organizations.filter((row) => {
+      if (lifecycleFilter && row.lifecycle_state !== lifecycleFilter) return false;
+      if (!q) return true;
+      return (
+        String(row.organization_name || "").toLowerCase().includes(q) ||
+        String(row.organization_code || "").toLowerCase().includes(q)
+      );
+    });
+  }, [organizations, search, lifecycleFilter]);
+  const clearFilters = () => {
+    setSearch("");
+    setLifecycleFilter("");
+  };
+
+  const summary = overview?.summary;
+  const fleetSummarySection = summary && (
     <section aria-label="Fleet summary" className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      <KpiCard label="Open Incidents" value={overview.summary.open_incident_total} tone={overview.summary.open_incident_total > 0 ? "text-red-600" : "text-emerald-700"} />
-      <KpiCard label="Jobs With Failures (24h)" value={overview.summary.jobs_with_failures_24h} tone={overview.summary.jobs_with_failures_24h > 0 ? "text-red-600" : "text-slate-900"} />
-      <KpiCard label="Jobs Not Fresh" value={overview.summary.jobs_not_fresh} tone={overview.summary.jobs_not_fresh > 0 ? "text-amber-600" : "text-slate-900"} />
+      <KpiCard label="Open Incidents" value={summary.open_incident_total} tone={summary.open_incident_total > 0 ? "text-red-600" : "text-emerald-700"} />
+      <KpiCard label="Jobs With Failures (24h)" value={summary.jobs_with_failures_24h} tone={summary.jobs_with_failures_24h > 0 ? "text-red-600" : "text-slate-900"} />
+      <KpiCard label="Jobs Not Fresh" value={summary.jobs_not_fresh} tone={summary.jobs_not_fresh > 0 ? "text-amber-600" : "text-slate-900"} />
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
         <p className="mb-2.5 text-xs font-semibold uppercase tracking-wider text-slate-600">Organizations by Lifecycle</p>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
           {Object.entries(LIFECYCLE_STATE_BADGES).map(([state, meta]) => (
             <span key={state} className="inline-flex items-center gap-1.5 text-xs">
               <StatusBadge status={state} options={[{ value: state, ...meta }]} />
-              <strong className="text-slate-800">{overview.summary.counts_by_lifecycle_state?.[state] ?? 0}</strong>
+              <strong className="text-slate-800">{summary.counts_by_lifecycle_state?.[state] ?? 0}</strong>
             </span>
           ))}
         </div>
@@ -163,103 +214,127 @@ export default function TenantHealthPage() {
       <div className="mb-3 flex items-center gap-2 px-1">
         <h2 className="text-sm font-bold uppercase tracking-wider text-slate-600">Tenant Operational View</h2>
         <span className="h-px flex-1 bg-slate-200/70" />
+        {filtersActive && (
+          <span className="text-xs font-medium text-slate-500">
+            {filteredOrganizations.length} of {organizations.length}
+          </span>
+        )}
       </div>
+      {organizations.length > 0 && (
+        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Search organization name or code"
+            className="sm:max-w-sm sm:flex-1"
+          />
+          <Select
+            value={lifecycleFilter}
+            onChange={setLifecycleFilter}
+            options={LIFECYCLE_FILTER_OPTIONS}
+            placeholder="All lifecycle states"
+            aria-label="Filter by lifecycle state"
+            className="sm:w-56"
+          />
+          {filtersActive && (
+            <Button variant="ghost" size="sm" onClick={clearFilters}>Clear filters</Button>
+          )}
+        </div>
+      )}
       <DataTable
         columns={columns}
-        data={overview.organizations}
-        loading={loading}
+        data={filteredOrganizations}
         rowKey={(row) => row.id}
-        emptyTitle="No organizations yet"
-        emptyMessage="Operational rows will appear here as organizations are provisioned."
+        emptyTitle={filtersActive ? "No organizations match these filters" : "No organizations yet"}
+        emptyMessage={
+          filtersActive
+            ? "Try a different search term or lifecycle state."
+            : "Operational rows will appear here as organizations are provisioned."
+        }
+        emptyAction={filtersActive ? <Button variant="secondary" size="sm" onClick={clearFilters}>Clear filters</Button> : undefined}
         minWidth={880}
       />
     </section>
   );
 
-  const jobHealthSection = overview && (
+  const jobs = jobFeed?.jobs || [];
+  const jobHealthSection = (
     <section aria-label="Background job health" className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
       <p className="mb-1 text-sm font-bold text-slate-700">Background Job Health</p>
-      {!schedulerEnabled && (
-        <p className="mb-3 text-xs text-amber-600">
-          The recurring-billing scheduler is currently disabled
-          (ENABLE_RECURRING_BILLING_SCHEDULER=false) — no job runs are expected until it is enabled.
-        </p>
-      )}
-      {jobs.length === 0 ? (
-        <EmptyState
-          icon={Clock3}
-          title="No job runs recorded yet"
-          message="This is expected while the scheduler is disabled or has not completed its first run — not a fabricated healthy state."
-        />
+      {jobsError && !jobFeed ? (
+        <ErrorState message={jobsError} onRetry={() => load()} title="Unable to load background jobs" />
+      ) : !jobFeed ? (
+        <p className="py-6 text-center text-sm text-slate-500">Loading job telemetry…</p>
       ) : (
-        <div className="space-y-2">
-          {jobs.map((job) => (
-            <div key={job.job_name} className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 py-2.5 text-sm last:border-0">
-              <div>
-                <span className="font-semibold text-slate-800">{job.display_name || job.job_name}</span>
-                <span className="ml-2 text-xs text-slate-500">last run {formatDateTime(job.last_started_at)}</span>
-              </div>
-              <div className="flex items-center gap-4">
-                <span className="text-xs text-slate-500">
-                  {job.run_count_24h} runs / {job.failure_count_24h} failures (24h)
-                </span>
-                <JobStatusIndicator status={job.last_status} />
-              </div>
+        <>
+          {jobsError && (
+            <p role="alert" className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+              Couldn't refresh job telemetry: {jobsError} Showing the last loaded runs.
+            </p>
+          )}
+          {!jobFeed.scheduler_enabled && (
+            <p className="mb-3 text-xs text-amber-600">
+              The recurring-billing scheduler is currently disabled
+              (ENABLE_RECURRING_BILLING_SCHEDULER=false) — no job runs are expected until it is enabled.
+            </p>
+          )}
+          {jobs.length === 0 ? (
+            <EmptyState
+              icon={Clock3}
+              title="No job runs recorded yet"
+              message="This is expected while the scheduler is disabled or has not completed its first run — not a fabricated healthy state."
+            />
+          ) : (
+            <div className="space-y-2">
+              {jobs.map((job) => (
+                <div key={job.job_name} className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 py-2.5 text-sm last:border-0">
+                  <div className="min-w-0">
+                    <span className="font-semibold text-slate-800">{job.display_name || job.job_name}</span>
+                    <span className="ml-2 text-xs text-slate-500">last run {formatServerDateTime(job.last_started_at)}</span>
+                    {job.last_status === "failed" && job.last_error && (
+                      <span className="mt-0.5 block wrap-break-word text-xs text-red-600">{job.last_error}</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <span className="text-xs text-slate-500">
+                      {job.run_count_24h} runs / {job.failure_count_24h} failures (24h)
+                    </span>
+                    <JobStatusIndicator status={job.last_status} />
+                  </div>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          )}
+        </>
       )}
     </section>
   );
 
-  const TABS = [
-    { key: "health", label: "Tenant Health", icon: Activity },
-    { key: "jobs", label: "Background Jobs", icon: Briefcase },
-  ];
+  const metaParts = [];
+  if (summary) metaParts.push(`${summary.total_organizations} organization${summary.total_organizations === 1 ? "" : "s"}`);
+  if (jobFeed) metaParts.push(`${jobs.length} background job${jobs.length === 1 ? "" : "s"} tracked`);
 
   return (
     <div className="p-4 sm:p-6 lg:p-8">
       <PageHeader
         title="Tenant Health"
-        description="Cross-tenant operational telemetry (Domain C) — lifecycle states, user counts, open incidents and job health. Counts and states only: never monetary amounts, never cross-tenant financial totals, never an invented score."
+        description="Operational health across every tenant — lifecycle states, user counts, open incidents and background job runs. Counts and states only: never money amounts, never a made-up health score."
         icon={Activity}
-        meta={overview ? `${overview.summary.total_organizations} organization(s) · plane ${overview.plane}` : ""}
+        meta={metaParts.length ? metaParts.join(" · ") : null}
         actions={
-          <button
-            type="button"
-            onClick={load}
+          <Button
+            variant="secondary"
+            icon={RefreshCw}
+            onClick={() => load()}
+            loading={loading && Boolean(overview || jobFeed)}
             disabled={loading || !canReadTelemetry}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
           >
-            <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
             Refresh
-          </button>
+          </Button>
         }
       />
 
-      <div className="mt-4 flex flex-wrap gap-2" role="tablist" aria-label="Tenant Health sections">
-        {TABS.map((tab) => {
-          const Icon = tab.icon;
-          const active = activeTab === tab.key;
-          return (
-            <button
-              key={tab.key}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              onClick={() => setActiveTab(tab.key)}
-              className={`inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-sm font-semibold transition-colors ${
-                active
-                  ? "border-brand-500 bg-brand-50 text-brand-700"
-                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-              }`}
-            >
-              <Icon size={15} />
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
+      <HubTabs tabs={TABS} active={activeTab} onChange={setActiveTab} label="Tenant Health sections" />
 
       {!canReadTelemetry ? (
         <div className="mt-6 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm">
@@ -269,24 +344,27 @@ export default function TenantHealthPage() {
             Administrator for access.
           </p>
         </div>
-      ) : error ? (
+      ) : isJobHealth ? (
+        <div className="mt-6">{jobHealthSection}</div>
+      ) : error && !overview ? (
         <div className="mt-6 rounded-2xl border border-red-200 bg-white">
-          <ErrorState message={error} onRetry={load} title="Unable to load tenant telemetry" />
+          <ErrorState message={error} onRetry={() => load()} title="Unable to load tenant telemetry" />
+        </div>
+      ) : overview ? (
+        <div className="mt-6 space-y-8">
+          {error && (
+            <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">
+              Couldn't refresh tenant telemetry: {error} Showing the last loaded data.
+            </p>
+          )}
+          {fleetSummarySection}
+          {tenantTableSection}
+        </div>
+      ) : loading ? (
+        <div className="mt-6">
+          <DataTable columns={columns} data={[]} loading minWidth={880} />
         </div>
       ) : null}
-
-      {overview && !error && (
-        <div className="mt-6 space-y-8">
-          {isJobHealth ? (
-            jobHealthSection
-          ) : (
-            <>
-              {fleetSummarySection}
-              {tenantTableSection}
-            </>
-          )}
-        </div>
-      )}
     </div>
   );
 }

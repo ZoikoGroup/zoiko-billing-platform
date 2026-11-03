@@ -57,6 +57,11 @@ import {
 // How often the page re-checks a request that is waiting on someone else.
 const PENDING_POLL_MS = 10000;
 const QUEUE_POLL_MS = 30000;
+// While a session is active, re-read it so a revoke by a security operator
+// (or the tenant) shows up here instead of leaving a dead login on screen.
+const ACTIVE_POLL_MS = 30000;
+const NOTICE_DISMISS_MS = 8000;
+const HISTORY_LIMIT = 20;
 const INPUT_CLASS =
   "w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100";
 const DANGER_INPUT_CLASS =
@@ -73,7 +78,7 @@ const GRANT_STATUS_OPTIONS = [
   { value: "exited", label: "Ended", color: "bg-slate-100 text-slate-600" },
   { value: "expired", label: "Expired", color: "bg-slate-100 text-slate-600" },
   { value: "expired_unused", label: "Expired (unused)", color: "bg-slate-100 text-slate-600" },
-  { value: "denied", label: "Denied", color: "bg-red-100 text-red-700" },
+  { value: "denied", label: "Declined", color: "bg-red-100 text-red-700" },
 ];
 
 // ── Time helpers ─────────────────────────────────────────────────────────
@@ -162,7 +167,14 @@ function Countdown({ to, prefix = "", suffix = "left", onElapsed, tone = "slate"
 function displayStatus(grant) {
   if (!grant) return null;
   if (grant.awaiting_tenant_approval) return "awaiting_tenant";
-  if (grant.status === "revoked" && grant.revoked_by_user_id && grant.revoked_by_user_id === grant.requested_by_user_id) {
+  // cancel_request only touches a not-yet-active grant. A revoker who revokes
+  // their OWN active session (allowed by revoke_grant) has not "cancelled" it.
+  if (
+    grant.status === "revoked" &&
+    grant.revoked_by_user_id &&
+    grant.revoked_by_user_id === grant.requested_by_user_id &&
+    !grant.activated_at
+  ) {
     return "cancelled";
   }
   return grant.status;
@@ -180,10 +192,17 @@ function EmergencyBadge({ compact = false }) {
   );
 }
 
+// organization_name is Optional on the grant response (router fills it from a
+// relationship that can be missing) — never print "null" in a sentence.
+function orgName(grant) {
+  if (!grant) return "the organisation";
+  return grant.organization_name || (grant.organization_id ? `Organization #${grant.organization_id}` : "the organisation");
+}
+
 function OrgLabel({ grant }) {
   return (
     <span className="min-w-0">
-      <span className="font-semibold text-slate-900">{grant.organization_name || `Organization #${grant.organization_id}`}</span>
+      <span className="font-semibold text-slate-900">{orgName(grant)}</span>
       {grant.organization_code && (
         <span className="ml-1.5 font-mono text-xs text-slate-500">{grant.organization_code}</span>
       )}
@@ -194,7 +213,10 @@ function OrgLabel({ grant }) {
 function grantOutcome(grant) {
   switch (displayStatus(grant)) {
     case "denied":
-      return grant.approval_note ? `Denied: ${grant.approval_note}` : "Denied by an approver.";
+      // Only the tenant's organisation admin can decline (tenant_deny_grant).
+      return grant.approval_note
+        ? `Declined by the organisation's admin: ${grant.approval_note}`
+        : "Declined by the organisation's admin.";
     case "cancelled":
       return "You cancelled this request.";
     case "revoked":
@@ -271,10 +293,41 @@ function FormError({ message }) {
   );
 }
 
+/** Inline, dismissible failure notice that leaves the data below it on screen. */
+function InlineAlert({ title, message, onRetry, onDismiss }) {
+  if (!message) return null;
+  return (
+    <div role="alert" className="flex flex-wrap items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+      <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+      <div className="min-w-0 flex-1">
+        {title && <p className="font-semibold">{title}</p>}
+        <p className="text-xs text-red-700">{message}</p>
+      </div>
+      <div className="flex items-center gap-2">
+        {onRetry && (
+          <button
+            type="button"
+            onClick={() => onRetry()}
+            className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 py-1 text-xs font-semibold text-red-700 hover:bg-red-50"
+          >
+            <RefreshCw size={12} /> Try again
+          </button>
+        )}
+        {onDismiss && (
+          <button type="button" onClick={onDismiss} aria-label="Dismiss error" className="rounded p-1 text-red-600 hover:bg-red-100">
+            <XCircle size={16} />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Tenant picker (shared by normal request and break-glass) ───────────────
 function OrgPicker({ open, selected, onSelect, initialOrgCode = "" }) {
   const [query, setQuery] = useState("");
   const [orgs, setOrgs] = useState([]);
+  const [total, setTotal] = useState(0);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState(null);
   const requestIdRef = useRef(0);
@@ -300,6 +353,7 @@ function OrgPicker({ open, selected, onSelect, initialOrgCode = "" }) {
         if (requestId !== requestIdRef.current) return; // a newer search superseded this one
         const list = res?.organizations || [];
         setOrgs(list);
+        setTotal(typeof res?.total === "number" ? res.total : list.length);
         if (initialOrgCode && !autoPickedRef.current) {
           autoPickedRef.current = true;
           const match = list.find((o) => (o.organization_code || "").toLowerCase() === initialOrgCode.toLowerCase());
@@ -309,6 +363,7 @@ function OrgPicker({ open, selected, onSelect, initialOrgCode = "" }) {
       .catch((err) => {
         if (requestId !== requestIdRef.current) return;
         setOrgs([]);
+        setTotal(0);
         setSearchError(err?.message || "Could not search organizations.");
       })
       .finally(() => {
@@ -361,6 +416,11 @@ function OrgPicker({ open, selected, onSelect, initialOrgCode = "" }) {
           ))
         )}
       </div>
+      {!searching && !searchError && total > orgs.length && (
+        <p className="text-[11px] text-slate-500">
+          Showing {orgs.length} of {total} organizations — type more of the name or code to narrow it down.
+        </p>
+      )}
     </div>
   );
 }
@@ -386,7 +446,13 @@ function RequestAccessModal({ open, onClose, onRequested, initialOrgCode = "" })
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!selectedOrg) return;
+    if (busy) return;
+    // Enter in the ticket field submits even while the button is disabled;
+    // whitespace-only text passes the native `required` check.
+    if (!ready) {
+      setError("Choose a tenant and fill in both the reason and the ticket reference.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -490,7 +556,11 @@ function BreakGlassModal({ open, onClose, onActivated, initialOrgCode = "" }) {
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!selectedOrg) return;
+    if (busy) return;
+    if (!ready) {
+      setError("Choose a tenant, describe the emergency, give the incident reference and tick the acknowledgement.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -762,13 +832,21 @@ function LiveSessionsTab({ grants, loading, error, onReload, onActionCompleted, 
   const [action, setAction] = useState(null);
 
   async function submit(grant, reason) {
-    await revokePrivilegedAccess(grant.id, { reason });
+    try {
+      await revokePrivilegedAccess(grant.id, { reason });
+    } catch (err) {
+      // Most failures here mean the grant already ended (expired, exited or
+      // revoked by someone else) — refresh the list so the row reflects that.
+      onReload();
+      throw err;
+    }
     setAction(null);
-    onActionCompleted(`Revoked access to ${grant.organization_name}.`);
+    onActionCompleted(`Revoked access to ${orgName(grant)}.`);
   }
 
   if (loading && grants.length === 0) return <Spinner />;
-  if (error) return <ErrorState message={error} onRetry={onReload} title="Unable to load live sessions" />;
+  // A failed refresh must not hide sessions already on screen.
+  if (error && grants.length === 0) return <ErrorState message={error} onRetry={() => onReload()} title="Unable to load live sessions" />;
   if (grants.length === 0) {
     return (
       <EmptyState
@@ -779,55 +857,69 @@ function LiveSessionsTab({ grants, loading, error, onReload, onActionCompleted, 
     );
   }
 
+  const activeCount = grants.filter((g) => g.status === "active").length;
+  const waitingCount = grants.length - activeCount;
+  const emergencyCount = grants.filter((g) => g.is_break_glass).length;
+
   return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <div className="hidden grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)_auto] gap-3 border-b border-slate-100 bg-slate-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500 md:grid">
-        <span>Tenant &amp; reason</span>
-        <span>Operator</span>
-        <span>Status</span>
-        <span className="text-right">Action</span>
+    <div className="space-y-3">
+      <InlineAlert title="Couldn't refresh live sessions" message={error} onRetry={onReload} />
+      <div className="flex flex-wrap gap-2 text-xs" aria-label="Live session summary">
+        <span className="rounded-full bg-emerald-100 px-2.5 py-1 font-semibold text-emerald-800">{activeCount} active</span>
+        <span className="rounded-full bg-amber-100 px-2.5 py-1 font-semibold text-amber-800">{waitingCount} waiting for approval</span>
+        {emergencyCount > 0 && (
+          <span className="rounded-full bg-red-100 px-2.5 py-1 font-semibold text-red-700">{emergencyCount} emergency</span>
+        )}
       </div>
-      {grants.map((g) => {
-        const deadline = g.status === "active" ? g.expires_at : g.activation_deadline || g.approval_expires_at;
-        const isOwn = currentUserId && g.requested_by_user_id === currentUserId;
-        return (
-          <div
-            key={g.id}
-            className="grid grid-cols-1 gap-2 border-b border-slate-100 px-4 py-3 text-sm last:border-0 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)_auto] md:items-center md:gap-3"
-          >
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <OrgLabel grant={g} />
-                {g.is_break_glass && <EmergencyBadge compact />}
-              </div>
-              <p className="truncate text-xs text-slate-500" title={g.reason}>
-                {g.ticket_reference} · {g.reason}
-              </p>
-            </div>
-            <div className="min-w-0 truncate text-xs text-slate-600">
-              {g.requested_by_email || `User #${g.requested_by_user_id}`}
-              {isOwn && <span className="ml-1 text-slate-400">(you)</span>}
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <GrantStatusBadge grant={g} />
-              {deadline && <Countdown to={deadline} suffix="left" tone={g.status === "active" ? "emerald" : "slate"} onElapsed={onReload} />}
-            </div>
-            <div className="md:text-right">
-              {isDesktop ? (
-                <Button size="sm" variant="secondary" icon={Ban} onClick={() => setAction({ config: REVOKE_CONFIG, grant: g })}>
-                  Revoke
-                </Button>
-              ) : null}
-            </div>
-          </div>
-        );
-      })}
-      {!isDesktop && (
-        <div className="p-4">
-          <MobileWriteBlock action="revoking support access" />
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="hidden grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)_auto] gap-3 border-b border-slate-100 bg-slate-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500 md:grid">
+          <span>Tenant &amp; reason</span>
+          <span>Operator</span>
+          <span>Status</span>
+          <span className="text-right">Action</span>
         </div>
-      )}
-      <NoteActionModal action={action} onClose={() => setAction(null)} onSubmit={submit} />
+        {grants.map((g) => {
+          const deadline = g.status === "active" ? g.expires_at : g.activation_deadline || g.approval_expires_at;
+          const isOwn = currentUserId && g.requested_by_user_id === currentUserId;
+          return (
+            <div
+              key={g.id}
+              className="grid grid-cols-1 gap-2 border-b border-slate-100 px-4 py-3 text-sm last:border-0 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)_auto] md:items-center md:gap-3"
+            >
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <OrgLabel grant={g} />
+                  {g.is_break_glass && <EmergencyBadge compact />}
+                </div>
+                <p className="truncate text-xs text-slate-500" title={g.reason}>
+                  {g.ticket_reference} · {g.reason}
+                </p>
+              </div>
+              <div className="min-w-0 truncate text-xs text-slate-600">
+                {g.requested_by_email || `User #${g.requested_by_user_id}`}
+                {isOwn && <span className="ml-1 text-slate-400">(you)</span>}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <GrantStatusBadge grant={g} />
+                {deadline && <Countdown to={deadline} suffix="left" tone={g.status === "active" ? "emerald" : "slate"} onElapsed={onReload} />}
+              </div>
+              <div className="md:text-right">
+                {isDesktop ? (
+                  <Button size="sm" variant="secondary" icon={Ban} onClick={() => setAction({ config: REVOKE_CONFIG, grant: g })}>
+                    Revoke
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          );
+        })}
+        {!isDesktop && (
+          <div className="p-4">
+            <MobileWriteBlock action="revoking support access" />
+          </div>
+        )}
+        <NoteActionModal action={action} onClose={() => setAction(null)} onSubmit={submit} />
+      </div>
     </div>
   );
 }
@@ -852,16 +944,18 @@ function BreakGlassReviewsTab({ grants, loading, error, onReload, onActionComple
     try {
       await reviewBreakGlass(selectedGrant.id, { outcome, note: note.trim() });
       setSelectedGrant(null);
-      onActionCompleted(`Review recorded for ${selectedGrant.organization_name}; the security alert is resolved.`);
+      onActionCompleted(`Review recorded for ${orgName(selectedGrant)}; the security alert is resolved.`);
     } catch (err) {
       setReviewError(err?.message || "Failed to record the review.");
+      // e.g. another reviewer got there first — refresh the queue behind the modal.
+      onReload();
     } finally {
       setReviewBusy(false);
     }
   }
 
   if (loading && grants.length === 0) return <Spinner />;
-  if (error) return <ErrorState message={error} onRetry={onReload} title="Unable to load reviews" />;
+  if (error && grants.length === 0) return <ErrorState message={error} onRetry={() => onReload()} title="Unable to load reviews" />;
   if (grants.length === 0) {
     return (
       <EmptyState
@@ -874,6 +968,7 @@ function BreakGlassReviewsTab({ grants, loading, error, onReload, onActionComple
 
   return (
     <div className="space-y-3">
+      <InlineAlert title="Couldn't refresh reviews" message={error} onRetry={onReload} />
       {grants.map((g) => {
         const due = parseServerTime(g.review_due_at);
         const isOverdue = due && due.getTime() < now;
@@ -931,7 +1026,7 @@ function BreakGlassReviewsTab({ grants, loading, error, onReload, onActionComple
       >
         <form id="emergency-review-form" onSubmit={handleCompleteReview} className="space-y-4">
           <p className="text-sm text-slate-600">
-            Was the emergency access to <strong>{selectedGrant?.organization_name}</strong> justified? Your decision resolves
+            Was the emergency access to <strong>{orgName(selectedGrant)}</strong> justified? Your decision resolves
             the security alert and is recorded in the audit trail.
           </p>
           <fieldset className="grid gap-2 sm:grid-cols-2">
@@ -988,7 +1083,7 @@ function PendingRequestCard({ grant, cancelling, onCancel, onRefresh, isDesktop 
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <Clock size={16} className="text-amber-600" />
-            <h3 className="text-sm font-bold text-slate-900">Waiting for {grant.organization_name} to approve</h3>
+            <h3 className="text-sm font-bold text-slate-900">Waiting for {orgName(grant)} to approve</h3>
             <GrantStatusBadge grant={grant} />
           </div>
           <p className="mt-1.5 text-xs text-amber-900">
@@ -996,7 +1091,7 @@ function PendingRequestCard({ grant, cancelling, onCancel, onRefresh, isDesktop 
             password appear here — this page checks automatically.
           </p>
           <dl className="mt-3 grid gap-x-6 gap-y-1 text-xs text-slate-700 sm:grid-cols-2">
-            <div><dt className="inline text-slate-500">Tenant: </dt><dd className="inline font-medium">{grant.organization_name} {grant.organization_code && `(${grant.organization_code})`}</dd></div>
+            <div><dt className="inline text-slate-500">Tenant: </dt><dd className="inline font-medium">{orgName(grant)} {grant.organization_code && `(${grant.organization_code})`}</dd></div>
             <div><dt className="inline text-slate-500">Ticket: </dt><dd className="inline font-medium">{grant.ticket_reference}</dd></div>
             <div><dt className="inline text-slate-500">Access length: </dt><dd className="inline font-medium">{grant.requested_minutes} min</dd></div>
             <div><dt className="inline text-slate-500">Requested: </dt><dd className="inline font-medium">{fmt(grant.requested_at)}</dd></div>
@@ -1092,7 +1187,7 @@ function CredentialsPanel({ grant }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="flex items-center gap-2 text-sm font-bold text-slate-900">
-            <KeyRound size={16} className="text-brand-600" /> Your temporary login for {grant.organization_name}
+            <KeyRound size={16} className="text-brand-600" /> Your temporary login for {orgName(grant)}
           </p>
           <p className="mt-0.5 text-xs text-slate-600">
             {creds.access} access · works until {fmt(creds.expires_at)}, then stops automatically.
@@ -1132,7 +1227,7 @@ function ActiveSessionCard({ grant, exiting, onExit, onElapsed, isDesktop }) {
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
               <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
             </span>
-            <p className="text-sm font-bold text-slate-800">Active session · {grant.organization_name}</p>
+            <p className="text-sm font-bold text-slate-800">Active session · {orgName(grant)}</p>
             {grant.organization_code && <span className="font-mono text-xs text-slate-500">{grant.organization_code}</span>}
             {grant.is_break_glass && <EmergencyBadge />}
           </div>
@@ -1158,6 +1253,10 @@ function HistoryList({ history }) {
     <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <p className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-700">
         <History size={16} /> My Access History
+        {/* /privileged-access/mine returns the newest 20 by default. */}
+        {history.length >= HISTORY_LIMIT && (
+          <span className="text-xs font-normal text-slate-500">· latest {HISTORY_LIMIT} requests</span>
+        )}
       </p>
       {history.length === 0 ? (
         <p className="text-xs text-slate-500">You haven't requested support access yet.</p>
@@ -1193,7 +1292,7 @@ function HistoryList({ history }) {
 const LIVE_STATUSES = ["pending_approval", "approved", "pending_step_up"];
 
 export default function SupportAccessPage() {
-  const { activeGrant: shellGrant, refresh: refreshShell } = useCommandCenter();
+  const { activeGrant: shellGrant, refresh: refreshShell, clearActiveGrant } = useCommandCenter();
   const { user } = useAuth();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -1216,7 +1315,13 @@ export default function SupportAccessPage() {
   const [history, setHistory] = useState([]);
   const [liveOwn, setLiveOwn] = useState(null);
   const [loading, setLoading] = useState(hasOwnAccess);
+  // Load failures and action failures are kept apart: a failed cancel/exit
+  // must never turn into the full-page "Unable to load" screen.
   const [error, setError] = useState(null);
+  const [actionError, setActionError] = useState(null);
+  const [ownLoaded, setOwnLoaded] = useState(false);
+  // Bumped after every successful read of our own grant (see shell reconcile).
+  const [ownReadTick, setOwnReadTick] = useState(0);
   const [notice, setNotice] = useState(null);
 
   const [showRequest, setShowRequest] = useState(false);
@@ -1224,24 +1329,33 @@ export default function SupportAccessPage() {
   const [exiting, setExiting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
 
+  // Polls, post-action reloads and manual "Check now" can overlap; only the
+  // newest read may write state, or an older response could resurrect a
+  // grant that was just cancelled or ended.
+  const loadSeqRef = useRef(0);
   const load = useCallback(
     ({ quiet = false } = {}) => {
       if (!hasOwnAccess) return Promise.resolve();
+      const seq = ++loadSeqRef.current;
       if (!quiet) {
         setLoading(true);
         setError(null);
       }
-      return Promise.all([getActivePrivilegedAccess(), listMyPrivilegedAccess()])
+      return Promise.all([getActivePrivilegedAccess(), listMyPrivilegedAccess(HISTORY_LIMIT)])
         .then(([active, historyRes]) => {
+          if (seq !== loadSeqRef.current) return;
           setHistory(historyRes?.grants || []);
           setLiveOwn(active || null);
           setError(null);
+          setOwnLoaded(true);
+          setOwnReadTick((t) => t + 1);
         })
         .catch((e) => {
+          if (seq !== loadSeqRef.current) return;
           if (!quiet) setError(e?.message || "Failed to load your support access.");
         })
         .finally(() => {
-          if (!quiet) setLoading(false);
+          if (!quiet && seq === loadSeqRef.current) setLoading(false);
         });
     },
     [hasOwnAccess]
@@ -1261,11 +1375,32 @@ export default function SupportAccessPage() {
   }, [sessionGrant, liveOwn, history]);
 
   // Waiting on someone else → keep checking so an approval shows up by itself.
+  // Keyed on ids (not objects) so each poll doesn't restart the timer.
+  const pendingId = pendingGrant?.id ?? null;
+  const sessionId = sessionGrant?.id ?? null;
   useEffect(() => {
-    if (!pendingGrant) return undefined;
-    const id = setInterval(() => load({ quiet: true }), PENDING_POLL_MS);
+    if (pendingId === null && sessionId === null) return undefined;
+    const id = setInterval(() => load({ quiet: true }), pendingId !== null ? PENDING_POLL_MS : ACTIVE_POLL_MS);
     return () => clearInterval(id);
-  }, [pendingGrant, load]);
+  }, [pendingId, sessionId, load]);
+
+  // The shell's grant (banner + Domain B export lock) only refreshes every
+  // minute. When our own fresher read disagrees with it (the session was
+  // revoked, expired, or just approved) ask the shell to re-read now.
+  const shellGrantId = shellGrant?.id ?? null;
+  useEffect(() => {
+    if (!ownReadTick) return;
+    const ownActiveId = liveOwn?.status === "active" ? liveOwn.id : null;
+    if (ownActiveId !== shellGrantId) refreshShell?.();
+    // Only re-check right after one of our own reads.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ownReadTick]);
+
+  useEffect(() => {
+    if (!notice) return undefined;
+    const id = setTimeout(() => setNotice(null), NOTICE_DISMISS_MS);
+    return () => clearTimeout(id);
+  }, [notice]);
 
   // Tell the operator when the organisation approves while they wait.
   const waitingIdRef = useRef(null);
@@ -1273,7 +1408,7 @@ export default function SupportAccessPage() {
     if (pendingGrant) {
       waitingIdRef.current = pendingGrant.id;
     } else if (waitingIdRef.current && sessionGrant?.id === waitingIdRef.current) {
-      setNotice(`${sessionGrant.organization_name} approved your request. Your temporary login is below.`);
+      setNotice(`${orgName(sessionGrant)} approved your request. Your temporary login is below.`);
       waitingIdRef.current = null;
     }
   }, [pendingGrant, sessionGrant]);
@@ -1282,19 +1417,28 @@ export default function SupportAccessPage() {
   const [live, setLive] = useState({ grants: [], loading: canRevoke, error: null });
   const [reviews, setReviews] = useState({ grants: [], loading: canReview, error: null });
 
-  const loadQueue = useCallback((fetcher, setter, fallback) => {
+  // Same newest-response-wins rule as load(): a 30s poll that started before
+  // a revoke must not put the revoked grant back in the list.
+  const liveSeqRef = useRef(0);
+  const reviewsSeqRef = useRef(0);
+  const loadQueue = useCallback((fetcher, setter, seqRef, fallback) => {
+    const seq = ++seqRef.current;
     setter((s) => ({ ...s, loading: true }));
     return fetcher()
-      .then((res) => setter({ grants: res?.grants || [], loading: false, error: null }))
-      .catch((e) => setter((s) => ({ ...s, loading: false, error: e?.message || fallback })));
+      .then((res) => {
+        if (seq === seqRef.current) setter({ grants: res?.grants || [], loading: false, error: null });
+      })
+      .catch((e) => {
+        if (seq === seqRef.current) setter((s) => ({ ...s, loading: false, error: e?.message || fallback }));
+      });
   }, []);
 
   const loadLive = useCallback(
-    () => canRevoke && loadQueue(listLivePrivilegedAccess, setLive, "Failed to load live sessions."),
+    () => canRevoke && loadQueue(listLivePrivilegedAccess, setLive, liveSeqRef, "Failed to load live sessions."),
     [canRevoke, loadQueue]
   );
   const loadReviews = useCallback(
-    () => canReview && loadQueue(listPendingReviews, setReviews, "Failed to load break-glass reviews."),
+    () => canReview && loadQueue(listPendingReviews, setReviews, reviewsSeqRef, "Failed to load break-glass reviews."),
     [canReview, loadQueue]
   );
 
@@ -1309,7 +1453,7 @@ export default function SupportAccessPage() {
     loadReviews();
     if (!canRevoke && !canReview) return undefined;
     const id = setInterval(() => {
-        loadLive();
+      loadLive();
       loadReviews();
     }, QUEUE_POLL_MS);
     return () => clearInterval(id);
@@ -1355,7 +1499,7 @@ export default function SupportAccessPage() {
   function handleRequested(grant) {
     setShowRequest(false);
     setLiveOwn(grant);
-    setNotice(`Request sent to ${grant.organization_name}'s admins. Your temporary login appears here once they approve.`);
+    setNotice(`Request sent to ${orgName(grant)}'s admins. Your temporary login appears here once they approve.`);
     reloadAll();
   }
 
@@ -1364,8 +1508,8 @@ export default function SupportAccessPage() {
     setLiveOwn(grant);
     setNotice(
       grant.is_break_glass
-        ? `Emergency access to ${grant.organization_name} is open. A security review is now due within 24 hours.`
-        : `Access to ${grant.organization_name} is open. Your temporary login is below.`
+        ? `Emergency access to ${orgName(grant)} is open. A security review is now due within 24 hours.`
+        : `Access to ${orgName(grant)} is open. Your temporary login is below.`
     );
     refreshShell();
     reloadAll();
@@ -1375,20 +1519,24 @@ export default function SupportAccessPage() {
     if (!pendingGrant) return;
     const ok = await confirm({
       title: "Cancel this request?",
-      message: `Your request for ${pendingGrant.organization_name} will be withdrawn. You can submit a new one at any time.`,
+      message: `Your request for ${orgName(pendingGrant)} will be withdrawn. You can submit a new one at any time.`,
       confirmLabel: "Cancel request",
       tone: "danger",
     });
     if (!ok) return;
     setCancelling(true);
-    setError(null);
+    setActionError(null);
     try {
       await cancelPrivilegedAccess(pendingGrant.id);
       setNotice("Request cancelled.");
       setLiveOwn(null);
       reloadAll();
     } catch (err) {
-      setError(err?.message || "Failed to cancel the request.");
+      // Usually the request changed state meanwhile (approved and now active,
+      // or lapsed): re-read so the page shows where it actually is now.
+      setActionError(err?.message || "Failed to cancel the request.");
+      refreshShell?.();
+      reloadAll();
     } finally {
       setCancelling(false);
     }
@@ -1398,21 +1546,26 @@ export default function SupportAccessPage() {
     if (!sessionGrant) return;
     const ok = await confirm({
       title: "End this session?",
-      message: `Your read-only access to ${sessionGrant.organization_name} ends now. The tenant's admins are notified that it ended.`,
+      message: `Your read-only access to ${orgName(sessionGrant)} ends now. The tenant's admins are notified that it ended.`,
       confirmLabel: "End session",
       tone: "danger",
     });
     if (!ok) return;
     setExiting(true);
-    setError(null);
+    setActionError(null);
     try {
       await exitPrivilegedAccess(sessionGrant.id);
-      setNotice(`Session with ${sessionGrant.organization_name} ended.`);
+      setNotice(`Session with ${orgName(sessionGrant)} ended.`);
       setLiveOwn(null);
-      refreshShell();
+      // Drop the shell's copy now so the page and banner don't keep showing
+      // the ended session until the shell's next refresh lands.
+      clearActiveGrant?.();
+      refreshShell?.();
       reloadAll();
     } catch (e) {
-      setError(e?.message || "Failed to end the session.");
+      setActionError(e?.message || "Failed to end the session.");
+      refreshShell?.();
+      reloadAll();
     } finally {
       setExiting(false);
     }
@@ -1421,16 +1574,19 @@ export default function SupportAccessPage() {
   const handleSessionElapsed = useCallback(() => {
     setNotice("Your session reached its time limit and has ended.");
     setLiveOwn(null);
-    refreshShell();
+    clearActiveGrant?.();
+    refreshShell?.();
     load({ quiet: true });
-  }, [refreshShell, load]);
+  }, [refreshShell, clearActiveGrant, load]);
 
   const handleQueueAction = useCallback(
     (msg) => {
       setNotice(msg);
+      // A revoker may have just revoked their own session: let the shell know.
+      refreshShell?.();
       reloadAll();
     },
-    [reloadAll]
+    [reloadAll, refreshShell]
   );
 
   // ── Header actions
@@ -1503,13 +1659,20 @@ export default function SupportAccessPage() {
             )}
             {activeTab === "my_access" && (
               <>
-                {loading ? (
+                {loading && !ownLoaded && !sessionGrant ? (
                   <Spinner />
-                ) : error && !pendingGrant && !sessionGrant ? (
+                ) : error && !ownLoaded && !sessionGrant ? (
                   <ErrorState message={error} onRetry={() => load()} title="Unable to load support access" />
                 ) : (
                   <>
-                    {error && <FormError message={error} />}
+                    <InlineAlert
+                      title="Couldn't refresh your support access"
+                      message={error}
+                      onRetry={() => load()}
+                      onDismiss={() => setError(null)}
+                    />
+                    <InlineAlert message={actionError} onDismiss={() => setActionError(null)} />
+                    {loading && <p className="text-xs text-slate-500">Refreshing…</p>}
                     {(sessionGrant || pendingGrant) && <FlowTracker current={flowStepIndex(pendingGrant, !!sessionGrant)} />}
 
                     {sessionGrant ? (

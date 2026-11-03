@@ -2,11 +2,30 @@ import React from "react";
 import { AlertCircle, AlertTriangle, ArrowRight, CheckCircle2, Clock, HelpCircle, ShieldAlert, ShieldCheck } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
+// The API serializes naive UTC datetimes (no "Z"); read them as UTC so the
+// times shown aren't shifted by the viewer's UTC offset.
+function parseServerDate(value) {
+  if (!value) return null;
+  const text = String(value);
+  const date = new Date(/([zZ]|[+-]\d{2}:?\d{2})$/.test(text) ? text : `${text}Z`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function shortTime(value) {
+  const date = parseServerDate(value);
+  return date ? date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—";
+}
+
 export default function TriageLens({ triageData, onRefresh }) {
   const navigate = useNavigate();
+  // No summary yet (loading or failed): never render the green
+  // "no incidents" state from an absent payload.
+  const hasData = Boolean(triageData);
   const incidents = triageData?.incidents?.top_items || [];
   const pipeline = triageData?.pipeline_stages || [];
-  const controls = triageData?.safety_controls || [];
+  // Paused breakers first: the card shows four, and an engaged breaker must
+  // never be the one cut off.
+  const controls = [...(triageData?.safety_controls || [])].sort((a, b) => Number(a.enabled) - Number(b.enabled));
   const criticalEvents = triageData?.critical_events || [];
   const schedulerEnabled = triageData?.scheduler_enabled ?? false;
 
@@ -16,20 +35,26 @@ export default function TriageLens({ triageData, onRefresh }) {
       <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
         <div className="flex items-center justify-between border-b border-slate-100 pb-4">
           <div className="flex items-center gap-2">
-            <span className={`flex h-2.5 w-2.5 rounded-full ${incidents.length > 0 ? "bg-rose-500 animate-pulse" : "bg-emerald-500"}`} />
+            <span className={`flex h-2.5 w-2.5 rounded-full ${!hasData ? "bg-slate-300" : incidents.length > 0 ? "bg-rose-500 animate-pulse" : "bg-emerald-500"}`} />
             <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800">T1 · Live Incidents</h3>
           </div>
           <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-bold text-slate-700">
-            {triageData?.incidents?.counts?.p0 || 0} P0 · {triageData?.incidents?.counts?.p1 || 0} P1
+            {hasData ? `${triageData?.incidents?.counts?.p0 || 0} P0 · ${triageData?.incidents?.counts?.p1 || 0} P1` : "—"}
           </span>
         </div>
 
         <div className="mt-4 space-y-3">
-          {incidents.length === 0 ? (
+          {!hasData ? (
+            <div className="flex flex-col items-center justify-center py-8 text-center">
+              <HelpCircle size={32} className="text-slate-400" />
+              <p className="mt-2 text-sm font-bold text-slate-800">Incident data unavailable</p>
+              <p className="text-xs text-slate-600">The triage summary has not loaded.</p>
+            </div>
+          ) : incidents.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-8 text-center">
               <CheckCircle2 size={32} className="text-emerald-500" />
               <p className="mt-2 text-sm font-bold text-slate-800">No active incidents</p>
-              <p className="text-xs text-slate-600">All services operating within SLA tolerances.</p>
+              <p className="text-xs text-slate-600">The attention queue has no open items.</p>
             </div>
           ) : (
             incidents.slice(0, 4).map((item) => (
@@ -74,7 +99,8 @@ export default function TriageLens({ triageData, onRefresh }) {
           ) : (
             pipeline.map((stage) => {
               const isStale = stage.freshness === "stale" || stage.freshness === "unknown";
-              const hasFailed = stage.last_status === "failed" || (stage.failure_count_24h || 0) > 0;
+              const failures = stage.failure_count_24h || 0;
+              const hasFailed = stage.last_status === "failed" || failures > 0;
               return (
                 <div key={stage.job_name} className="rounded-xl border border-slate-100 bg-slate-50 p-2.5 text-center">
                   <span className="block text-[11px] font-bold text-slate-700 truncate">{stage.display_name || stage.job_name}</span>
@@ -83,10 +109,10 @@ export default function TriageLens({ triageData, onRefresh }) {
                   </span>
                   <div className="mt-1 flex items-center justify-center gap-1">
                     {isStale ? (
-                      <span className="text-[10px] font-bold text-amber-700">UNKNOWN (Stale)</span>
+                      <span className="text-[10px] font-bold text-amber-700">{stage.freshness === "stale" ? "Stale" : "Unknown"}</span>
                     ) : hasFailed ? (
                       <span className="inline-flex items-center text-[10px] font-bold text-rose-700">
-                        <AlertTriangle size={10} className="mr-0.5" /> {stage.failure_count_24h} failed
+                        <AlertTriangle size={10} className="mr-0.5" /> {failures > 0 ? `${failures} failed` : "Last run failed"}
                       </span>
                     ) : (
                       <span className="inline-flex items-center text-[10px] font-bold text-emerald-700">
@@ -124,7 +150,7 @@ export default function TriageLens({ triageData, onRefresh }) {
                   <span className="font-semibold text-slate-800">{c.display_name}</span>
                   {c.expires_at && (
                     <span className="ml-2 inline-flex items-center gap-1 text-[10px] text-amber-700 font-bold">
-                      <Clock size={10} /> Auto-expires {new Date(c.expires_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      <Clock size={10} /> Auto-expires {shortTime(c.expires_at)}
                     </span>
                   )}
                 </div>
@@ -164,7 +190,7 @@ export default function TriageLens({ triageData, onRefresh }) {
                   <p className="text-[11px] text-slate-600 truncate">{evt.reason || `By ${evt.actor_email || 'System'}`}</p>
                 </div>
                 <span className="shrink-0 text-[10px] font-medium text-slate-600">
-                  {new Date(evt.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  {shortTime(evt.created_at)}
                 </span>
               </div>
             ))

@@ -605,6 +605,10 @@ class CustomerImportService:
         failed: List[Dict[str, Any]] = []
         warning_rows: List[int] = []
 
+        from app.modules.commercial.entitlement_enforcement import customer_capacity
+
+        remaining, limit_message = customer_capacity(self.db, organization_id)
+
         for row in rows:
             row_idx = row["row_index"]
             status = row["status"]
@@ -643,11 +647,16 @@ class CustomerImportService:
                     continue
 
             # Create new customer
+            if remaining is not None and remaining <= 0:
+                failed.append({"row": row_idx, "error": limit_message})
+                continue
             try:
                 self._create_customer_from_mapped(
                     customer_svc, organization_id, user_id, mapped,
                 )
                 imported.append(row_idx)
+                if remaining is not None:
+                    remaining -= 1
             except Exception as exc:
                 failed.append({"row": row_idx, "error": row_error_message(exc, row_idx, "Customer")})
 

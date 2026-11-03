@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { UserCheck, Plus, Repeat, Building2, ArrowLeftRight } from "lucide-react";
+import { UserCheck, Plus, Repeat, Building2, ArrowLeftRight, RefreshCw } from "lucide-react";
 import {
   listCommercialSubscriptions,
   createCommercialSubscription,
@@ -8,8 +8,18 @@ import {
   listCommercialAccounts,
   listCommercialPlans,
 } from "../../service/commercialService";
-import { PageHeader, SectionCard, DataTable, Button, Modal, Field, Select, SearchInput } from "../../components/billing-ui";
-import { Pagination, StatusBadge, SuccessMessage, useConfirmationDialog } from "../../components/billing-shared";
+import {
+  PageHeader,
+  SectionCard,
+  DataTable,
+  Button,
+  Modal,
+  Field,
+  Select,
+  SearchInput,
+  FORM_CONTROL_CLASS,
+} from "../../components/billing-ui";
+import { ErrorState, Pagination, StatusBadge, SuccessMessage, useConfirmationDialog } from "../../components/billing-shared";
 import {
   PAGE_SIZE,
   SUBSCRIPTION_STATUS_OPTIONS,
@@ -21,7 +31,37 @@ import {
   displayValue,
 } from "./constants";
 
+// The backend state machine (CommercialSubscriptionService._TRANSITIONS) also
+// has TRIAL_RECOVERY and CONVERTED, which the shared constants lack — rows in
+// those states rendered as "Terminal" with no actions although the backend
+// accepts transitions out of them. Moving INTO trial_recovery/converted is
+// left to the trial sweeps / self-serve conversion (they set the recovery
+// window and conversion bookkeeping a bare status write would skip).
+const STATUS_OPTIONS = [
+  ...SUBSCRIPTION_STATUS_OPTIONS,
+  { value: "trial_recovery", label: "Trial Recovery", color: "bg-amber-100 text-amber-700" },
+  { value: "converted", label: "Converted", color: "bg-emerald-100 text-emerald-700" },
+].filter((opt, idx, all) => all.findIndex((o) => o.value === opt.value) === idx);
+
+const TRANSITIONS = {
+  ...SUBSCRIPTION_TRANSITIONS,
+  trial_recovery: ["active", "suspended", "cancelled", "expired"],
+  converted: ["active", "suspended", "cancelled"],
+};
+
+// change_plan only accepts subscriptions in CommercialSubscriptionService.
+// _OPEN_STATUSES — cancel_at_period_end, enterprise_pending and converted
+// are rejected there.
+const PLAN_CHANGE_STATUSES = new Set([
+  "pending", "active", "past_due", "restricted", "suspended", "trialing", "trial_recovery", "scheduled_change",
+]);
+
+const TERMINAL_TARGETS = new Set(["cancelled", "expired"]);
+const TRIAL_COLUMN_STATUSES = new Set(["pending", "trialing", "trial_recovery", "suspended"]);
+
 const EMPTY_FORM = { organization_id: "", plan_id: "", status: "pending" };
+
+const statusLabel = (status) => STATUS_OPTIONS.find((o) => o.value === status)?.label || displayValue(status);
 
 // `embedded` drops this page's own PageHeader when it is mounted as a tab of
 // the Products & Pricing hub.
@@ -30,15 +70,22 @@ export default function SubscriptionsPage({ embedded = false } = {}) {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
+  // A failed row action is reported inline; `error` is reserved for a failed
+  // LOAD so a rejected transition never masquerades as the list failing.
+  const [actionError, setActionError] = useState(null);
+  const [busyId, setBusyId] = useState(null);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [formError, setFormError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [optionsLoading, setOptionsLoading] = useState(false);
   const [orgs, setOrgs] = useState([]);
+  const [orgTotal, setOrgTotal] = useState(0);
   const [plans, setPlans] = useState([]);
   const [transitionTargets, setTransitionTargets] = useState({});
   const { confirm, ConfirmationDialog } = useConfirmationDialog();
@@ -49,7 +96,7 @@ export default function SubscriptionsPage({ embedded = false } = {}) {
   const [planChangeError, setPlanChangeError] = useState(null);
   const [planChangeSubmitting, setPlanChangeSubmitting] = useState(false);
 
-  const load = useCallback(async (pageNum, term) => {
+  const load = useCallback(async (pageNum, term, statusValue) => {
     setLoading(true);
     setError(null);
     try {
@@ -57,9 +104,20 @@ export default function SubscriptionsPage({ embedded = false } = {}) {
         skip: (pageNum - 1) * PAGE_SIZE,
         limit: PAGE_SIZE,
         search: term,
+        ...(statusValue ? { status: statusValue } : {}),
       });
-      setSubscriptions(data.subscriptions || []);
-      setTotal(data.total || 0);
+      const rows = data?.subscriptions || [];
+      const count = data?.total || 0;
+      // The last page can empty out (a cancel under a status filter, a
+      // shrinking search result); step back instead of showing "no
+      // subscriptions" while some still exist.
+      const lastPage = Math.max(1, Math.ceil(count / PAGE_SIZE));
+      if (rows.length === 0 && count > 0 && pageNum > lastPage) {
+        setPage(lastPage);
+        return;
+      }
+      setSubscriptions(rows);
+      setTotal(count);
     } catch (err) {
       setError(err?.message || "Failed to load commercial subscriptions.");
       setSubscriptions([]);
@@ -69,12 +127,25 @@ export default function SubscriptionsPage({ embedded = false } = {}) {
     }
   }, []);
 
+  const reload = useCallback(() => load(page, search, statusFilter), [load, page, search, statusFilter]);
+
   useEffect(() => {
-    load(page, search);
-  }, [load, page, search]);
+    reload();
+  }, [reload]);
+
+  useEffect(() => {
+    if (!success) return undefined;
+    const t = setTimeout(() => setSuccess(null), 6000);
+    return () => clearTimeout(t);
+  }, [success]);
 
   const onSearch = useCallback((value) => {
     setSearch(value);
+    setPage(1);
+  }, []);
+
+  const onStatusFilter = useCallback((value) => {
+    setStatusFilter(value);
     setPage(1);
   }, []);
 
@@ -82,21 +153,36 @@ export default function SubscriptionsPage({ embedded = false } = {}) {
     setForm(EMPTY_FORM);
     setFormError(null);
     setCreateOpen(true);
+    setOptionsLoading(true);
     try {
       const [o, p] = await Promise.all([
         listCommercialAccounts({ limit: 200 }),
         listCommercialPlans({ limit: 200 }),
       ]);
-      setOrgs(o.accounts || []);
-      setPlans(p.plans || []);
+      setOrgs(o?.accounts || []);
+      setOrgTotal(o?.total || 0);
+      setPlans(p?.plans || []);
     } catch (err) {
       setFormError(err?.message || "Failed to load organizations/plans for the form.");
+    } finally {
+      setOptionsLoading(false);
     }
   }, []);
 
-  const handleCreate = async () => {
+  const closeCreate = () => {
+    if (!submitting) setCreateOpen(false);
+  };
+
+  const handleCreate = async (event) => {
+    event?.preventDefault();
+    if (submitting) return;
     if (!form.organization_id || !form.plan_id) {
-      setFormError("Organization and plan are required.");
+      setFormError("Choose an organization and a plan.");
+      return;
+    }
+    const plan = plans.find((p) => String(p.id) === String(form.plan_id));
+    if (form.status === "active" && plan && plan.status !== "active") {
+      setFormError(`${plan.plan_name} is ${plan.status}; only active plans can start an active subscription. Start it as Pending or pick an active plan.`);
       return;
     }
     setSubmitting(true);
@@ -107,10 +193,11 @@ export default function SubscriptionsPage({ embedded = false } = {}) {
         plan_id: Number(form.plan_id),
         status: form.status,
       });
-      setSuccess(`Subscription created for ${created.organization_code} (${created.plan_code}, ${created.status}).`);
+      setSuccess(`Subscription created for ${created.organization_code} (${created.plan_code}, ${statusLabel(created.status)}).`);
+      setActionError(null);
       setCreateOpen(false);
       setForm(EMPTY_FORM);
-      await load(page, search);
+      await reload();
     } catch (err) {
       setFormError(err?.message || "Failed to create subscription.");
     } finally {
@@ -119,22 +206,36 @@ export default function SubscriptionsPage({ embedded = false } = {}) {
   };
 
   const handleTransition = async (subscription, newStatus) => {
+    if (busyId !== null) return;
+    const verb = TRANSITION_LABELS[newStatus] || statusLabel(newStatus);
+    const terminal = TERMINAL_TARGETS.has(newStatus);
     const ok = await confirm({
-      title: `${TRANSITION_LABELS[newStatus] || newStatus} subscription ${subscription.plan_code}?`,
-      message:
-        newStatus === "cancelled" || newStatus === "expired"
-          ? `${TRANSITION_LABELS[newStatus]} is terminal and preserved as history. This cannot be undone via the UI.`
-          : `This moves subscription ${subscription.id} from ${subscription.status} to ${newStatus} through the backend state machine.`,
-      confirmLabel: TRANSITION_LABELS[newStatus] || "Confirm",
-      tone: newStatus === "cancelled" || newStatus === "expired" ? "danger" : "primary",
+      title: `${verb} ${subscription.organization_name || subscription.organization_code}'s subscription?`,
+      message: terminal
+        ? `This ends the ${subscription.plan_code} subscription. It is kept as history but cannot be reopened — a new subscription would be needed.`
+        : `The ${subscription.plan_code} subscription moves from ${statusLabel(subscription.status)} to ${statusLabel(newStatus)}.${
+            newStatus === "active" ? " Activating starts real billing and requires the plan to be active and the organization to be chargeable." : ""
+          }`,
+      confirmLabel: verb,
+      tone: terminal ? "danger" : "primary",
     });
     if (!ok) return;
+    setBusyId(subscription.id);
+    setActionError(null);
+    setSuccess(null);
     try {
       const updated = await setCommercialSubscriptionStatus(subscription.id, newStatus);
-      setSuccess(`Subscription for ${updated.organization_code} is now ${newStatus}.`);
-      await load(page, search);
+      setSuccess(`Subscription for ${updated.organization_code} is now ${statusLabel(updated.status)}.`);
+      setTransitionTargets((prev) => {
+        const next = { ...prev };
+        delete next[subscription.id];
+        return next;
+      });
+      await reload();
     } catch (err) {
-      setError(err?.message || "Failed to update subscription status.");
+      setActionError(err?.message || "Failed to update subscription status.");
+    } finally {
+      setBusyId(null);
     }
   };
 
@@ -146,7 +247,7 @@ export default function SubscriptionsPage({ embedded = false } = {}) {
       if (plans.length === 0) {
         try {
           const p = await listCommercialPlans({ limit: 200 });
-          setPlans(p.plans || []);
+          setPlans(p?.plans || []);
         } catch (err) {
           setPlanChangeError(err?.message || "Failed to load the plan catalog for this form.");
         }
@@ -155,9 +256,24 @@ export default function SubscriptionsPage({ embedded = false } = {}) {
     [plans]
   );
 
-  const handlePlanChange = async () => {
+  const closePlanChange = () => {
+    if (!planChangeSubmitting) setPlanChangeSub(null);
+  };
+
+  // Why a target plan can't be chosen, mirroring change_plan's guards.
+  const planChangeBlock = (plan) => {
+    if (!planChangeSub) return null;
+    if (plan.id === planChangeSub.commercial_plan_id) return "current";
+    if (plan.status === "archived") return "archived";
+    if (planChangeSub.status === "active" && plan.status !== "active") return "not active";
+    return null;
+  };
+
+  const handlePlanChange = async (event) => {
+    event?.preventDefault();
+    if (planChangeSubmitting) return;
     if (!planChangeForm.new_plan_id || planChangeForm.reason.trim().length < 3) {
-      setPlanChangeError("Pick a target plan and give a reason (min. 3 characters).");
+      setPlanChangeError("Pick a target plan and give a reason (at least 3 characters).");
       return;
     }
     if (Number(planChangeForm.new_plan_id) === planChangeSub.commercial_plan_id) {
@@ -172,10 +288,11 @@ export default function SubscriptionsPage({ embedded = false } = {}) {
         reason: planChangeForm.reason.trim(),
       });
       setSuccess(
-        `Plan changed for ${replacement.organization_code}: now on ${replacement.plan_code} (${replacement.status}); the previous subscription is preserved as history.`
+        `Plan changed for ${replacement.organization_code}: now on ${replacement.plan_code} (${statusLabel(replacement.status)}); the previous subscription is kept as history.`
       );
+      setActionError(null);
       setPlanChangeSub(null);
-      await load(page, search);
+      await reload();
     } catch (err) {
       setPlanChangeError(err?.message || "Failed to change the subscription's plan.");
     } finally {
@@ -205,7 +322,7 @@ export default function SubscriptionsPage({ embedded = false } = {}) {
         label: "Plan",
         render: (row) => (
           <span>
-            <span className="block font-medium text-slate-700">{row.plan_name}</span>
+            <span className="block font-medium text-slate-700">{row.plan_name || "—"}</span>
             <span className="block text-xs text-slate-500">{row.plan_code}</span>
           </span>
         ),
@@ -213,13 +330,13 @@ export default function SubscriptionsPage({ embedded = false } = {}) {
       {
         key: "status",
         label: "Status",
-        render: (row) => <StatusBadge status={row.status} options={SUBSCRIPTION_STATUS_OPTIONS} />,
+        render: (row) => <StatusBadge status={row.status} options={STATUS_OPTIONS} />,
       },
       {
         key: "trial",
         label: "Trial / Recovery",
         render: (row) => {
-          if (row.status !== "suspended" && row.status !== "pending" && row.status !== "trialing") {
+          if (!TRIAL_COLUMN_STATUSES.has(row.status)) {
             return <span className="text-xs text-slate-400">—</span>;
           }
           const trial = formatTrialRemaining(row.trial_ends_at, row.status, row.recovery_ends_at);
@@ -231,19 +348,15 @@ export default function SubscriptionsPage({ embedded = false } = {}) {
       },
       {
         key: "period",
-        label: "Period",
+        label: "Billing Period",
         render: (row) => (
           <span className="text-xs text-slate-600">
-            {formatDateOnly(row.start_at)} — {formatDateOnly(row.end_at)}
-          </span>
-        ),
-      },
-      {
-        key: "current_period",
-        label: "Current Period",
-        render: (row) => (
-          <span className="text-xs text-slate-600">
-            {formatDateOnly(row.current_period_start)} — {formatDateOnly(row.current_period_end)}
+            <span className="block">
+              {formatDateOnly(row.current_period_start)} — {formatDateOnly(row.current_period_end)}
+            </span>
+            <span className="block text-slate-400">
+              Term {formatDateOnly(row.start_at)} — {formatDateOnly(row.end_at)}
+            </span>
           </span>
         ),
       },
@@ -255,44 +368,68 @@ export default function SubscriptionsPage({ embedded = false } = {}) {
       {
         key: "actions",
         label: "Actions",
-        width: 300,
+        width: 320,
         render: (row) => {
-          const allowed = SUBSCRIPTION_TRANSITIONS[row.status] || [];
-          if (allowed.length === 0) return <span className="text-xs text-slate-500">Terminal</span>;
-          const target = transitionTargets[row.id] || allowed[0];
+          const allowed = TRANSITIONS[row.status] || [];
+          const canChangePlan = PLAN_CHANGE_STATUSES.has(row.status);
+          if (allowed.length === 0 && !canChangePlan) {
+            return <span className="text-xs text-slate-500">Ended — kept as history</span>;
+          }
+          const target = allowed.includes(transitionTargets[row.id]) ? transitionTargets[row.id] : allowed[0];
+          const rowBusy = busyId === row.id;
           return (
-            <div className="flex items-center gap-1.5">
-              <select
-                value={target}
-                onChange={(e) => setTransitionTargets((prev) => ({ ...prev, [row.id]: e.target.value }))}
-                aria-label={`Transition ${row.id}`}
-                className="rounded-lg border border-slate-200 px-2 py-1.5 text-xs text-slate-700 focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100"
-              >
-                {allowed.map((s) => (
-                  <option key={s} value={s}>{TRANSITION_LABELS[s] || s}</option>
-                ))}
-              </select>
-              <Button size="sm" variant="secondary" icon={Repeat} onClick={() => handleTransition(row, target)}>
-                Apply
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                icon={ArrowLeftRight}
-                title="Change plan (supersedes this subscription; history preserved)"
-                onClick={() => openPlanChange(row)}
-              >
-                Plan
-              </Button>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {allowed.length > 0 && (
+                <>
+                  <select
+                    value={target}
+                    onChange={(e) => setTransitionTargets((prev) => ({ ...prev, [row.id]: e.target.value }))}
+                    aria-label={`Status change for subscription ${row.id}`}
+                    disabled={busyId !== null}
+                    className="rounded-lg border border-slate-200 px-2 py-1.5 text-xs text-slate-700 focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:opacity-50"
+                  >
+                    {allowed.map((s) => (
+                      <option key={s} value={s}>{TRANSITION_LABELS[s] || statusLabel(s)}</option>
+                    ))}
+                  </select>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    icon={Repeat}
+                    loading={rowBusy}
+                    disabled={busyId !== null}
+                    onClick={() => handleTransition(row, target)}
+                  >
+                    Apply
+                  </Button>
+                </>
+              )}
+              {canChangePlan && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  icon={ArrowLeftRight}
+                  disabled={busyId !== null}
+                  title="Move to another plan (the current subscription is kept as history)"
+                  onClick={() => openPlanChange(row)}
+                >
+                  Change plan
+                </Button>
+              )}
             </div>
           );
         },
       },
     ],
-    [transitionTargets, openPlanChange]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [transitionTargets, openPlanChange, busyId]
   );
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const firstRow = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const lastRow = Math.min(total, page * PAGE_SIZE);
+  const filtered = Boolean(search || statusFilter);
+  const selectedCreatePlan = plans.find((p) => String(p.id) === String(form.plan_id));
 
   return (
     <div className={embedded ? "" : "p-4 sm:p-6 lg:p-8"}>
@@ -300,97 +437,148 @@ export default function SubscriptionsPage({ embedded = false } = {}) {
         embedded={embedded}
         accent="violet"
         title="Platform Subscriptions"
-        description="PLANE 1 · Zoiko→Tenant SaaS subscriptions. Lifecycle changes go through the backend state machine only; plan changes supersede the subscription and preserve history."
+        description="Which Zoiko plan each organization is subscribed to. Status changes follow the allowed lifecycle; plan changes replace the subscription and keep the old one as history."
         icon={UserCheck}
         actions={
-          <Button variant="primary" icon={Plus} onClick={openCreate}>
-            Create subscription
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="secondary" icon={RefreshCw} onClick={() => reload()} disabled={loading}>
+              Refresh
+            </Button>
+            <Button variant="primary" icon={Plus} onClick={openCreate}>
+              Create subscription
+            </Button>
+          </div>
         }
-        meta={`${displayValue(total)} subscription(s)`}
+        meta={`${displayValue(total)} subscription(s)${filtered ? " matching filters" : ""}`}
       />
 
       <div className={`space-y-4 ${embedded ? "" : "mt-6"}`}>
         {success && <SuccessMessage message={success} onDismiss={() => setSuccess(null)} />}
-        {error && (
-          <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700" role="alert">
-            {error}
-            <button type="button" onClick={() => load(page, search)} className="ml-3 font-semibold underline">Retry</button>
-            <button type="button" onClick={() => setError(null)} className="ml-3 font-semibold underline">Dismiss</button>
+        {actionError && (
+          <div role="alert" className="flex items-start justify-between gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <span>{actionError}</span>
+            <button type="button" onClick={() => setActionError(null)} className="shrink-0 text-xs font-semibold underline">Dismiss</button>
           </div>
         )}
 
-        <SearchInput value={search} onChange={onSearch} placeholder="Search by organization name/code or plan code…" className="w-full max-w-sm" />
+        {/* Filters stay visible in the error state so a bad search/filter
+            can be cleared without reloading the page. */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <SearchInput value={search} onChange={onSearch} placeholder="Search by organization name/code or plan code…" className="w-full sm:max-w-sm" />
+          <Select
+            value={statusFilter}
+            onChange={onStatusFilter}
+            options={STATUS_OPTIONS.map(({ value, label }) => ({ value, label }))}
+            placeholder="All statuses"
+            aria-label="Filter by status"
+            className="w-full sm:w-52"
+          />
+          {filtered && (
+            <Button variant="ghost" size="sm" onClick={() => { onSearch(""); onStatusFilter(""); }}>
+              Clear filters
+            </Button>
+          )}
+        </div>
 
-        {/* A failed fetch also clears `subscriptions` to [], so rendering the
-            table unconditionally showed "No commercial subscriptions yet"
-            directly under the error banner above — a failure read as an
-            empty catalogue. */}
-        {!(error && subscriptions.length === 0) && (
-          <SectionCard
-            variant="hero"
-            accent="violet"
-            icon={UserCheck}
-            title="Subscription Directory"
-            description="Zoiko→Tenant SaaS subscriptions. Lifecycle changes go through the backend state machine only."
-          >
+        {/* A failed fetch also clears `subscriptions` to [], so the empty
+            state must not render under the error — a failure would read as
+            an empty catalogue. */}
+        <SectionCard
+          variant="hero"
+          accent="violet"
+          icon={UserCheck}
+          title="Subscription Directory"
+          description="Newest first. Use Apply to move a subscription to another status, or Change plan to switch its plan."
+        >
+          {error ? (
+            <ErrorState message={error} onRetry={() => reload()} title="Unable to load subscriptions" />
+          ) : (
             <DataTable
               columns={columns}
               data={subscriptions}
               loading={loading}
-              emptyTitle="No commercial subscriptions yet"
-              emptyMessage="Create the first subscription to assign a plan to an organization."
-              emptyAction={<Button variant="primary" icon={Plus} onClick={openCreate}>Create subscription</Button>}
+              emptyTitle={filtered ? "No subscriptions match" : "No commercial subscriptions yet"}
+              emptyMessage={
+                filtered
+                  ? "Try a different search or status, or clear the filters."
+                  : "Create the first subscription to assign a plan to an organization."
+              }
+              emptyAction={
+                filtered ? (
+                  <Button variant="secondary" onClick={() => { onSearch(""); onStatusFilter(""); }}>Clear filters</Button>
+                ) : (
+                  <Button variant="primary" icon={Plus} onClick={openCreate}>Create subscription</Button>
+                )
+              }
               minWidth={1120}
             />
-          </SectionCard>
-        )}
+          )}
+        </SectionCard>
 
-        {!(error && subscriptions.length === 0) && (
+        {!error && (
           <Pagination page={page} totalPages={totalPages} onPageChange={setPage}>
-            {displayValue(total)} subscription(s)
+            Showing {firstRow.toLocaleString()}–{lastRow.toLocaleString()} of {displayValue(total)}
           </Pagination>
         )}
       </div>
 
       <Modal
         open={createOpen}
-        onClose={() => setCreateOpen(false)}
+        onClose={closeCreate}
         title="Create commercial subscription"
-        description="New subscriptions may only start as PENDING or ACTIVE. The backend rejects illegal combinations (e.g. ACTIVE on an archived plan)."
+        description="Assign a plan to an organization. An organization can have only one open subscription at a time."
         icon={UserCheck}
         size="md"
         footer={
           <>
-            <Button variant="secondary" onClick={() => setCreateOpen(false)}>Cancel</Button>
-            <Button variant="primary" onClick={handleCreate} loading={submitting}>Create subscription</Button>
+            <Button variant="secondary" onClick={closeCreate} disabled={submitting}>Cancel</Button>
+            <Button type="submit" form="cs-create-form" variant="primary" loading={submitting} disabled={optionsLoading}>
+              Create subscription
+            </Button>
           </>
         }
       >
-        <div className="space-y-4">
-          <Field label="Organization" htmlFor="cs-org" required>
+        <form id="cs-create-form" onSubmit={handleCreate} className="space-y-4" noValidate>
+          <Field
+            label="Organization"
+            htmlFor="cs-org"
+            required
+            hint={
+              orgTotal > orgs.length
+                ? `Showing the ${orgs.length} most recent of ${orgTotal.toLocaleString()} organizations.`
+                : "Organizations that already have an open subscription can't be picked — change or end that one instead."
+            }
+          >
             <select
               id="cs-org"
               value={form.organization_id}
+              disabled={optionsLoading}
               onChange={(e) => setForm((prev) => ({ ...prev, organization_id: e.target.value }))}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100"
+              className={FORM_CONTROL_CLASS}
             >
-              <option value="">Select organization…</option>
-              {orgs.map((org) => (
-                <option key={org.organization_id} value={org.organization_id}>
-                  {org.organization_name} ({org.organization_code})
-                </option>
-              ))}
+              <option value="">{optionsLoading ? "Loading organizations…" : "Select organization…"}</option>
+              {orgs.map((org) => {
+                // create_subscription rejects an account that already has an
+                // open subscription.
+                const open = org.current_subscription;
+                return (
+                  <option key={org.organization_id} value={org.organization_id} disabled={Boolean(open)}>
+                    {org.organization_name} ({org.organization_code})
+                    {open ? ` — already on ${open.plan_code} (${statusLabel(open.status)})` : ""}
+                  </option>
+                );
+              })}
             </select>
           </Field>
           <Field label="Plan" htmlFor="cs-plan" required>
             <select
               id="cs-plan"
               value={form.plan_id}
+              disabled={optionsLoading}
               onChange={(e) => setForm((prev) => ({ ...prev, plan_id: e.target.value }))}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100"
+              className={FORM_CONTROL_CLASS}
             >
-              <option value="">Select plan…</option>
+              <option value="">{optionsLoading ? "Loading plans…" : "Select plan…"}</option>
               {plans.map((plan) => (
                 <option key={plan.id} value={plan.id} disabled={plan.status === "archived"}>
                   {plan.plan_name} ({plan.plan_code}) — {plan.status}
@@ -398,10 +586,19 @@ export default function SubscriptionsPage({ embedded = false } = {}) {
               ))}
             </select>
           </Field>
-          <Field label="Initial status" htmlFor="cs-status" hint="Only PENDING or ACTIVE is allowed for a new subscription.">
+          <Field
+            label="Initial status"
+            htmlFor="cs-status"
+            hint={
+              selectedCreatePlan && selectedCreatePlan.status !== "active"
+                ? "This plan isn't active, so the subscription can only start as Pending."
+                : "Pending waits for activation; Active starts billing now."
+            }
+          >
             <Select
               id="cs-status"
               value={form.status}
+              placeholder=""
               onChange={(v) => setForm((prev) => ({ ...prev, status: v }))}
               options={[
                 { value: "pending", label: "Pending" },
@@ -414,59 +611,64 @@ export default function SubscriptionsPage({ embedded = false } = {}) {
               {formError}
             </p>
           )}
-        </div>
+        </form>
       </Modal>
 
       <Modal
         open={!!planChangeSub}
-        onClose={() => setPlanChangeSub(null)}
+        onClose={closePlanChange}
         title="Change subscription plan"
-        description="Phase 3F: the current open subscription is cancelled (preserved as history) and replaced by one on the target plan. If it was ACTIVE, the replacement activates immediately under the same charging guards. A reason is mandatory and audited."
+        description="The current subscription is cancelled (kept as history) and replaced by one on the new plan. If it was Active, the replacement is activated straight away."
         icon={ArrowLeftRight}
         size="md"
         footer={
           <>
-            <Button variant="secondary" onClick={() => setPlanChangeSub(null)}>Cancel</Button>
-            <Button variant="primary" icon={ArrowLeftRight} onClick={handlePlanChange} loading={planChangeSubmitting}>
+            <Button variant="secondary" onClick={closePlanChange} disabled={planChangeSubmitting}>Cancel</Button>
+            <Button type="submit" form="pc-form" variant="primary" icon={ArrowLeftRight} loading={planChangeSubmitting}>
               Change plan
             </Button>
           </>
         }
       >
         {planChangeSub && (
-          <div className="space-y-4">
+          <form id="pc-form" onSubmit={handlePlanChange} className="space-y-4" noValidate>
             <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
               <p><span className="font-semibold text-slate-800">{planChangeSub.organization_name}</span> ({planChangeSub.organization_code})</p>
-              <p className="mt-1">Current plan: {planChangeSub.plan_name} ({planChangeSub.plan_code}) · status {planChangeSub.status}</p>
+              <p className="mt-1">Current plan: {planChangeSub.plan_name} ({planChangeSub.plan_code}) · {statusLabel(planChangeSub.status)}</p>
             </div>
-            <Field label="Target plan" htmlFor="pc-plan" required>
+            <Field
+              label="New plan"
+              htmlFor="pc-plan"
+              required
+              hint={planChangeSub.status === "active" ? "This subscription is Active, so only active plans can be chosen." : undefined}
+            >
               <select
                 id="pc-plan"
                 value={planChangeForm.new_plan_id}
                 onChange={(e) => setPlanChangeForm((prev) => ({ ...prev, new_plan_id: e.target.value }))}
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100"
+                className={FORM_CONTROL_CLASS}
               >
                 <option value="">Select plan…</option>
-                {plans.map((plan) => (
-                  <option
-                    key={plan.id}
-                    value={plan.id}
-                    disabled={plan.status === "archived" || plan.id === planChangeSub.commercial_plan_id}
-                  >
-                    {plan.plan_name} ({plan.plan_code}) — {plan.status}
-                    {plan.id === planChangeSub.commercial_plan_id ? " · current" : ""}
-                  </option>
-                ))}
+                {plans.map((plan) => {
+                  const block = planChangeBlock(plan);
+                  return (
+                    <option key={plan.id} value={plan.id} disabled={Boolean(block)}>
+                      {plan.plan_name} ({plan.plan_code}) — {plan.status}
+                      {block === "current" ? " · current" : ""}
+                    </option>
+                  );
+                })}
               </select>
             </Field>
-            <Field label="Reason" htmlFor="pc-reason" required hint="Recorded on both the platform audit trail and the org billing audit trail.">
+            <Field label="Reason" htmlFor="pc-reason" required hint={`Saved to the audit trail. ${planChangeForm.reason.length}/1000`}>
               <textarea
                 id="pc-reason"
                 rows={3}
+                maxLength={1000}
                 value={planChangeForm.reason}
                 onChange={(e) => setPlanChangeForm((prev) => ({ ...prev, reason: e.target.value }))}
                 placeholder="Why is this subscription changing plan?"
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100"
+                className={FORM_CONTROL_CLASS}
               />
             </Field>
             {planChangeError && (
@@ -474,7 +676,7 @@ export default function SubscriptionsPage({ embedded = false } = {}) {
                 {planChangeError}
               </p>
             )}
-          </div>
+          </form>
         )}
       </Modal>
 

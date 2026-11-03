@@ -242,6 +242,20 @@ _RESOLVER_CHAIN: list[ResolverFn] = [
     _resolve_L7_safe_default,
 ]
 
+# Trial accounts receive a small, consistent allowance for count-based
+# resources regardless of their paid plan's normal limits. Time/rate limits
+# (API requests per day and audit-search months) are intentionally excluded.
+TRIAL_ITEM_LIMIT = 5
+TRIAL_ITEM_LIMIT_KEYS = frozenset({
+    "billing.customer.max",
+    "billing.invoice.monthly_limit",
+    "payments.provider.max",
+    "org.entity.max",
+    "currency.enabled.max",
+    "webhooks.endpoint.max",
+    "sandbox.workspace.max",
+})
+
 
 def resolve_entitlement(db: Session, organization_id: int, key: str) -> ResolvedEntitlement:
     """Run the 7-level precedence chain for (organization_id, key) and
@@ -268,11 +282,21 @@ def resolve_entitlement(db: Session, organization_id: int, key: str) -> Resolved
         )
         if definition is None:
             raise EntitlementKeyNotFoundError(f"No EntitlementDefinition for key {key!r}.")
+        cached_value = cache_entry.get("value")
+        cached_level = cache_entry.get("source_level", 7)
+        if (
+            cached_level > 2
+            and key in TRIAL_ITEM_LIMIT_KEYS
+            and definition.value_type == EntitlementValueType.INTEGER
+        ):
+            subscription = resolve_open_subscription(db, organization_id)
+            if subscription is not None and subscription.status == CommercialSubscriptionStatus.TRIALING:
+                cached_value = TRIAL_ITEM_LIMIT
         return ResolvedEntitlement(
             key=key,
-            value=cache_entry.get("value"),
+            value=cached_value,
             value_type=definition.value_type,
-            source_level=cache_entry.get("source_level", 7),
+            source_level=cached_level,
             definition=definition,
         )
 
@@ -287,6 +311,18 @@ def resolve_entitlement(db: Session, organization_id: int, key: str) -> Resolved
     for level, resolver in enumerate(_RESOLVER_CHAIN, start=1):
         resolved, value = resolver(ctx)
         if resolved:
+            # Keep legal prohibitions and a platform-wide enforcement
+            # kill-switch authoritative. For normal plan/override resolutions,
+            # trial item quotas are five even when the paid plan is larger or
+            # smaller; all normal entitlement precedence resumes after trial.
+            if (
+                level > 2
+                and key in TRIAL_ITEM_LIMIT_KEYS
+                and definition.value_type == EntitlementValueType.INTEGER
+                and ctx.subscription is not None
+                and ctx.subscription.status == CommercialSubscriptionStatus.TRIALING
+            ):
+                value = TRIAL_ITEM_LIMIT
             cache_service.cache_set(
                 f"ent:resolved:{organization_id}:{key}",
                 {"value": value, "source_level": level},

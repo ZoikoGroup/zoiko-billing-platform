@@ -177,10 +177,13 @@ describe("WorkspaceZoikoSubscriptionPage", () => {
     platformSelfServiceApi.getPlanLimits.mockResolvedValue({
       entitlements: [
         { key: "billing.invoice.monthly_limit", value: 1000, value_type: "integer", enforcement_type: "hard" },
+        { key: "billing.customer.max", value: 1000, value_type: "integer", enforcement_type: "hard", current_usage: 37 },
         { key: "api.requests_per_day", value: 50000, value_type: "integer", enforcement_type: "throttle" },
         { key: "security.sso", value: true, value_type: "boolean", enforcement_type: "hard" },
+        { key: "billing.recurring.manage", value: true, value_type: "boolean", enforcement_type: "hard" },
         { key: "billing.pricing_model_set", value: ["flat", "tiered", "volume"], value_type: "set", enforcement_type: "hard" },
       ],
+      seats: { used: 7, limit: 25 },
     });
 
     render(
@@ -191,12 +194,18 @@ describe("WorkspaceZoikoSubscriptionPage", () => {
 
     expect(await screen.findByText("Plan Limits")).toBeInTheDocument();
     expect(screen.getByText("Live limits for your organization")).toBeInTheDocument();
-    // used / limit for a metered key, plain limit for an unmetered one
+    // used / limit from the legacy counter, and live usage from plan-limits
     expect(screen.getByText("400")).toBeInTheDocument();
-    expect(screen.getByText("/ 1,000")).toBeInTheDocument();
-    expect(screen.getAllByText("50,000").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText("Single sign-on (SSO)")).toBeInTheDocument();
+    expect(screen.getAllByText("/ 1,000").length).toBe(2);
+    expect(screen.getByText("37")).toBeInTheDocument();
+    expect(screen.getByText("7")).toBeInTheDocument();
+    expect(screen.getByText("/ 25")).toBeInTheDocument();
+    expect(screen.getByText("Recurring billing & subscriptions")).toBeInTheDocument();
+    // Resolved keys for features the product doesn't have are not shown.
+    expect(screen.queryByText("50,000")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Single sign-on/)).not.toBeInTheDocument();
     expect(screen.getByText("Pricing models you can use")).toBeInTheDocument();
+    expect(screen.getByText("Tiered & graduated")).toBeInTheDocument();
     expect(screen.getByText("Compare Plans")).toBeInTheDocument();
   });
 

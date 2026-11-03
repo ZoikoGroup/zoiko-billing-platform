@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.core.dependencies import get_current_user, get_current_billing_admin
 from app.modules.billing.services import PricingService
+from app.modules.commercial.entitlement_enforcement import EntitlementEnforcementService
 from app.modules.billing.schemas import (
     PricingPlanCreate,
     PricingPlanUpdate,
@@ -76,6 +77,9 @@ def create_plan(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
+    EntitlementEnforcementService(db).assert_pricing_model_allowed(
+        organization_id=current_user.organization_id, pricing_model=data.pricing_model,
+    )
     svc = PricingService(db)
     plan = svc.create_plan(
         organization_id=current_user.organization_id,
@@ -217,6 +221,18 @@ def update_plan(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
+    if data.pricing_model is not None:
+        # Only a change of model is gated: plans already on a model keep
+        # working after a downgrade.
+        current = (
+            db.query(PricingPlan.pricing_model)
+            .filter(PricingPlan.id == plan_id, PricingPlan.organization_id == current_user.organization_id)
+            .scalar()
+        )
+        if current is None or str(getattr(current, "value", current)) != str(getattr(data.pricing_model, "value", data.pricing_model)):
+            EntitlementEnforcementService(db).assert_pricing_model_allowed(
+                organization_id=current_user.organization_id, pricing_model=data.pricing_model,
+            )
     svc = PricingService(db)
     plan = svc.update_plan(
         plan_id=plan_id,

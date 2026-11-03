@@ -285,7 +285,7 @@ describe("TenantHealthPage capability gating", () => {
       </Wrapper>
     );
 
-    await waitFor(() => expect(screen.getByText(/organization\(s\) · plane/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/^2 organizations/i)).toBeInTheDocument());
     expect(screen.queryByText(/does not include the reliability\.read capability/i)).not.toBeInTheDocument();
   });
 });

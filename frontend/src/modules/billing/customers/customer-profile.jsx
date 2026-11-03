@@ -2428,7 +2428,7 @@ export default function CustomerProfilePage() {
             className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />} Save Changes
           </button>
-        
+
         </StickyFooter>
       )}
     </HRPage>

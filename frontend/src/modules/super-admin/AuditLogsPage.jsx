@@ -11,6 +11,8 @@ import {
   ArrowRight,
   ChevronDown,
   Code2,
+  ShieldAlert,
+  RefreshCw,
 } from "lucide-react";
 import {
   listPlatformAuditLogs,
@@ -407,6 +409,12 @@ function AuditFilterBar({
         )}
       </div>
 
+      {dateFrom && dateTo && dateFrom > dateTo && (
+        <p role="alert" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          The From date is after the To date, so nothing can match. Swap or adjust the dates.
+        </p>
+      )}
+
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <Field label="Search" htmlFor={`${idPrefix}-search`}>
           <SearchInput id={`${idPrefix}-search`} value={search} onChange={onSearchChange} placeholder={searchPlaceholder} />
@@ -498,7 +506,7 @@ function TabBar({ tab, onChange }) {
           aria-selected={tab === t.key}
           onClick={() => onChange(t.key)}
           className={`rounded-lg px-3.5 py-1.5 text-sm font-semibold transition-colors ${FOCUS_RING} ${
-            tab === t.key ? "bg-brand-600 text-white" : "text-slate-600 hover:bg-slate-50"
+            tab === t.key ? "bg-slate-800 text-white shadow-sm" : "text-slate-600 hover:bg-slate-50"
           }`}
         >
           {t.label}
@@ -1116,47 +1124,53 @@ export default function AuditLogsPage() {
           )}
 
           {/* ── Hash Chain Verification Banner ── */}
-          {tab === "platform" && chainStatus && (
+          {tab === "platform" && (chainStatus || verifyingChain) && (
             <div
               role="status"
-              className={`mt-4 flex items-center justify-between gap-3 rounded-2xl border p-4 ${
-                chainStatus.verified
+              className={`mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-4 ${
+                !chainStatus
+                  ? "border-slate-200 bg-slate-50"
+                  : chainStatus.verified
                   ? "border-emerald-200 bg-emerald-50"
                   : "border-red-200 bg-red-50"
               }`}
             >
-              <div className="flex items-center gap-2">
-                {chainStatus.verified ? (
-                  <ShieldCheck className="h-5 w-5 text-emerald-600 shrink-0" />
+              <div className="flex items-start gap-3">
+                {!chainStatus ? (
+                  <RefreshCw className="mt-0.5 h-5 w-5 shrink-0 animate-spin text-slate-400" />
+                ) : chainStatus.verified ? (
+                  <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
                 ) : (
-                  <ShieldCheck className="h-5 w-5 text-red-600 shrink-0" />
+                  <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
                 )}
-                <span className={`text-sm font-semibold ${chainStatus.verified ? "text-emerald-700" : "text-red-700"}`}>
-                  {chainStatus.verified
-                    ? `Cryptographic hash chain verified · ${chainStatus.total_records?.toLocaleString() ?? "—"} record(s)`
-                    : `⚠ Tamper alert: ${chainStatus.message}`}
-                </span>
+                <div>
+                  <p className={`text-sm font-semibold ${!chainStatus ? "text-slate-600" : chainStatus.verified ? "text-emerald-800" : "text-red-700"}`}>
+                    {!chainStatus
+                      ? "Verifying the audit trail’s tamper-evident hash chain…"
+                      : chainStatus.verified
+                      ? "Audit trail intact"
+                      : "Integrity check failed"}
+                  </p>
+                  {chainStatus && (
+                    <p className={`mt-0.5 text-xs ${chainStatus.verified ? "text-emerald-700" : "text-red-700"}`}>
+                      {chainStatus.verified
+                        ? `Every one of ${chainStatus.total_records?.toLocaleString() ?? "—"} hashed record(s) links to the one before it — nothing has been altered or removed.`
+                        : chainStatus.message}
+                    </p>
+                  )}
+                </div>
               </div>
-              <button
-                type="button"
-                onClick={checkChain}
-                disabled={verifyingChain}
-                className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-              >
-                {verifyingChain ? <RotateCcw className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
-                Re-verify
-              </button>
+              {chainStatus && (
+                <Button size="sm" variant="secondary" icon={RotateCcw} loading={verifyingChain} onClick={checkChain}>
+                  Re-verify
+                </Button>
+              )}
             </div>
           )}
 
           {tab === "platform" ? (
             <div className="mt-4 space-y-4">
-              {error ? (
-                <SectionCard variant="hero" accent="slate">
-                  <ErrorState message={error} onRetry={loadLogs} title="Unable to load platform audit logs" />
-                </SectionCard>
-              ) : (
-                <>
+              <>
                   <AuditFilterBar
                     idPrefix="audit"
                     search={search}
@@ -1208,6 +1222,10 @@ export default function AuditLogsPage() {
                   />
 
                   <SectionCard variant="hero" accent="slate" title="Platform Events">
+                    {error ? (
+                      <ErrorState message={error} onRetry={loadLogs} title="Unable to load platform audit logs" />
+                    ) : (
+                    <>
                     <DataTable
                       columns={columns}
                       data={logs}
@@ -1227,9 +1245,10 @@ export default function AuditLogsPage() {
                         {displayValue(total)} log(s)
                       </Pagination>
                     </div>
+                    </>
+                    )}
                   </SectionCard>
-                </>
-              )}
+              </>
             </div>
           ) : (
             <div className="mt-4 space-y-4">
@@ -1239,16 +1258,7 @@ export default function AuditLogsPage() {
                 the same records.
               </p>
 
-              {subError ? (
-                <SectionCard variant="hero" accent="slate">
-                  <ErrorState
-                    message={subError}
-                    onRetry={loadSubscriptionLogs}
-                    title="Unable to load subscription activity"
-                  />
-                </SectionCard>
-              ) : (
-                <>
+              <>
                   <AuditFilterBar
                     idPrefix="sub-audit"
                     search={subSearch}
@@ -1288,6 +1298,14 @@ export default function AuditLogsPage() {
                   />
 
                   <SectionCard variant="hero" accent="slate" title="Subscription Activity">
+                    {subError ? (
+                      <ErrorState
+                        message={subError}
+                        onRetry={loadSubscriptionLogs}
+                        title="Unable to load subscription activity"
+                      />
+                    ) : (
+                    <>
                     <DataTable
                       columns={subscriptionColumns}
                       data={subLogs}
@@ -1307,9 +1325,10 @@ export default function AuditLogsPage() {
                         {displayValue(subTotal)} event(s)
                       </Pagination>
                     </div>
+                    </>
+                    )}
                   </SectionCard>
-                </>
-              )}
+              </>
             </div>
           )}
         </>
@@ -1319,7 +1338,7 @@ export default function AuditLogsPage() {
         open={Boolean(selected)}
         onClose={() => setSelected(null)}
         title="Audit log detail"
-        description={selected ? `${selected.entity_type}${selected.entity_id ? ` #${selected.entity_id}` : ""} — ${selected.action}` : ""}
+        description={selected ? `${selected.entity_type || "Entity"}${selected.entity_id ? ` #${selected.entity_id}` : ""} — ${String(selected.action || "").replace(/_/g, " ")}` : ""}
         icon={ScrollText}
         size="lg"
         footer={
@@ -1355,7 +1374,13 @@ export default function AuditLogsPage() {
         open={Boolean(subSelected)}
         onClose={() => setSubSelected(null)}
         title="Subscription activity detail"
-        description={subSelected ? `Subscription #${subSelected.subscription_id} — ${subSelected.lifecycle_event}` : ""}
+        description={
+          subSelected
+            ? [subSelected.subscription_id ? `Subscription #${subSelected.subscription_id}` : null, subSelected.lifecycle_event]
+                .filter(Boolean)
+                .join(" — ")
+            : ""
+        }
         icon={Repeat}
         size="lg"
         footer={
@@ -1368,8 +1393,8 @@ export default function AuditLogsPage() {
           <div className="space-y-4">
             <DetailSummary>
               <span><span className="font-semibold text-slate-700">Event:</span> <SubscriptionLifecycleBadge value={subSelected.lifecycle_event} /></span>
-              <span><span className="font-semibold text-slate-700">Subscription:</span> #{subSelected.subscription_id}</span>
-              <span><span className="font-semibold text-slate-700">Organization:</span> {subSelected.organization_name} ({subSelected.organization_code})</span>
+              <span><span className="font-semibold text-slate-700">Subscription:</span> {subSelected.subscription_id ? `#${subSelected.subscription_id}` : "—"}</span>
+              <span><span className="font-semibold text-slate-700">Organization:</span> {subSelected.organization_name || "—"}{subSelected.organization_code ? ` (${subSelected.organization_code})` : ""}</span>
               <span><span className="font-semibold text-slate-700">Actor:</span> {subSelected.actor_email || "System"}</span>
               <span><span className="font-semibold text-slate-700">Timestamp:</span> {formatDateTime(subSelected.created_at)}</span>
             </DetailSummary>

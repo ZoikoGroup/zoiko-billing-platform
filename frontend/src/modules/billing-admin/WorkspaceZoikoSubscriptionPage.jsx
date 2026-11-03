@@ -34,6 +34,7 @@ import {
   LIMIT_META,
   FEATURE_META,
   PRICING_MODEL_KEY,
+  pricingModelLabels,
 } from "./zoikoPlanCatalog";
 import { formatDisplayDate } from "../../utils/billing-helpers";
 
@@ -226,6 +227,7 @@ export default function WorkspaceZoikoSubscriptionPage() {
   const [data, setData] = useState(null);
   const [usageData, setUsageData] = useState(null);
   const [planLimits, setPlanLimits] = useState(null);
+  const [seats, setSeats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
@@ -271,6 +273,7 @@ export default function WorkspaceZoikoSubscriptionPage() {
           ? limitsRes.value.entitlements
           : null,
       );
+      setSeats(limitsRes.status === "fulfilled" ? limitsRes.value?.seats ?? null : null);
     } catch (err) {
       setError(err?.message || "Unable to load your Zoiko subscription.");
     } finally {
@@ -327,16 +330,25 @@ export default function WorkspaceZoikoSubscriptionPage() {
 
     const valueFor = (key) => {
       if (key === "users") {
-        return subscription?.max_users ?? usedByMeta.users?.limit ?? fallback?.maxUsers ?? null;
+        return seats?.limit ?? subscription?.max_users ?? usedByMeta.users?.limit ?? fallback?.maxUsers ?? null;
       }
       if (live && key in live) return live[key].value;
       if (fallback && key in fallback.limits) return fallback.limits[key];
       return usedByMeta[key]?.limit ?? null;
     };
 
+    // Live usage counted by the backend on every load (customers, invoices
+    // this month, currencies, seats) wins over the legacy usage counters.
+    const liveUsed = (key) => {
+      if (key === "users") return seats?.used ?? null;
+      const v = live?.[key]?.current_usage;
+      return typeof v === "number" ? v : null;
+    };
+
     const rows = LIMIT_META.map((m) => {
       const counter = usedByMeta[m.key];
       const value = valueFor(m.key);
+      const used = liveUsed(m.key) ?? (counter ? counter.count : null);
       const known =
         m.key === "users"
           ? value != null || isContractPlan || counter
@@ -344,7 +356,7 @@ export default function WorkspaceZoikoSubscriptionPage() {
       return {
         ...m,
         limit: counter?.limit != null && m.key !== "users" ? counter.limit : value,
-        used: counter ? counter.count : null,
+        used,
         enforcement: counter?.enforcement_type || live?.[m.key]?.enforcement_type || null,
         contracted: isContractPlan && value == null,
         known: Boolean(known),
@@ -358,10 +370,11 @@ export default function WorkspaceZoikoSubscriptionPage() {
       return { ...f, enabled };
     }).filter((f) => f.enabled !== null || isContractPlan);
 
-    const models =
+    const models = pricingModelLabels(
       live && PRICING_MODEL_KEY in live && Array.isArray(live[PRICING_MODEL_KEY].value)
         ? live[PRICING_MODEL_KEY].value
-        : fallback?.pricingModels || null;
+        : fallback?.pricingModels || null,
+    );
 
     const other = counters.filter((c) => !aliasHandled.has(c.id ?? c.entitlement_key));
 
@@ -372,7 +385,7 @@ export default function WorkspaceZoikoSubscriptionPage() {
       otherCounters: other,
       limitsSource: live ? "live" : fallback ? "catalog" : "none",
     };
-  }, [usageData, planLimits, currentCatalogPlan, isContractPlan, subscription]);
+  }, [usageData, planLimits, seats, currentCatalogPlan, isContractPlan, subscription]);
 
   const handlePayInvoice = useCallback(
     (inv) => {
@@ -800,7 +813,7 @@ export default function WorkspaceZoikoSubscriptionPage() {
                     </p>
                     <div className="flex flex-wrap gap-2">
                       {pricingModels.map((p) => (
-                        <span key={p} className="px-2.5 py-1 text-xs font-semibold rounded-full bg-blue-50 text-[#1A56DB] border border-blue-100 capitalize">
+                        <span key={p} className="px-2.5 py-1 text-xs font-semibold rounded-full bg-blue-50 text-[#1A56DB] border border-blue-100">
                           {p}
                         </span>
                       ))}
