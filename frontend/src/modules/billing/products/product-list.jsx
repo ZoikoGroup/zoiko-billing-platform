@@ -849,8 +849,8 @@ export default function ProductListPage() {
       <div className="bg-white border border-slate-200 rounded-3xl shadow-[0_4px_20px_rgba(0,0,0,0.02)] overflow-hidden">
         <div className="p-6 border-b border-slate-100">
           <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-3 flex-1">
-              <div className="relative flex-1 max-w-md">
+            <div className="flex flex-wrap items-center gap-3 flex-1 max-sm:basis-full">
+              <div className="relative flex-1 max-w-md max-sm:basis-full max-sm:max-w-none">
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                 <input ref={searchInputRef} type="text" placeholder="Search by name, code..." aria-label="Search by name, code" value={search}
                   aria-keyshortcuts="Control+K Meta+K"
@@ -864,7 +864,7 @@ export default function ProductListPage() {
                 ) : null}
               </div>
               <button onClick={() => setShowFilters(!showFilters)} aria-label="Toggle filters" aria-expanded={showFilters}
-                className={`p-2.5 rounded-xl border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+                className={`p-2.5 max-sm:p-3 rounded-xl border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
                 <Filter size={18} />
               </button>
               {hasActiveFilters && (
@@ -874,7 +874,7 @@ export default function ProductListPage() {
               )}
               <div className="relative">
                 <button onClick={() => setShowColumnMenu(!showColumnMenu)} aria-label="Choose visible columns" aria-expanded={showColumnMenu}
-                  className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30">
+                  className="p-2.5 max-sm:p-3 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30">
                   <Eye size={18} />
                 </button>
                 {showColumnMenu && (
@@ -892,7 +892,7 @@ export default function ProductListPage() {
                 )}
               </div>
               <button onClick={handleRefresh} disabled={refreshing} aria-label="Refresh products"
-                className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30">
+                className="p-2.5 max-sm:p-3 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30">
                 <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
               </button>
             </div>
@@ -1081,10 +1081,10 @@ export default function ProductListPage() {
                 {products.map((product) => (
                   <li key={product.id} className={`px-4 py-3 ${selectedIds.has(product.id) ? "bg-brand-50/50" : ""}`}>
                     <div className="flex items-start gap-3">
-                      <input type="checkbox" checked={selectedIds.has(product.id)}
+                      <label className="-ml-3 flex h-11 w-11 shrink-0 items-center justify-center"><input type="checkbox" checked={selectedIds.has(product.id)}
                         onChange={() => handleSelectOne(product.id)}
                         aria-label={`Select ${product.name || "product"}`}
-                        className="mt-3 h-5 w-5 shrink-0 rounded border-slate-300 text-brand-600 focus:ring-brand/30" />
+                        className="h-5 w-5 rounded border-slate-300 text-brand-600 focus:ring-brand/30" /></label>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-start justify-between gap-2">
                           <button

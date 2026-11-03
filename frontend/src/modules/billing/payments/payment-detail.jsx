@@ -5,27 +5,13 @@ import { ArrowLeft, CreditCard, RefreshCw, AlertCircle, Loader2, CheckCircle,
   XCircle, RotateCcw } from "lucide-react"
 import HRPage from "../../../components/HRPage";
 import { Button, Modal } from "../../../components/billing-ui";
+import { StatusBadge as SharedStatusBadge } from "../../../components/billing-shared";
 import { paymentApi, invoiceApi, customerApi, auditApi, refundApi } from "../../../service/billingService";
 import { formatDisplayCurrency, formatDisplayDate, extractArray } from "../../../utils/billing-helpers";
 
-const STATUS_STYLES = {
-  cleared: "bg-emerald-100 text-emerald-700",
-  pending: "bg-amber-100 text-amber-700",
-  processing: "bg-sky-100 text-sky-700",
-  failed: "bg-red-100 text-red-700",
-  refunded: "bg-blue-100 text-blue-700",
-  cancelled: "bg-slate-100 text-slate-500",
-};
-
 function StatusBadge({ status }) {
-  const s = STATUS_STYLES[status] || "bg-slate-100 text-slate-600";
   const icons = { cleared: CheckCircle, pending: Clock, processing: Clock, failed: XCircle, refunded: RefreshCw, cancelled: Ban };
-  const Icon = icons[status] || Clock;
-  return (
-    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${s}`}>
-      <Icon size={12} /> {status ? status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, " ") : "Unknown"}
-    </span>
-  );
+  return <SharedStatusBadge status={status} icon={icons[status] || Clock} />;
 }
 
 const TABS = [

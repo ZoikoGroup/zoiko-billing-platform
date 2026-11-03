@@ -5,7 +5,7 @@ import { priceListApi } from "../../../service/billingService";
 import { loadGlobalBillingConfig } from "../../../service/billingConfigCache";
 import { formatDisplayDate } from "../../../utils/billing-helpers";
 import { getCurrencySelectOptions } from "../../../utils/currency";
-import { Spinner, EmptyState, ErrorState } from "../../../components/billing-shared";
+import { Spinner, EmptyState, ErrorState, StatusBadge as SharedStatusBadge } from "../../../components/billing-shared";
 import useLatestRequest from "../utils/useLatestRequest";
 import { DataTable } from "../../../components/billing-ui";
 
@@ -13,13 +13,8 @@ const CURRENCY_OPTIONS = getCurrencySelectOptions();
 
 function StatusBadge({ status, isActive }) {
   const active = status === "active" || (isActive && status !== "deprecated");
-  const styles = active ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-700";
-  return (
-    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${styles}`}>
-      {active ? <CheckCircle size={12} /> : <Clock size={12} />}
-      {status || (isActive ? "active" : "inactive")}
-    </span>
-  );
+  const value = status || (isActive ? "active" : "inactive");
+  return <SharedStatusBadge status={value} icon={active ? CheckCircle : Clock} />;
 }
 
 export default function PriceListsPage() {
@@ -124,13 +119,13 @@ export default function PriceListsPage() {
           <div className="bg-white border rounded-xl p-6 space-y-4">
             <h3 className="text-lg font-semibold">{showEdit ? "Edit Price List" : "Create Price List"}</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div><label className="block text-xs font-medium text-slate-500 mb-1">Name</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} /></div>
-              <div><label className="block text-xs font-medium text-slate-500 mb-1">Code</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.code} onChange={e => setForm(p => ({ ...p, code: e.target.value }))} /></div>
-              <div className="col-span-2"><label className="block text-xs font-medium text-slate-500 mb-1">Description</label><textarea className="w-full border rounded-lg px-3 py-2 text-sm" value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} /></div>
-              <div><label className="block text-xs font-medium text-slate-500 mb-1">Currency</label><select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.currency} onChange={e => setForm(p => ({ ...p, currency: e.target.value }))}>{CURRENCY_OPTIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select></div>
+              <div><label htmlFor="pl-name" className="block text-xs font-medium text-slate-500 mb-1">Name</label><input id="pl-name" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} /></div>
+              <div><label htmlFor="pl-code" className="block text-xs font-medium text-slate-500 mb-1">Code</label><input id="pl-code" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.code} onChange={e => setForm(p => ({ ...p, code: e.target.value }))} /></div>
+              <div className="col-span-2"><label htmlFor="pl-description" className="block text-xs font-medium text-slate-500 mb-1">Description</label><textarea id="pl-description" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} /></div>
+              <div><label htmlFor="pl-currency" className="block text-xs font-medium text-slate-500 mb-1">Currency</label><select id="pl-currency" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.currency} onChange={e => setForm(p => ({ ...p, currency: e.target.value }))}>{CURRENCY_OPTIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select></div>
               <div className="flex items-center gap-2 pt-6"><input type="checkbox" id="is_default" checked={form.is_default} onChange={e => setForm(p => ({ ...p, is_default: e.target.checked }))} /><label htmlFor="is_default" className="text-sm">Set as default</label></div>
-              <div><label className="block text-xs font-medium text-slate-500 mb-1">Effective From</label><input type="date" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.effective_from} onChange={e => setForm(p => ({ ...p, effective_from: e.target.value }))} /></div>
-              <div><label className="block text-xs font-medium text-slate-500 mb-1">Effective To</label><input type="date" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.effective_to} onChange={e => setForm(p => ({ ...p, effective_to: e.target.value }))} /></div>
+              <div><label htmlFor="pl-effective-from" className="block text-xs font-medium text-slate-500 mb-1">Effective From</label><input id="pl-effective-from" type="date" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.effective_from} onChange={e => setForm(p => ({ ...p, effective_from: e.target.value }))} /></div>
+              <div><label htmlFor="pl-effective-to" className="block text-xs font-medium text-slate-500 mb-1">Effective To</label><input id="pl-effective-to" type="date" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.effective_to} onChange={e => setForm(p => ({ ...p, effective_to: e.target.value }))} /></div>
             </div>
             <div className="flex gap-2 justify-end">
               <button onClick={() => { setShowCreate(false); setShowEdit(null); }} className="px-4 py-2 border rounded-lg text-sm">Cancel</button>

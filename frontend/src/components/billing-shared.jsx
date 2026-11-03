@@ -140,6 +140,23 @@ export const STATUS_META = {
   in_progress: { label: "In Progress", color: "bg-amber-100 text-amber-700" },
   fulfilled: { label: "Fulfilled", color: "bg-emerald-100 text-emerald-700" },
   broken: { label: "Broken", color: "bg-red-100 text-red-700" },
+  resolved: { label: "Resolved", color: "bg-emerald-100 text-emerald-700" },
+  // invoices / credit notes
+  refunded: { label: "Refunded", color: "bg-pink-100 text-pink-700" },
+  written_off: { label: "Written Off", color: "bg-slate-100 text-slate-600" },
+  fully_applied: { label: "Fully Applied", color: "bg-emerald-100 text-emerald-700" },
+  voided: { label: "Voided", color: "bg-slate-200 text-slate-600" },
+  // quotations / contracts / subscriptions
+  accepted: { label: "Accepted", color: "bg-emerald-100 text-emerald-700" },
+  converted: { label: "Converted", color: "bg-indigo-100 text-indigo-700" },
+  expired: { label: "Expired", color: "bg-slate-100 text-slate-600" },
+  terminated: { label: "Terminated", color: "bg-red-100 text-red-700" },
+  past_due: { label: "Past Due", color: "bg-red-100 text-red-700" },
+  // customers / products / catalog records
+  inactive: { label: "Inactive", color: "bg-slate-100 text-slate-600" },
+  suspended: { label: "Suspended", color: "bg-amber-100 text-amber-700" },
+  archived: { label: "Archived", color: "bg-slate-100 text-slate-600" },
+  deprecated: { label: "Deprecated", color: "bg-slate-100 text-slate-600" },
 };
 
 /** Lookup helper — returns `{ label, color }` or undefined for unknown states. */
@@ -364,7 +381,7 @@ export function DashboardDateRangeFilter({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label="Select date range"
-        className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
+        className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 max-sm:min-h-11"
       >
         <Calendar size={15} className="text-brand-500" />
         <span className="whitespace-nowrap">{selectedLabel}</span>
@@ -463,7 +480,7 @@ export function DashboardHeader({
   return (
     <div className="rounded-3xl bg-white border border-slate-200 p-4 sm:p-6 md:p-8 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
       {crumbs.length > 0 && (
-        <nav aria-label="Breadcrumb" className="mb-3 flex items-center gap-1.5 text-xs font-medium text-slate-500">
+        <nav aria-label="Breadcrumb" className="mb-1 flex items-center gap-1.5 text-xs font-medium text-slate-500 sm:mb-3">
           {crumbs.map((crumb, idx) => {
             const isLast = idx === crumbs.length - 1;
             return (
@@ -1684,7 +1701,7 @@ export function ExportMenu({ onExportCSV, onExportJSON, onExportExcel, className
         onClick={() => setOpen(!open)}
         disabled={Boolean(suppression)}
         title={suppression ? `Exports disabled: ${suppression}` : undefined}
-        className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+        className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors disabled:cursor-not-allowed disabled:opacity-50 max-sm:min-h-11"
         aria-label="Export data"
         aria-disabled={Boolean(suppression) || undefined}
       >

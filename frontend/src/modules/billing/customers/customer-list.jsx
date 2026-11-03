@@ -591,8 +591,8 @@ export default function CustomerListPage() {
       <div className="bg-white border border-slate-200 rounded-3xl shadow-[0_4px_20px_rgba(0,0,0,0.02)] overflow-hidden">
         <div className="p-6 border-b border-slate-100">
           <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-3 flex-1">
-              <div className="relative flex-1 max-w-md">
+            <div className="flex flex-wrap items-center gap-3 flex-1 max-sm:basis-full">
+              <div className="relative flex-1 max-w-md max-sm:basis-full max-sm:max-w-none">
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                 <input type="text" placeholder={getLabel("searchPlaceholder")} aria-label={getLabel("searchPlaceholder")} value={search}
                   onChange={(e) => setSearch(e.target.value)}
@@ -600,13 +600,13 @@ export default function CustomerListPage() {
                 {search && <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600" aria-label="Clear search"><X size={16} /></button>}
               </div>
               <button onClick={() => setShowFilters(!showFilters)}
-                className={`p-2.5 rounded-xl border transition-colors ${showFilters || hasActiveFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}
+                className={`p-2.5 max-sm:p-3 rounded-xl border transition-colors ${showFilters || hasActiveFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}
                 aria-label="Toggle filters" aria-pressed={showFilters}>
                 <Filter size={18} />
               </button>
               <div className="relative">
                 <button onClick={() => setShowColumnSelector(!showColumnSelector)}
-                  className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50"
+                  className="p-2.5 max-sm:p-3 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50"
                   aria-label="Choose visible columns" aria-pressed={showColumnSelector}>
                   <Columns size={18} />
                 </button>
@@ -624,7 +624,7 @@ export default function CustomerListPage() {
                   </div>
                 )}
               </div>
-              <button onClick={handleRefresh} disabled={refreshing} className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50" aria-label="Refresh list">
+              <button onClick={handleRefresh} disabled={refreshing} className="p-2.5 max-sm:p-3 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50" aria-label="Refresh list">
                 <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
               </button>
             </div>
@@ -751,7 +751,7 @@ export default function CustomerListPage() {
                 {customers.map((customer) => (
                   <li key={customer.id} className={`px-4 py-3 ${selectedIds.has(customer.id) ? "bg-brand-50/50" : ""}`}>
                     <div className="flex items-start gap-3">
-                      <input type="checkbox" checked={selectedIds.has(customer.id)} onChange={() => handleSelectOne(customer.id)} className="mt-3 h-5 w-5 shrink-0 rounded border-slate-300 text-brand-600 focus:ring-brand/30" aria-label={`Select ${customer.display_name || customer.company_name || singular.toLowerCase()}`} />
+                      <label className="-ml-3 flex h-11 w-11 shrink-0 items-center justify-center"><input type="checkbox" checked={selectedIds.has(customer.id)} onChange={() => handleSelectOne(customer.id)} className="h-5 w-5 rounded border-slate-300 text-brand-600 focus:ring-brand/30" aria-label={`Select ${customer.display_name || customer.company_name || singular.toLowerCase()}`} /></label>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-start justify-between gap-2">
                           <button onClick={() => navigate(`/billing/customers/${customer.id}`)} className="flex min-h-11 min-w-0 items-center gap-3 text-left group">

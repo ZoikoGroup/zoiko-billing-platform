@@ -3,27 +3,14 @@ import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, Repeat, RefreshCw, AlertCircle, Loader2, Play, XCircle, FileText, FileText as FileTextIcon, DollarSign, DollarSign as DollarSignIcon, CreditCard, Calendar, Receipt, Shield as ShieldIcon, Activity, Package, Building2, Clock, FileEdit, History, RotateCcw as RotateCcwIcon, CheckCircle, PauseCircle, AlertTriangle } from "lucide-react";
 import HRPage from "../../../components/HRPage";
 import { DataTable, Button, Modal } from "../../../components/billing-ui";
+import { StatusBadge as SharedStatusBadge } from "../../../components/billing-shared";
 import { subscriptionApi, contractApi, customerApi, invoiceApi, paymentApi, auditApi } from "../../../service/billingService";
 import { formatDisplayCurrency, formatDisplayDate, extractArray } from "../../../utils/billing-helpers";
 import { useTerminology } from "../utils/TerminologyContext";
 
-const STATUS_STYLES = {
-  active: "bg-emerald-100 text-emerald-700",
-  paused: "bg-amber-100 text-amber-700",
-  past_due: "bg-red-100 text-red-700",
-  cancelled: "bg-slate-100 text-slate-500",
-  expired: "bg-slate-100 text-slate-700",
-};
-
 function StatusBadge({ status }) {
-  const s = STATUS_STYLES[status] || "bg-slate-100 text-slate-600";
   const icons = { active: CheckCircle, paused: PauseCircle, past_due: AlertTriangle, cancelled: XCircle, expired: Clock };
-  const Icon = icons[status] || Clock;
-  return (
-    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${s}`}>
-      <Icon size={12} /> {status ? status.charAt(0).toUpperCase() + status.slice(1) : "Unknown"}
-    </span>
-  );
+  return <SharedStatusBadge status={status} icon={icons[status] || Clock} />;
 }
 
 const TABS = [

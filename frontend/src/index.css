@@ -59,6 +59,26 @@
   textarea {
     font-size: 16px;
   }
+  /* 44px tap height for text fields and selects on phones / touch. */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not([type="hidden"]),
+  select {
+    min-height: 44px;
+  }
+}
+
+/* Phones: nothing below 12px. Lifts the 10–11px utility sizes and chart text
+   (Recharts sets font-size as an SVG attribute, which CSS overrides). */
+@media (max-width: 639.98px) {
+  /* Inline-styled text opts in with font-size: max(<size>, var(--min-text-size, 0px)). */
+  :root {
+    --min-text-size: 12px;
+  }
+  .text-\[10px\], .text-\[10\.5px\], .text-\[11px\], .text-\[11\.5px\] {
+    font-size: 12px;
+  }
+  .recharts-wrapper text, .recharts-wrapper tspan, .recharts-legend-item-text {
+    font-size: 12px;
+  }
 }
 
 /* Shared card elevation — replaces the repeated

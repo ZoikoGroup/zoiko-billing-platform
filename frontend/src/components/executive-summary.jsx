@@ -21,15 +21,16 @@ const INSIGHT_TONES = {
 export function ExecutiveSummary({ items = [], className = "" }) {
   if (!items.length) return null;
   return (
-    <section aria-label="Key insights" className={`rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_4px_20px_rgba(0,0,0,0.02)] ${className}`}>
+    <section aria-label="Key insights" className={`rounded-3xl border border-slate-200 bg-white p-4 sm:p-5 shadow-[0_4px_20px_rgba(0,0,0,0.02)] ${className}`}>
       <div className="flex flex-wrap items-center gap-2.5">
         {items.map((item, idx) => {
           const Icon = item.icon || Check;
           const tone = INSIGHT_TONES[item.tone] || INSIGHT_TONES.neutral;
           return (
-            <span key={idx} className={`inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-semibold ${tone}`}>
+            // Phones: long insights wrap inside the pill instead of running off screen.
+            <span key={idx} className={`inline-flex max-w-full items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-semibold max-sm:rounded-2xl ${tone}`}>
               <Icon size={14} className="shrink-0" />
-              <span className="whitespace-nowrap">{item.text}</span>
+              <span className="whitespace-nowrap max-sm:whitespace-normal">{item.text}</span>
             </span>
           );
         })}

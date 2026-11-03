@@ -89,31 +89,31 @@ function CurrencyFormModal({ show, onClose, onSave, editItem, saving, productMap
       <div className="space-y-4">
         {formError && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg text-sm">{formError}</div>}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div><label className="block text-xs font-medium text-slate-500 mb-1">Product *</label>
-            <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.product_id} onChange={e => set("product_id", e.target.value)}>
+          <div><label htmlFor="cp-product" className="block text-xs font-medium text-slate-500 mb-1">Product *</label>
+            <select id="cp-product" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.product_id} onChange={e => set("product_id", e.target.value)}>
               <option value="">Select product...</option>
               {Object.entries(productMap).map(([id, name]) => (
                 <option key={id} value={id}>{name}</option>
               ))}
             </select>
           </div>
-          <div><label className="block text-xs font-medium text-slate-500 mb-1">Currency *</label>
-            <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.currency} onChange={e => set("currency", e.target.value)}>
+          <div><label htmlFor="cp-currency" className="block text-xs font-medium text-slate-500 mb-1">Currency *</label>
+            <select id="cp-currency" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.currency} onChange={e => set("currency", e.target.value)}>
               {CURRENCY_OPTIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
             </select>
           </div>
         </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div><label className="block text-xs font-medium text-slate-500 mb-1">Price *</label><input type="number" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.price} onChange={e => set("price", e.target.value)} /></div>
-          <div><label className="block text-xs font-medium text-slate-500 mb-1">Cost Price</label><input type="number" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.cost_price} onChange={e => set("cost_price", e.target.value)} /></div>
+          <div><label htmlFor="cp-price" className="block text-xs font-medium text-slate-500 mb-1">Price *</label><input id="cp-price" type="number" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.price} onChange={e => set("price", e.target.value)} /></div>
+          <div><label htmlFor="cp-cost-price" className="block text-xs font-medium text-slate-500 mb-1">Cost Price</label><input id="cp-cost-price" type="number" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.cost_price} onChange={e => set("cost_price", e.target.value)} /></div>
         </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div><label className="block text-xs font-medium text-slate-500 mb-1">Conversion Type</label>
-            <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.conversion_type} onChange={e => set("conversion_type", e.target.value)}>
+          <div><label htmlFor="cp-conversion-type" className="block text-xs font-medium text-slate-500 mb-1">Conversion Type</label>
+            <select id="cp-conversion-type" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.conversion_type} onChange={e => set("conversion_type", e.target.value)}>
               <option value="manual">Manual</option><option value="live">Live</option><option value="historical">Historical</option>
             </select>
           </div>
-          <div><label className="block text-xs font-medium text-slate-500 mb-1">Exchange Rate</label><input type="number" step="0.0001" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.exchange_rate} onChange={e => set("exchange_rate", e.target.value)} /></div>
+          <div><label htmlFor="cp-exchange-rate" className="block text-xs font-medium text-slate-500 mb-1">Exchange Rate</label><input id="cp-exchange-rate" type="number" step="0.0001" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.exchange_rate} onChange={e => set("exchange_rate", e.target.value)} /></div>
         </div>
         <div className="flex items-center gap-2">
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.is_active} onChange={e => set("is_active", e.target.checked)} className="rounded" /> Active</label>
@@ -193,10 +193,10 @@ export default function CurrencyPricingPage() {
     <HRPage title="Currency Pricing" icon={DollarSign}>
       <div className="space-y-4">
         <div className="flex flex-wrap gap-3 items-center justify-between">
-          <div className="flex gap-2 items-center">
-            <div className="relative">
+          <div className="flex w-full flex-wrap gap-2 items-center sm:w-auto">
+            <div className="relative w-full sm:w-auto">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-              <input className="pl-9 pr-3 py-2 border rounded-lg text-sm w-48" placeholder="Search..." aria-label="Search" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+              <input className="pl-9 pr-3 py-2 border rounded-lg text-sm w-full sm:w-48" placeholder="Search..." aria-label="Search" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
             </div>
             <select aria-label="Filter by currency" className="border rounded-lg px-3 py-2 text-sm" value={currencyFilter} onChange={e => setCurrencyFilter(e.target.value)}>
               <option value="">All Currencies</option>

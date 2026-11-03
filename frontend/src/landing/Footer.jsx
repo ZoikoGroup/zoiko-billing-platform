@@ -37,7 +37,7 @@ const styles = {
     marginBottom: "18px",
   },
   colTitle: {
-    fontSize: "11.5px",
+    fontSize: "max(11.5px, var(--min-text-size, 0px))", // 12px on phones (index.css)
     fontWeight: "700",
     color: "#60A5FA",
     textTransform: "uppercase",

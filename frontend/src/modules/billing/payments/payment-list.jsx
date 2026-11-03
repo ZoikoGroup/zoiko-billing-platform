@@ -6,7 +6,7 @@ import { formatDisplayDate, formatDisplayCurrency, extractArray } from "../../..
 import useLatestRequest from "../utils/useLatestRequest";
 import { sumInBaseCurrency } from "../../../utils/currency-conversion";
 import { useCurrency } from "../utils/CurrencyContext";
-import { ErrorState, PageSkeleton, SuccessMessage, DashboardHeader, DashboardStatCard, DASHBOARD_KPI_GRID, Pagination, useConfirmationDialog } from "../../../components/billing-shared";
+import { ErrorState, PageSkeleton, SuccessMessage, DashboardHeader, DashboardStatCard, DASHBOARD_KPI_GRID, Pagination, useConfirmationDialog, StatusBadge as SharedStatusBadge } from "../../../components/billing-shared";
 import { useBillingDateRange } from "../utils/DateRangeContext";
 import ActiveUrlFilterChips from "../utils/ActiveUrlFilterChips";
 import { Button, Modal, Stepper } from "../../../components/billing-ui";
@@ -58,11 +58,8 @@ const PAYMENT_TYPE_FILTER_OPTIONS = [
 ];
 
 function StatusBadge({ status }) {
-  const s = STATUS_OPTIONS.find((o) => o.value === status);
-  if (!s) return <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-700">{status || "unknown"}</span>;
   const icons = { cleared: CheckCircle, pending: Clock, processing: Clock, failed: XCircle, refunded: RefreshCw, cancelled: Ban };
-  const Icon = icons[status] || Clock;
-  return <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${s.color}`}><Icon size={12} /> {s.label}</span>;
+  return <SharedStatusBadge status={status} icon={icons[status] || Clock} />;
 }
 
 export default function PaymentListPage() {
@@ -575,8 +572,8 @@ export default function PaymentListPage() {
         <div className="bg-white border border-slate-200 rounded-3xl shadow-[0_4px_20px_rgba(0,0,0,0.02)] overflow-hidden">
           <div className="p-6 border-b border-slate-100">
             <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center gap-3 flex-1">
-                <div className="relative flex-1 max-w-md">
+              <div className="flex flex-wrap items-center gap-3 flex-1 max-sm:basis-full">
+                <div className="relative flex-1 max-w-md max-sm:basis-full max-sm:max-w-none">
                   <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                   <input type="text" placeholder="Search payments..." aria-label="Search payments" value={search}
                     onChange={(e) => setSearch(e.target.value)}
@@ -584,7 +581,7 @@ export default function PaymentListPage() {
                   {search && <button onClick={() => setSearch("")} aria-label="Clear search" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 rounded"><X size={16} /></button>}
                 </div>
                 <button onClick={() => setShowFilters(!showFilters)} aria-label={showFilters ? "Hide filters" : "Show filters"} aria-pressed={showFilters}
-                  className={`p-2.5 rounded-xl border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+                  className={`p-2.5 max-sm:p-3 rounded-xl border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
                   <Filter size={18} />
                 </button>
                 {selectedIds.size > 0 && (
@@ -688,8 +685,8 @@ export default function PaymentListPage() {
                   {payments.map((pmt) => (
                     <li key={pmt.id} className="px-4 py-3">
                       <div className="flex items-start gap-3">
-                        <input type="checkbox" checked={selectedIds.has(pmt.id)} onChange={() => handleSelectOne(pmt.id)} aria-label={`Select payment ${pmt.payment_number || pmt.id}`}
-                          className="mt-3 h-5 w-5 shrink-0 rounded border-slate-300 text-brand-600 focus:ring-brand/30" />
+                        <label className="-ml-3 flex h-11 w-11 shrink-0 items-center justify-center"><input type="checkbox" checked={selectedIds.has(pmt.id)} onChange={() => handleSelectOne(pmt.id)} aria-label={`Select payment ${pmt.payment_number || pmt.id}`}
+                          className="h-5 w-5 rounded border-slate-300 text-brand-600 focus:ring-brand/30" /></label>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-start justify-between gap-2">
                             <button onClick={() => navigate(`/billing/payments/${pmt.id}`)} className="flex min-h-11 min-w-0 items-center gap-2 text-left font-medium text-slate-800 hover:text-brand-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 rounded">

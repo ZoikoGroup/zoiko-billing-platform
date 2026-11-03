@@ -7,7 +7,7 @@ import { pricingApi, productApi } from "../../../service/billingService";
 import { formatDisplayDate, extractArray } from "../../../utils/billing-helpers";
 import { useCurrency } from "../utils/CurrencyContext";
 import useLatestRequest from "../utils/useLatestRequest";
-import { Spinner, ErrorState, useConfirmationDialog, Pagination, ProductSelector } from "../../../components/billing-shared";
+import { Spinner, ErrorState, useConfirmationDialog, Pagination, ProductSelector, StatusBadge as SharedStatusBadge } from "../../../components/billing-shared";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -28,17 +28,7 @@ const BILLING_INTERVAL_OPTIONS = [
 ];
 
 function StatusBadge({ status }) {
-  const styles = {
-    active: "bg-emerald-100 text-emerald-700",
-    inactive: "bg-slate-100 text-slate-600",
-    archived: "bg-slate-100 text-slate-600",
-  };
-  return (
-    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${styles[status] || "bg-slate-100 text-slate-700"}`}>
-      {status === "active" ? <CheckCircle size={12} /> : <Clock size={12} />}
-      {status || "unknown"}
-    </span>
-  );
+  return <SharedStatusBadge status={status || "unknown"} icon={status === "active" ? CheckCircle : Clock} />;
 }
 
 const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
@@ -371,8 +361,8 @@ export default function ProductPricingPlansPage() {
       <div className="bg-white border border-slate-200 rounded-3xl shadow-[0_4px_20px_rgba(0,0,0,0.02)] overflow-hidden">
         <div className="p-6 border-b border-slate-100">
           <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-3 flex-1">
-              <div className="relative flex-1 max-w-md">
+            <div className="flex flex-wrap items-center gap-3 flex-1 max-sm:basis-full">
+              <div className="relative flex-1 max-w-md max-sm:basis-full max-sm:max-w-none">
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                 <input type="text" placeholder="Search pricing plans..." value={search} aria-label="Search pricing plans"
                   onChange={(e) => setSearch(e.target.value)}
@@ -380,7 +370,7 @@ export default function ProductPricingPlansPage() {
                 {search && <button onClick={() => setSearch("")} aria-label="Clear search" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600"><X size={16} /></button>}
               </div>
               <button onClick={() => setShowFilters(!showFilters)} aria-label="Toggle filters" aria-pressed={showFilters}
-                className={`p-2.5 rounded-xl border transition-colors ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+                className={`p-2.5 max-sm:p-3 rounded-xl border transition-colors ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
                 <Filter size={18} />
               </button>
               <button onClick={clearFilters} disabled={!hasActiveFilters}
@@ -390,7 +380,7 @@ export default function ProductPricingPlansPage() {
                 Clear filters
               </button>
               <button onClick={() => { setRefreshing(true); fetchPlans(); }} disabled={refreshing} aria-label="Refresh"
-                className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50">
+                className="p-2.5 max-sm:p-3 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50">
                 <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
               </button>
             </div>

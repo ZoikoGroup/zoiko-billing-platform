@@ -311,6 +311,8 @@ const styles = `
       left:16px; right:16px; bottom:16px; max-width:calc(100vw - 32px); justify-content:space-between;
     }
   }
+  /* Phones: nothing below 12px (kept last so it wins over the tag rules above). */
+  @media (max-width:639.98px){ .org-dash .code-tag, .org-dash .stat-label, .org-dash .env-tag, .org-dash .stripe-ready-badge{ font-size:12px; } }
 `;
 
 const STATUS_STYLES = {
