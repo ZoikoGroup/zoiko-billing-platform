@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 
 // B4-07: the public invoice page offered an active "Pay … with Stripe" button
@@ -30,11 +30,11 @@ beforeEach(() => vi.clearAllMocks());
 afterEach(() => cleanup());
 
 describe("B4-07 public invoice payment availability", () => {
-  it("card payments not configured: no Pay button, an honest note instead", async () => {
+  it("card payments not configured: shows a disabled Pay button with setup guidance", async () => {
     m.getView.mockResolvedValue(view(false));
     renderPage();
-    expect(await screen.findByText(/online card payment isn't available for this invoice yet/i)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /with stripe/i })).toBeNull();
+    expect(await screen.findByText(/issuer must connect and activate stripe/i)).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /pay online.*unavailable/i })).toBeDisabled();
     expect(m.createCheckout).not.toHaveBeenCalled();
   });
 
@@ -46,6 +46,15 @@ describe("B4-07 public invoice payment availability", () => {
     expect(screen.getByRole("img", { name: "Zoiko Billing" })).toHaveAttribute("src", "/zoiko-billing-logo-sm.png");
     expect(screen.getByRole("heading", { name: "From" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "billing@acme.example" })).toHaveAttribute("href", "mailto:billing@acme.example");
+  });
+
+  it("starts Stripe Checkout for the invoice's secure public token", async () => {
+    m.getView.mockResolvedValue(view(true));
+    m.createCheckout.mockResolvedValue({ configured: false, message: "Stripe is temporarily unavailable." });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /with stripe/i }));
+    expect(await screen.findByText(/stripe is temporarily unavailable/i)).toBeInTheDocument();
+    expect(m.createCheckout).toHaveBeenCalledWith("tok46");
   });
 
   it("does not offer payment when the invoice is not in a payable state", async () => {

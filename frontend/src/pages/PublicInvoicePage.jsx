@@ -594,12 +594,18 @@ export default function PublicInvoicePage() {
                 </div>
               </div>
 
-              {onlinePayAvailable ? (<>
-              <p className="pub-stripe-hosted-note">
-                You'll be taken to Stripe's secure hosted checkout page to complete your
-                payment. Your card details are entered directly on Stripe and are never
-                seen or stored by us.
-              </p>
+              {onlinePayAvailable ? (
+                <p className="pub-stripe-hosted-note">
+                  You'll be taken to Stripe's secure hosted checkout page to complete your
+                  payment. Your card details are entered directly on Stripe and are never
+                  seen or stored by us.
+                </p>
+              ) : (
+                <p className="pub-stripe-hosted-note" role="note">
+                  Online payment is not enabled for this invoice yet. The invoice issuer must
+                  connect and activate Stripe before card payments can be accepted.
+                </p>
+              )}
 
               {checkoutError && (
                 <p className="pub-checkout-error">{checkoutError}</p>
@@ -609,35 +615,39 @@ export default function PublicInvoicePage() {
                 type="button"
                 className="pub-pay-btn"
                 onClick={handleCheckout}
-                disabled={checkoutLoading}
+                disabled={checkoutLoading || !onlinePayAvailable}
+                aria-describedby={!onlinePayAvailable ? "pub-payment-unavailable" : undefined}
               >
                 {checkoutLoading ? (
                   <span className="pub-pay-btn-spinner" />
                 ) : (
                   <span className="pub-pay-btn-icon">🔒</span>
                 )}
-                {checkoutLoading ? "Redirecting to Stripe…" : `Pay ${fmtCcy(balanceDue, currency)} with Stripe`}
+                {checkoutLoading
+                  ? "Redirecting to Stripe…"
+                  : onlinePayAvailable
+                  ? `Pay ${fmtCcy(balanceDue, currency)} with Stripe`
+                  : "Pay online — unavailable"}
               </button>
 
-              <p className="pub-pay-terms">
-                By clicking "Pay with Stripe", you agree to our&nbsp;
-                <span className="pub-pay-link">Terms of Service</span> and&nbsp;
-                <span className="pub-pay-link">Privacy Policy</span>.
-                Payments are processed securely by Stripe.
-              </p>
+              {!onlinePayAvailable && <span id="pub-payment-unavailable" className="sr-only">Stripe is not active for this invoice.</span>}
 
-              <div className="pub-pay-footer">
-                <div className="pub-pay-badges">
-                  <span className="pub-pay-badge">🔐 SSL Encrypted</span>
-                  <span className="pub-pay-badge">🛡 PCI Compliant</span>
-                  <span className="pub-pay-badge">✅ Stripe Powered</span>
-                </div>
-              </div>
-              </>) : (
-                <p className="pub-stripe-hosted-note" role="note">
-                  Online card payment isn't available for this invoice yet. Please contact
-                  the sender to arrange payment.
-                </p>
+              {onlinePayAvailable && (
+                <>
+                  <p className="pub-pay-terms">
+                    By clicking "Pay with Stripe", you agree to our&nbsp;
+                    <span className="pub-pay-link">Terms of Service</span> and&nbsp;
+                    <span className="pub-pay-link">Privacy Policy</span>.
+                    Payments are processed securely by Stripe.
+                  </p>
+                  <div className="pub-pay-footer">
+                    <div className="pub-pay-badges">
+                      <span className="pub-pay-badge">🔐 SSL Encrypted</span>
+                      <span className="pub-pay-badge">🛡 PCI Compliant</span>
+                      <span className="pub-pay-badge">✅ Stripe Powered</span>
+                    </div>
+                  </div>
+                </>
               )}
             </div>
           </SectionCard>
