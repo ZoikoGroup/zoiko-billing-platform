@@ -532,8 +532,8 @@ export default function PricingPlansPage() {
       <div className="space-y-5">
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Plan Name *</label>
-            <input type="text" value={data.name || ""} onChange={(e) => onChange({ ...data, name: e.target.value })}
+            <label htmlFor="pp-plan-name" className="block text-sm font-medium text-slate-700 mb-1">Plan Name *</label>
+            <input id="pp-plan-name" type="text" value={data.name || ""} onChange={(e) => onChange({ ...data, name: e.target.value })}
               className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" placeholder="e.g. Standard Monthly" />
           </div>
           <div>
@@ -562,7 +562,7 @@ export default function PricingPlansPage() {
         )}
 
         <div className="border-t border-slate-100 pt-4">
-          <label className="block text-sm font-medium text-slate-700 mb-1">Pricing Model</label>
+          <p className="block text-sm font-medium text-slate-700 mb-1">Pricing Model</p>
           <div className="grid grid-cols-5 gap-2">
             {PRICING_MODEL_OPTIONS.map((opt) => (
               <button key={opt.value} type="button" onClick={() => onChange({ ...data, pricing_model: opt.value })}
@@ -579,15 +579,15 @@ export default function PricingPlansPage() {
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Billing Period</label>
-            <select value={data.billing_period || "monthly"} onChange={(e) => onChange({ ...data, billing_period: e.target.value })}
+            <label htmlFor="pp-billing-period" className="block text-sm font-medium text-slate-700 mb-1">Billing Period</label>
+            <select id="pp-billing-period" value={data.billing_period || "monthly"} onChange={(e) => onChange({ ...data, billing_period: e.target.value })}
               className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
               {BILLING_PERIOD_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Currency</label>
-            <select value={data.currency} onChange={(e) => onChange({ ...data, currency: e.target.value })}
+            <label htmlFor="pp-currency" className="block text-sm font-medium text-slate-700 mb-1">Currency</label>
+            <select id="pp-currency" value={data.currency} onChange={(e) => onChange({ ...data, currency: e.target.value })}
               className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
               {CURRENCY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
@@ -597,28 +597,28 @@ export default function PricingPlansPage() {
         <div className="grid grid-cols-2 gap-4">
           {modelCfg.showUnitPrice && (
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Unit Price *</label>
-              <input type="number" step="0.01" min="0" value={data.price || ""} onChange={(e) => onChange({ ...data, price: e.target.value })}
+              <label htmlFor="pp-unit-price" className="block text-sm font-medium text-slate-700 mb-1">Unit Price *</label>
+              <input id="pp-unit-price" type="number" step="0.01" min="0" value={data.price || ""} onChange={(e) => onChange({ ...data, price: e.target.value })}
                 className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
             </div>
           )}
           {modelCfg.showFlatFee && (
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Flat Fee</label>
-              <input type="number" step="0.01" min="0" value={data.flat_fee || ""} onChange={(e) => onChange({ ...data, flat_fee: e.target.value })}
+              <label htmlFor="pp-flat-fee" className="block text-sm font-medium text-slate-700 mb-1">Flat Fee</label>
+              <input id="pp-flat-fee" type="number" step="0.01" min="0" value={data.flat_fee || ""} onChange={(e) => onChange({ ...data, flat_fee: e.target.value })}
                 className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" placeholder="Optional base fee" />
             </div>
           )}
           {!modelCfg.showUnitPrice && !modelCfg.showFlatFee && (
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Setup Fee</label>
-              <input type="number" step="0.01" min="0" value={data.setup_fee || ""} onChange={(e) => onChange({ ...data, setup_fee: e.target.value })}
+              <label htmlFor="pp-setup-fee" className="block text-sm font-medium text-slate-700 mb-1">Setup Fee</label>
+              <input id="pp-setup-fee" type="number" step="0.01" min="0" value={data.setup_fee || ""} onChange={(e) => onChange({ ...data, setup_fee: e.target.value })}
                 className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
             </div>
           )}
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">{modelCfg.showUnitPrice || modelCfg.showFlatFee ? "Setup Fee" : "Trial Days"}</label>
-            <input type="number" min="0" value={modelCfg.showUnitPrice || modelCfg.showFlatFee ? (data.setup_fee || "") : (data.trial_days || "")}
+            <label htmlFor="pp-setup-fee-or-trial" className="block text-sm font-medium text-slate-700 mb-1">{modelCfg.showUnitPrice || modelCfg.showFlatFee ? "Setup Fee" : "Trial Days"}</label>
+            <input id="pp-setup-fee-or-trial" type="number" min="0" value={modelCfg.showUnitPrice || modelCfg.showFlatFee ? (data.setup_fee || "") : (data.trial_days || "")}
               onChange={(e) => onChange({ ...data, [modelCfg.showUnitPrice || modelCfg.showFlatFee ? "setup_fee" : "trial_days"]: e.target.value })}
               className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
           </div>
@@ -627,13 +627,13 @@ export default function PricingPlansPage() {
         {modelCfg.showMinMax && (
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Min Quantity</label>
-              <input type="number" min="1" value={data.min_quantity || 1} onChange={(e) => onChange({ ...data, min_quantity: e.target.value })}
+              <label htmlFor="pp-min-quantity" className="block text-sm font-medium text-slate-700 mb-1">Min Quantity</label>
+              <input id="pp-min-quantity" type="number" min="1" value={data.min_quantity || 1} onChange={(e) => onChange({ ...data, min_quantity: e.target.value })}
                 className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Max Quantity</label>
-              <input type="number" min="0" value={data.max_quantity || ""} onChange={(e) => onChange({ ...data, max_quantity: e.target.value })}
+              <label htmlFor="pp-max-quantity" className="block text-sm font-medium text-slate-700 mb-1">Max Quantity</label>
+              <input id="pp-max-quantity" type="number" min="0" value={data.max_quantity || ""} onChange={(e) => onChange({ ...data, max_quantity: e.target.value })}
                 className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" placeholder="Unlimited" />
             </div>
           </div>
@@ -642,13 +642,13 @@ export default function PricingPlansPage() {
         {!modelCfg.showUnitPrice && !modelCfg.showFlatFee && (
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Setup Fee</label>
-              <input type="number" step="0.01" min="0" value={data.setup_fee || ""} onChange={(e) => onChange({ ...data, setup_fee: e.target.value })}
+              <label htmlFor="pp-setup-fee-2" className="block text-sm font-medium text-slate-700 mb-1">Setup Fee</label>
+              <input id="pp-setup-fee-2" type="number" step="0.01" min="0" value={data.setup_fee || ""} onChange={(e) => onChange({ ...data, setup_fee: e.target.value })}
                 className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Trial Days</label>
-              <input type="number" min="0" value={data.trial_days || ""} onChange={(e) => onChange({ ...data, trial_days: e.target.value })}
+              <label htmlFor="pp-trial-days" className="block text-sm font-medium text-slate-700 mb-1">Trial Days</label>
+              <input id="pp-trial-days" type="number" min="0" value={data.trial_days || ""} onChange={(e) => onChange({ ...data, trial_days: e.target.value })}
                 className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
             </div>
           </div>
@@ -664,26 +664,26 @@ export default function PricingPlansPage() {
             <div className="mt-3 space-y-4 p-4 bg-slate-50 rounded-xl">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Effective From *</label>
-                  <input type="date" min={isEdit ? undefined : localToday()} value={data.effective_from || ""} onChange={(e) => onChange({ ...data, effective_from: e.target.value })}
+                  <label htmlFor="pp-effective-from" className="block text-sm font-medium text-slate-700 mb-1">Effective From *</label>
+                  <input id="pp-effective-from" type="date" min={isEdit ? undefined : localToday()} value={data.effective_from || ""} onChange={(e) => onChange({ ...data, effective_from: e.target.value })}
                     className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Effective To</label>
-                  <input type="date" min={data.effective_from || undefined} value={data.effective_to || ""} onChange={(e) => onChange({ ...data, effective_to: e.target.value })}
+                  <label htmlFor="pp-effective-to" className="block text-sm font-medium text-slate-700 mb-1">Effective To</label>
+                  <input id="pp-effective-to" type="date" min={data.effective_from || undefined} value={data.effective_to || ""} onChange={(e) => onChange({ ...data, effective_to: e.target.value })}
                     className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Notes</label>
-                <textarea rows={2} value={data.notes || ""} onChange={(e) => onChange({ ...data, notes: e.target.value })}
+                <label htmlFor="pp-notes" className="block text-sm font-medium text-slate-700 mb-1">Notes</label>
+                <textarea id="pp-notes" rows={2} value={data.notes || ""} onChange={(e) => onChange({ ...data, notes: e.target.value })}
                   className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" placeholder="Internal notes about this pricing plan" />
               </div>
               {includeStatus && (
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Status</label>
-                    <select value={data.status || "active"} onChange={(e) => onChange({ ...data, status: e.target.value })}
+                    <label htmlFor="pp-status" className="block text-sm font-medium text-slate-700 mb-1">Status</label>
+                    <select id="pp-status" value={data.status || "active"} onChange={(e) => onChange({ ...data, status: e.target.value })}
                       className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
                       <option value="active">Active</option>
                       <option value="inactive">Inactive</option>
@@ -697,7 +697,7 @@ export default function PricingPlansPage() {
 
         {modelCfg.showTiers && (
           <div className="border-t border-slate-100 pt-4">
-            <label className="block text-sm font-medium text-slate-700 mb-2">Pricing Tiers</label>
+            <p className="block text-sm font-medium text-slate-700 mb-2">Pricing Tiers</p>
             <div className="flex items-center gap-2 mb-3">
               <input type="number" placeholder="From" value={newTier.from} onChange={(e) => setNewTier((p) => ({ ...p, from: e.target.value }))}
                 className="w-20 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />

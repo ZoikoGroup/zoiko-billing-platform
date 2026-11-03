@@ -119,31 +119,31 @@ function TaxFormModal({ show, onClose, onSave, editItem, saving }) {
       <div className="space-y-4">
         {formError && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg text-sm">{formError}</div>}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div><label className="block text-xs font-medium text-slate-500 mb-1">Name *</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.name} onChange={e => set("name", e.target.value)} /></div>
-          <div><label className="block text-xs font-medium text-slate-500 mb-1">Code *</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.code} onChange={e => set("code", e.target.value)} placeholder="e.g. GST-18" /></div>
+          <div><label htmlFor="tp-name" className="block text-xs font-medium text-slate-500 mb-1">Name *</label><input id="tp-name" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.name} onChange={e => set("name", e.target.value)} /></div>
+          <div><label htmlFor="tp-code" className="block text-xs font-medium text-slate-500 mb-1">Code *</label><input id="tp-code" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.code} onChange={e => set("code", e.target.value)} placeholder="e.g. GST-18" /></div>
         </div>
-<div><label className="block text-xs font-medium text-slate-500 mb-1">Description</label><textarea className="w-full border rounded-lg px-3 py-2 text-sm" rows={2} value={form.description} onChange={e => set("description", e.target.value)} /></div>
+<div><label htmlFor="tp-description" className="block text-xs font-medium text-slate-500 mb-1">Description</label><textarea id="tp-description" className="w-full border rounded-lg px-3 py-2 text-sm" rows={2} value={form.description} onChange={e => set("description", e.target.value)} /></div>
          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-           <div><label className="block text-xs font-medium text-slate-500 mb-1">Tax Type *</label>
-            <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.tax_type} onChange={e => set("tax_type", e.target.value)}>
+           <div><label htmlFor="tp-tax-type" className="block text-xs font-medium text-slate-500 mb-1">Tax Type *</label>
+            <select id="tp-tax-type" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.tax_type} onChange={e => set("tax_type", e.target.value)}>
               {TAX_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </div>
-          <div><label className="block text-xs font-medium text-slate-500 mb-1">Rate (%) *</label><input type="number" step="0.01" min="0" max="100" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.rate} onChange={e => set("rate", e.target.value)} /></div>
-          <div><label className="block text-xs font-medium text-slate-500 mb-1">Pricing Type</label>
-            <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.pricing_type} onChange={e => set("pricing_type", e.target.value)}>
+          <div><label htmlFor="tp-rate" className="block text-xs font-medium text-slate-500 mb-1">Rate (%) *</label><input id="tp-rate" type="number" step="0.01" min="0" max="100" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.rate} onChange={e => set("rate", e.target.value)} /></div>
+          <div><label htmlFor="tp-pricing-type" className="block text-xs font-medium text-slate-500 mb-1">Pricing Type</label>
+            <select id="tp-pricing-type" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.pricing_type} onChange={e => set("pricing_type", e.target.value)}>
               {PRICING_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </div>
 </div>
          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-           <div><label className="block text-xs font-medium text-slate-500 mb-1">Country</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.country} onChange={e => set("country", e.target.value)} placeholder="e.g. US" /></div>
-          <div><label className="block text-xs font-medium text-slate-500 mb-1">Region</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.region} onChange={e => set("region", e.target.value)} /></div>
-          <div><label className="block text-xs font-medium text-slate-500 mb-1">State</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.state} onChange={e => set("state", e.target.value)} /></div>
+           <div><label htmlFor="tp-country" className="block text-xs font-medium text-slate-500 mb-1">Country</label><input id="tp-country" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.country} onChange={e => set("country", e.target.value)} placeholder="e.g. US" /></div>
+          <div><label htmlFor="tp-region" className="block text-xs font-medium text-slate-500 mb-1">Region</label><input id="tp-region" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.region} onChange={e => set("region", e.target.value)} /></div>
+          <div><label htmlFor="tp-state" className="block text-xs font-medium text-slate-500 mb-1">State</label><input id="tp-state" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.state} onChange={e => set("state", e.target.value)} /></div>
 </div>
          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-           <div><label className="block text-xs font-medium text-slate-500 mb-1">Effective From *</label><input type="date" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.effective_from} onChange={e => set("effective_from", e.target.value)} /></div>
-          <div><label className="block text-xs font-medium text-slate-500 mb-1">Effective To</label><input type="date" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.effective_to} onChange={e => set("effective_to", e.target.value)} /></div>
+           <div><label htmlFor="tp-effective-from" className="block text-xs font-medium text-slate-500 mb-1">Effective From *</label><input id="tp-effective-from" type="date" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.effective_from} onChange={e => set("effective_from", e.target.value)} /></div>
+          <div><label htmlFor="tp-effective-to" className="block text-xs font-medium text-slate-500 mb-1">Effective To</label><input id="tp-effective-to" type="date" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.effective_to} onChange={e => set("effective_to", e.target.value)} /></div>
         </div>
         <div className="flex items-center gap-6">
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.is_active} onChange={e => set("is_active", e.target.checked)} className="rounded" /> Active</label>
@@ -306,10 +306,10 @@ function TaxGroupsModal({ show, onClose, taxPricingApi, allTaxItems, onError }) 
             <h3 className="text-sm font-semibold">{editGroup ? "Edit Tax Group" : "Create Tax Group"}</h3>
             {formError && <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-xs">{formError}</div>}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div><label className="block text-xs font-medium text-slate-500 mb-1">Name *</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={groupForm.name} onChange={e => setGroupForm(p => ({ ...p, name: e.target.value }))} /></div>
-              <div><label className="block text-xs font-medium text-slate-500 mb-1">Code *</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={groupForm.code} onChange={e => setGroupForm(p => ({ ...p, code: e.target.value }))} /></div>
-              <div className="sm:col-span-2"><label className="block text-xs font-medium text-slate-500 mb-1">Description</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={groupForm.description} onChange={e => setGroupForm(p => ({ ...p, description: e.target.value }))} /></div>
-              <div><label className="block text-xs font-medium text-slate-500 mb-1">Country</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={groupForm.country} onChange={e => setGroupForm(p => ({ ...p, country: e.target.value }))} placeholder="e.g. US" /></div>
+              <div><label htmlFor="tp-name-2" className="block text-xs font-medium text-slate-500 mb-1">Name *</label><input id="tp-name-2" className="w-full border rounded-lg px-3 py-2 text-sm" value={groupForm.name} onChange={e => setGroupForm(p => ({ ...p, name: e.target.value }))} /></div>
+              <div><label htmlFor="tp-code-2" className="block text-xs font-medium text-slate-500 mb-1">Code *</label><input id="tp-code-2" className="w-full border rounded-lg px-3 py-2 text-sm" value={groupForm.code} onChange={e => setGroupForm(p => ({ ...p, code: e.target.value }))} /></div>
+              <div className="sm:col-span-2"><label htmlFor="tp-description-2" className="block text-xs font-medium text-slate-500 mb-1">Description</label><input id="tp-description-2" className="w-full border rounded-lg px-3 py-2 text-sm" value={groupForm.description} onChange={e => setGroupForm(p => ({ ...p, description: e.target.value }))} /></div>
+              <div><label htmlFor="tp-country-2" className="block text-xs font-medium text-slate-500 mb-1">Country</label><input id="tp-country-2" className="w-full border rounded-lg px-3 py-2 text-sm" value={groupForm.country} onChange={e => setGroupForm(p => ({ ...p, country: e.target.value }))} placeholder="e.g. US" /></div>
               <div className="flex items-center gap-4 pt-5">
                 <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={groupForm.is_default} onChange={e => setGroupForm(p => ({ ...p, is_default: e.target.checked }))} className="rounded" /> Default</label>
                 <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={groupForm.is_active} onChange={e => setGroupForm(p => ({ ...p, is_active: e.target.checked }))} className="rounded" /> Active</label>
@@ -360,8 +360,8 @@ function TaxGroupsModal({ show, onClose, taxPricingApi, allTaxItems, onError }) 
           <div className="space-y-4">
             <div className="flex gap-2 items-end">
               <div className="flex-1">
-                <label className="block text-xs font-medium text-slate-500 mb-1">Add Tax Pricing to Group</label>
-                <select className="w-full border rounded-lg px-3 py-2 text-sm" value={addMemberTaxId} onChange={e => setAddMemberTaxId(e.target.value)}>
+                <label htmlFor="tp-add-tax-pricing-to-group" className="block text-xs font-medium text-slate-500 mb-1">Add Tax Pricing to Group</label>
+                <select id="tp-add-tax-pricing-to-group" className="w-full border rounded-lg px-3 py-2 text-sm" value={addMemberTaxId} onChange={e => setAddMemberTaxId(e.target.value)}>
                   <option value="">Select a tax pricing...</option>
                   {allTaxItems.filter(t => !usedTaxIds.has(t.id)).map(t => (
                     <option key={t.id} value={t.id}>{t.name} ({t.code}) - {t.rate}%</option>
