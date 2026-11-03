@@ -858,6 +858,16 @@ Measured with `D:\zoiko-local\tools\p4-measure.mjs` at 390×844: only what is on
 
 **Pre-existing, reported:** the full local backend run has 7 failures in unrelated areas (email alert routing, Stripe SDK version pin, 3 super-admin tests); 5 confirmed failing without any change from this work.
 
+## 8k. Phase 4 part 2 — formatting, states, one primary action
+
+**Shared formatting (decided: "Oct 1, 2026" everywhere).** `formatDisplayDate` shows the short month name (fixed en-US, like the currency formatting); new shared helpers `formatDisplayDateTime` ("Oct 1, 2026, 3:45 PM"), `formatRelativeTime` ("5 min ago", then the date after a week), `formatDisplayNumber`, `formatPercent` (`822a5d3`). Moved onto them: 14 pages' own formatter functions (`5d4ca75`) and 48 inline `new Date(x).toLocale…()` calls on 26 pages (`f64e592`). Effects: one date format app-wide; date-only values on the right calendar day everywhere (the public platform invoice / quote pages showed the previous day in the Americas); "—" instead of "1/1/1970" for missing dates. Left as they are: time-only formats, the weekday greeting, short chart-axis dates, and explicit-currency formatters (platform invoice / quote, payment success).
+
+**States.** Page errors already used the shared `ErrorState` (remaining red text is field / dialog validation). Eight detail / workspace pages drew their own loading spinner; they use the shared `Spinner`, which gains `role="status"` / "Loading" (`702f3d7`).
+
+**One primary action per screen** (`D:\zoiko-local\tools\primary-probe.mjs`, every route at 1280 / 390; the app-wide trial banner and selected filter chips excluded): 10 pages → 0. Empty-state buttons repeating the header's primary action are outlined (shared dashboard empty panel, product pricing plans, credit notes, support access); customer profile keeps "Create Invoice" primary, product profile "New Quotation"; tax configuration's "Add" buttons are secondary (`5927420`). Kept on purpose: invoice detail's "Mark as Paid" (money-confirm style) beside "Pay online".
+
+**Re-measured:** full sweep `shots/phase4/sweep-part2/` — 135 / 135, page overflow 0, squeezed tables 0, clipped content 0 at 360 / 390 (4 decorative hero backgrounds only).
+
 ## 9. Local environment safety notes
 
 - `backend/.env` points at a remote PostgreSQL server. It was **not** used, edited, seeded or migrated. Overrides were applied per process only.
