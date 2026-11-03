@@ -12,7 +12,7 @@ import {
 import HRPage from "../../../components/HRPage";
 import { invoiceApi, creditNoteApi } from "../../../service/billingService";
 import { formatCurrency } from "../../../utils/locale";
-import { extractArray } from "../../../utils/billing-helpers";
+import { extractArray, formatDisplayDate } from "../../../utils/billing-helpers";
 import { Spinner, ErrorState, EmptyState, DateRangeFilter, useDateRange, ExportMenu } from "../../../components/billing-shared";
 import { filterByDateRange, downloadExcel, downloadJSON, downloadCSV } from "../../../utils/export-helpers";
 import { useCurrency } from "../utils/CurrencyContext";
@@ -416,7 +416,7 @@ export default function InvoiceReportsPage() {
                     ) },
                     { key: "amount", label: "Amount", numeric: true, render: (inv) => <span className="font-medium text-slate-900">{formatCurrency(inv.total_amount || inv.total, inv.currency)}</span> },
                     { key: "balance", label: "Balance", numeric: true, render: (inv) => <span className="text-slate-600">{formatCurrency(inv.balance_due || 0, inv.currency)}</span> },
-                    { key: "due_date", label: "Due Date", align: "right", render: (inv) => <span className="text-slate-500 whitespace-nowrap">{inv.due_date ? new Date(inv.due_date).toLocaleDateString() : "—"}</span> },
+                    { key: "due_date", label: "Due Date", align: "right", render: (inv) => <span className="text-slate-500 whitespace-nowrap">{inv.due_date ? formatDisplayDate(inv.due_date) : "—"}</span> },
                   ]}
                 />
               </div>
@@ -469,7 +469,7 @@ export default function InvoiceReportsPage() {
                     { key: "invoice_number", label: "Invoice", render: (inv) => <span className="font-medium text-slate-900">{inv.invoice_number || `#${inv.id}`}</span> },
                     { key: "customer", label: singular, render: (inv) => <span className="text-slate-600">{inv.customer_name || `#${inv.customer_id}`}</span> },
                     { key: "amount", label: "Amount", numeric: true, render: (inv) => <span className="font-medium text-slate-900">{formatCurrency(inv.balance_due || inv.total_amount || inv.total, inv.currency)}</span> },
-                    { key: "due_date", label: "Due Date", align: "right", render: (inv) => <span className="text-slate-500 whitespace-nowrap">{new Date(inv.due_date).toLocaleDateString()}</span> },
+                    { key: "due_date", label: "Due Date", align: "right", render: (inv) => <span className="text-slate-500 whitespace-nowrap">{formatDisplayDate(inv.due_date)}</span> },
                     { key: "days_overdue", label: "Days Overdue", align: "right", mobileRole: "badge", render: (inv) => {
                       const daysOverdue = Math.floor((new Date() - new Date(inv.due_date)) / (1000 * 60 * 60 * 24));
                       return <span className={`font-medium ${daysOverdue > 90 ? "text-red-700" : daysOverdue > 60 ? "text-red-600" : daysOverdue > 30 ? "text-amber-600" : "text-amber-500"}`}>{daysOverdue}d</span>;

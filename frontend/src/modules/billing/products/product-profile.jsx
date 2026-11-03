@@ -5,7 +5,7 @@ import { productApi, pricingApi, invoiceApi, quoteApi, contractApi, subscription
 import { ArrowLeft, Package, Plus, FileText,
   AlertCircle, DollarSign, RefreshCw,
   CreditCard, Activity, StickyNote, Files, Zap, History } from "lucide-react"
-import { formatDisplayCurrency, formatDisplayDate } from '../../../utils/billing-helpers';
+import { formatDisplayCurrency, formatDisplayDate, formatDisplayDateTime } from '../../../utils/billing-helpers';
 import { useCurrency } from '../utils/CurrencyContext';
 import { auditApi } from '../../../service/billingService';
 import { Spinner as SharedSpinner, ErrorState as SharedErrorState, EmptyState as SharedEmptyState, StatusBadge as SharedStatusBadge } from '../../../components/billing-shared';
@@ -677,7 +677,7 @@ export default function ProductProfilePage() {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-slate-900">{log.action ? log.action.charAt(0).toUpperCase() + log.action.slice(1) : 'Unknown'}</p>
                     {log.details && <p className="text-xs text-slate-500 mt-0.5 truncate">{typeof log.details === 'string' ? log.details : JSON.stringify(log.details)}</p>}
-                    <p className="text-xs text-slate-500 mt-0.5">{log.created_at ? new Date(log.created_at).toLocaleString() : '—'}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">{log.created_at ? formatDisplayDateTime(log.created_at) : '—'}</p>
                   </div>
                 </div>
               ))}

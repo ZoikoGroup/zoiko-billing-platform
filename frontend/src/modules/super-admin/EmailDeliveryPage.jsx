@@ -184,7 +184,7 @@ export default function EmailDeliveryPage() {
         description="Real operational visibility over every email send attempt (CommunicationAuditLog) — volume, failure rate, and a manual resend action where a proper business-record resend path exists."
         icon={Mail}
         accent="brand"
-        meta={overview?.generated_at ? `Generated ${new Date(overview.generated_at).toLocaleString()}` : null}
+        meta={overview?.generated_at ? `Generated ${formatDisplayDateTime(overview.generated_at)}` : null}
         actions={
           <Button variant="secondary" icon={RefreshCw} onClick={load} loading={loading}>
             Refresh

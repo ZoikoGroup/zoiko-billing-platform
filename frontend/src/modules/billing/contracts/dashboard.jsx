@@ -10,7 +10,7 @@ import {
   CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
 import { contractApi } from "../../../service/billingService";
-import { extractArray, formatDisplayCurrency, formatCompactCurrency } from "../../../utils/billing-helpers";
+import { extractArray, formatDisplayCurrency, formatCompactCurrency, formatDisplayDate } from "../../../utils/billing-helpers";
 import { useCurrency } from "../utils/CurrencyContext";
 import { useTerminology } from "../utils/TerminologyContext";
 import { useBillingDateRange } from "../utils/DateRangeContext";
@@ -278,7 +278,7 @@ export default function ContractDashboardPage() {
         {c.customer_name || c.customer?.name || `${singular} #${c.customer_id}`}
       </button>
     ) },
-    { key: "end_date", label: "Expires", render: (c) => <span className="text-slate-500 whitespace-nowrap text-xs">{c.end_date ? new Date(c.end_date).toLocaleDateString() : "—"}</span> },
+    { key: "end_date", label: "Expires", render: (c) => <span className="text-slate-500 whitespace-nowrap text-xs">{c.end_date ? formatDisplayDate(c.end_date) : "—"}</span> },
     { key: "value", label: "Value", align: "right", render: (c) => <span className="font-medium text-slate-800 whitespace-nowrap">{formatDisplayCurrency(contractValue(c), c.currency || sampleCurrency)}</span> },
   ], [navigate, singular, sampleCurrency]);
 

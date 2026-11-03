@@ -5,6 +5,7 @@ import { loadGlobalBillingConfig } from "../../service/billingConfigCache";
 import WorkspaceHeader from "./WorkspaceHeader";
 import { formatOrgMoney } from "./workspace-format";
 import { Bell, FileText, CreditCard, Repeat, Clock, Activity, AlertTriangle, ScrollText, Loader2 } from "lucide-react";
+import { formatDisplayDate } from "../../utils/billing-helpers";
 
 const PREVIEW_CARDS = [
   {
@@ -148,7 +149,7 @@ export default function WorkspaceNotificationsPage() {
                 </p>
                 <p className="text-[12px] mt-0.5 text-slate-500">
                   {formatOrgMoney(inv.balance_due ?? inv.total_amount, config)} outstanding
-                  {inv.due_date && ` · due ${new Date(inv.due_date).toLocaleDateString()}`}
+                  {inv.due_date && ` · due ${formatDisplayDate(inv.due_date)}`}
                   {inv.customer_name && ` · ${inv.customer_name}`}
                 </p>
               </div>
@@ -169,7 +170,7 @@ export default function WorkspaceNotificationsPage() {
                   Contract {c.contract_number || `#${c.id}`} is expiring
                 </p>
                 <p className="text-[12px] mt-0.5 text-slate-500">
-                  {c.end_date && `Ends ${new Date(c.end_date).toLocaleDateString()}`}
+                  {c.end_date && `Ends ${formatDisplayDate(c.end_date)}`}
                   {c.customer_name && ` · ${c.customer_name}`}
                 </p>
               </div>

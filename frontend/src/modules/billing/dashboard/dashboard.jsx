@@ -10,7 +10,7 @@ import {
 import {
   dashboardApi, invoiceApi, paymentApi, customerApi, subscriptionApi, contractApi, collectionApi, auditApi, settingsApi
 } from "../../../service/billingService";
-import { extractArray, formatDisplayCurrency, formatCompactMoney } from "../../../utils/billing-helpers";
+import { extractArray, formatDisplayCurrency, formatCompactMoney, formatDisplayDate } from "../../../utils/billing-helpers";
 import { useCurrency } from "../utils/CurrencyContext";
 import { useBillingDateRange } from "../utils/DateRangeContext";
 import {
@@ -94,7 +94,7 @@ const formatUpdatedAgo = (date) => {
   if (diffMins < 60) return `Updated ${diffMins} minutes ago`;
   const diffHrs = Math.floor(diffMins / 60);
   if (diffHrs < 24) return `Updated ${diffHrs} hour${diffHrs > 1 ? "s" : ""} ago`;
-  return `Updated ${new Date(date).toLocaleDateString()}`;
+  return `Updated ${formatDisplayDate(date)}`;
 };
 
 const CHART_COLORS = ["var(--color-brand)", "#60A5FA", "#93C5FD", "#f59e0b", "#10b981", "#ef4444", "var(--color-brand-700)", "#ec4899"];
@@ -747,7 +747,7 @@ export default function ZoikoBillingModule() {
 
   const renewalColumns = useMemo(() => [
     { key: "customer_name", label: "Customer", render: (r) => getCustomerName(r.customer_id) },
-    { key: "end_date", label: "Expires", render: (r) => r.end_date ? new Date(r.end_date).toLocaleDateString() : "—" },
+    { key: "end_date", label: "Expires", render: (r) => r.end_date ? formatDisplayDate(r.end_date) : "—" },
     { key: "value", label: "Value", render: (r) => formatDisplayCurrency(r.value || r.amount || r.total, baseCurrency) },
   ], [baseCurrency]);
 
