@@ -322,10 +322,10 @@ export default function PricingRulesPage() {
     <HRPage title="Pricing Rules" icon={ListFilter}>
       <div className="space-y-4">
         <div className="flex flex-wrap gap-3 items-center justify-between">
-          <div className="flex flex-wrap gap-2 items-center">
-            <div className="relative">
+          <div className="flex w-full flex-wrap gap-2 items-center sm:w-auto">
+            <div className="relative w-full sm:w-auto">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-              <input aria-label="Search rules" className="pl-9 pr-8 py-2 border rounded-lg text-sm w-48" placeholder="Search rules..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+              <input aria-label="Search rules" className="pl-9 pr-8 py-2 border rounded-lg text-sm w-full sm:w-48" placeholder="Search rules..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
               {searchTerm && <button onClick={() => setSearchTerm("")} aria-label="Clear search" className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700"><X size={14} /></button>}
             </div>
             <select aria-label="Rule type" className="border rounded-lg px-3 py-2 text-sm" value={ruleTypeFilter} onChange={e => setRuleTypeFilter(e.target.value)}>

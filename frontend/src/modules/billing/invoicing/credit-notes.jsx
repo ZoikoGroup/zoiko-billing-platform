@@ -426,13 +426,13 @@ export default function CreditNotesPage() {
         <div className="bg-white border border-slate-200 rounded-3xl shadow-[0_4px_20px_rgba(0,0,0,0.02)] overflow-hidden">
           <div className="p-6 border-b border-slate-100">
             <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center gap-3 flex-1">
+              <div className="flex flex-wrap items-center gap-3 flex-1 max-sm:basis-full">
                 <SearchInput
                   value={search}
                   onChange={setSearch}
                   debounceMs={0}
                   placeholder="Search credit notes..."
-                  className="flex-1 max-w-md"
+                  className="flex-1 max-w-md max-sm:basis-full max-sm:max-w-none"
                   aria-label="Search credit notes"
                 />
                 <button onClick={() => setShowFilters(!showFilters)}

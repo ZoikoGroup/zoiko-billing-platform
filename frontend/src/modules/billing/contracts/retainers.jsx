@@ -236,8 +236,8 @@ export default function RetainersPage() {
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <div className="flex items-center gap-3 flex-1">
-<div className="relative flex-1 max-w-md">
+        <div className="flex flex-wrap items-center gap-3 flex-1 max-sm:basis-full">
+<div className="relative flex-1 max-w-md max-sm:basis-full max-sm:max-w-none">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
               <input type="text" placeholder="Search retainers..." value={search}
                 onChange={(e) => setSearch(e.target.value)}

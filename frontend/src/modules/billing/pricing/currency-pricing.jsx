@@ -193,10 +193,10 @@ export default function CurrencyPricingPage() {
     <HRPage title="Currency Pricing" icon={DollarSign}>
       <div className="space-y-4">
         <div className="flex flex-wrap gap-3 items-center justify-between">
-          <div className="flex gap-2 items-center">
-            <div className="relative">
+          <div className="flex w-full flex-wrap gap-2 items-center sm:w-auto">
+            <div className="relative w-full sm:w-auto">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-              <input className="pl-9 pr-3 py-2 border rounded-lg text-sm w-48" placeholder="Search..." aria-label="Search" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+              <input className="pl-9 pr-3 py-2 border rounded-lg text-sm w-full sm:w-48" placeholder="Search..." aria-label="Search" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
             </div>
             <select aria-label="Filter by currency" className="border rounded-lg px-3 py-2 text-sm" value={currencyFilter} onChange={e => setCurrencyFilter(e.target.value)}>
               <option value="">All Currencies</option>
