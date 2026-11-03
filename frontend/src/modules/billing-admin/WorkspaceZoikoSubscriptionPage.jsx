@@ -35,6 +35,7 @@ import {
   FEATURE_META,
   PRICING_MODEL_KEY,
 } from "./zoikoPlanCatalog";
+import { formatDisplayDate } from "../../utils/billing-helpers";
 
 // Covers both CommercialSubscription statuses (active/pending/past_due/
 // restricted/suspended/cancelled/expired/trialing/trial_recovery) and
@@ -108,16 +109,7 @@ function daysUntil(isoDate) {
 }
 
 function fmtDate(isoDate) {
-  if (!isoDate) return "—";
-  try {
-    return new Date(isoDate).toLocaleDateString(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
-  } catch {
-    return isoDate;
-  }
+  return formatDisplayDate(isoDate);
 }
 
 function formatEntitlementKey(key = "") {

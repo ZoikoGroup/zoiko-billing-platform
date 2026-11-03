@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { platformSelfServiceApi } from "../../service/platformSelfServiceApi";
 import { DataTable } from "../../components/billing-ui";
+import { formatDisplayNumber } from "../../utils/billing-helpers";
 
 const STATUS_BADGE = {
   active: "bg-emerald-50 text-emerald-700 border-emerald-200",
@@ -56,8 +57,7 @@ function rowFlag(row) {
 }
 
 function formatNumber(value) {
-  if (value == null) return "—";
-  return Number(value).toLocaleString();
+  return formatDisplayNumber(value);
 }
 
 // Plane 1 org-facing usage diagnostics (GET /billing/workspace/usage): real

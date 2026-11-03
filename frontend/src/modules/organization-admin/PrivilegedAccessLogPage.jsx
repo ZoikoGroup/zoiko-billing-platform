@@ -8,6 +8,7 @@ import {
 } from "../../service/privilegedAccessService";
 import { PageHeader, Modal, Field, Button } from "../../components/billing-ui";
 import { ErrorState, Spinner, StatusBadge, EmptyState, SuccessMessage } from "../../components/billing-shared";
+import { formatDisplayDateTime } from "../../utils/billing-helpers";
 
 /**
  * ZB-SA-CMD-003 §19/§20 / ZB-SEC-PRIV-001 (PRV-02, AT-18)
@@ -42,8 +43,7 @@ function parseServerTime(value) {
 
 function formatDateTime(value) {
   const date = parseServerTime(value);
-  if (!date) return "—";
-  return date.toLocaleString([], { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return date ? formatDisplayDateTime(date) : "—";
 }
 
 function useNow(intervalMs = 1000) {

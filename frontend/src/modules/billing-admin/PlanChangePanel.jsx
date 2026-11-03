@@ -14,14 +14,10 @@ import {
 import { platformSelfServiceApi, invalidateZoikoSubscriptionCache } from "../../service/platformSelfServiceApi";
 import { formatOrgMoney } from "./workspace-format";
 import { Button, Modal } from "../../components/billing-ui";
+import { formatDisplayDate } from "../../utils/billing-helpers";
 
 function fmtDate(iso) {
-  if (!iso) return "—";
-  try {
-    return new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
-  } catch {
-    return iso;
-  }
+  return formatDisplayDate(iso);
 }
 
 const money = (amount, currency) => formatOrgMoney(amount, { default_currency: currency || "USD" });

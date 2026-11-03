@@ -12,6 +12,7 @@ import { PageHeader, DataTable, Button, Modal, Field, Select } from "../../compo
 import { ErrorState, Spinner, EmptyState, StatusBadge, SuccessMessage, useConfirmationDialog } from "../../components/billing-shared";
 import { OrganizationLink, CurrencyTotals, MaskedValue, SupportAccessNote } from "./PrivacyCells";
 import { RECONCILIATION_RUN_STATE_OPTIONS, RECONCILIATION_EXCEPTION_STATUS_OPTIONS } from "./constants";
+import { formatDisplayDateTime } from "../../utils/billing-helpers";
 
 function orgLabel(org) {
   if (!org) return null;
@@ -19,8 +20,7 @@ function orgLabel(org) {
 }
 
 function formatDateTime(value) {
-  if (!value) return "—";
-  return new Date(value).toLocaleString([], { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  return formatDisplayDateTime(value);
 }
 
 // Mirrors backend/app/modules/super_admin/stripe_reconciliation.py's
