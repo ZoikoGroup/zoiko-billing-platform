@@ -23,6 +23,24 @@ export default defineConfig({
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
     },
+    // Mobile responsiveness (tests/mobile-responsive.spec.js only). All run in
+    // Chromium with the device's viewport, touch and user agent — WebKit isn't
+    // installed here, so this checks layout, not Safari rendering.
+    {
+      name: 'iphone-13',
+      testMatch: /mobile-responsive\.spec\.js/,
+      use: { ...devices['iPhone 13'], browserName: 'chromium' },
+    },
+    {
+      name: 'pixel-7',
+      testMatch: /mobile-responsive\.spec\.js/,
+      use: { ...devices['Pixel 7'] },
+    },
+    {
+      name: 'ipad-gen-7',
+      testMatch: /mobile-responsive\.spec\.js/,
+      use: { ...devices['iPad (gen 7)'], browserName: 'chromium' },
+    },
   ],
 
   webServer: {
