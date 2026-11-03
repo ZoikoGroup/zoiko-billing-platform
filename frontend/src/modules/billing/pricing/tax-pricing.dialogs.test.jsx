@@ -101,4 +101,12 @@ describe("Tax Pricing dialogs", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(document.body.style.overflow).toBe("");
   });
+  it("form labels are linked to their fields", async () => {
+    await renderPage();
+    fireEvent.click(screen.getByRole("button", { name: /create tax/i }));
+    const dialog = await screen.findByRole("dialog", { name: "Create Tax Pricing" });
+    for (const name of [/^Name/, /^Code/, /^Tax Type/, /^Rate/, /^Country/, /^Effective From/]) {
+      expect(within(dialog).getByLabelText(name)).toBeInTheDocument();
+    }
+  });
 });
