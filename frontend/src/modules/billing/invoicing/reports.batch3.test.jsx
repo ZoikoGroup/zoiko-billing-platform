@@ -46,7 +46,9 @@ describe("M. Invoicing reports", () => {
   it("says when the report covers only part of the invoices", async () => {
     m.invList.mockResolvedValue({ items: [inv(1), inv(2)], total: 340 });
     renderPage();
-    expect(await screen.findByRole("status")).toHaveTextContent("These reports cover the 2 most recent invoices of 340");
+    // The loading spinner is also a status region, so wait for the notice's text.
+    const notice = await screen.findByText(/These reports cover the 2 most recent invoices of 340/);
+    expect(notice.closest('[role="status"]')).not.toBeNull();
   });
 
   it("no coverage notice when everything is loaded", async () => {

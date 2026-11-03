@@ -36,7 +36,7 @@ beforeEach(() => {
 });
 afterEach(() => cleanup());
 
-const local = (y, mo, d) => new Date(y, mo - 1, d).toLocaleDateString();
+const local = (y, mo, d) => new Date(y, mo - 1, d).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 const clearBtn = () => screen.queryAllByRole("button", { name: "Clear filters" })[0];
 
 async function pickRange(from, to) {

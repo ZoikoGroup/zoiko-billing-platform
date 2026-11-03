@@ -9,7 +9,7 @@ import { MemoryRouter } from "react-router-dom";
 
 const m = vi.hoisted(() => ({ config: vi.fn(), org: vi.fn() }));
 vi.mock("../../context/AuthContext", () => ({ useAuth: () => ({ user: { id: 2, role: "billing_admin" }, role: "billing_admin" }) }));
-vi.mock("../../service/billingConfigCache", () => ({ loadGlobalBillingConfig: (...a) => m.config(...a) }));
+vi.mock("../../service/billingConfigCache", () => ({ loadGlobalBillingConfig: (...a) => m.config(...a), subscribeBillingConfigInvalidation: () => () => {} }));
 vi.mock("../../service/orgAdminService", () => ({ getOrganizationDetails: (...a) => m.org(...a) }));
 
 import WorkspaceOrganizationPage from "./WorkspaceOrganizationPage";
