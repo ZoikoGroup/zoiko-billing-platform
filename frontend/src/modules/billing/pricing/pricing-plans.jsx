@@ -7,7 +7,7 @@ import { pricingApi, productApi } from "../../../service/billingService";
 import { loadGlobalBillingConfig } from "../../../service/billingConfigCache";
 import { getCurrencySelectOptions } from "../../../utils/currency";
 import { formatDisplayDate, formatDisplayCurrency, extractArray } from "../../../utils/billing-helpers";
-import { Spinner, Pagination, ProductSelector } from "../../../components/billing-shared";
+import { Spinner, Pagination, ProductSelector, StatusBadge as SharedStatusBadge } from "../../../components/billing-shared";
 import useLatestRequest from "../utils/useLatestRequest";
 import useMediaQuery, { BELOW_SM } from "../../../hooks/useMediaQuery";
 
@@ -50,17 +50,7 @@ const MODEL_DYNAMIC_FIELDS = {
 };
 
 function StatusBadge({ status }) {
-  const styles = {
-    active: "bg-green-100 text-green-700",
-    inactive: "bg-gray-100 text-gray-700",
-    archived: "bg-slate-100 text-slate-600",
-  };
-  return (
-    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${styles[status] || "bg-gray-100 text-gray-700"}`}>
-      {status === "active" ? <CheckCircle size={12} /> : <Clock size={12} />}
-      {status || "unknown"}
-    </span>
-  );
+  return <SharedStatusBadge status={status || "unknown"} icon={status === "active" ? CheckCircle : Clock} />;
 }
 
 function ModelBadge({ model }) {

@@ -8,7 +8,7 @@ import { discountApi } from "../../../service/billingService";
 import { loadGlobalBillingConfig } from "../../../service/billingConfigCache";
 import { formatDisplayDate, formatDisplayCurrency } from "../../../utils/billing-helpers";
 import { getCurrencySelectOptions } from "../../../utils/currency";
-import { Spinner, EmptyState, ErrorState } from "../../../components/billing-shared";
+import { Spinner, EmptyState, ErrorState, StatusBadge as SharedStatusBadge } from "../../../components/billing-shared";
 import useLatestRequest from "../utils/useLatestRequest";
 
 const DISCOUNT_TYPE_OPTIONS = [
@@ -54,8 +54,7 @@ export function discountDatesNote(form, isEdit) {
 }
 
 function StatusBadge({ status }) {
-  const colors = { draft: "bg-slate-100 text-slate-600", active: "bg-green-100 text-green-700", paused: "bg-amber-100 text-amber-700", expired: "bg-red-100 text-red-600", exhausted: "bg-orange-100 text-orange-600", cancelled: "bg-slate-100 text-slate-500", pending_approval: "bg-blue-100 text-blue-600" };
-  return <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${colors[status] || "bg-slate-100 text-slate-700"}`}>{status?.replace("_", " ") || "unknown"}</span>;
+  return <SharedStatusBadge status={status} />;
 }
 
 // <input type="datetime-local"> holds LOCAL wall-clock time, and the payload

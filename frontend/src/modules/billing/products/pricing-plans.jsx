@@ -7,7 +7,7 @@ import { pricingApi, productApi } from "../../../service/billingService";
 import { formatDisplayDate, extractArray } from "../../../utils/billing-helpers";
 import { useCurrency } from "../utils/CurrencyContext";
 import useLatestRequest from "../utils/useLatestRequest";
-import { Spinner, ErrorState, useConfirmationDialog, Pagination, ProductSelector } from "../../../components/billing-shared";
+import { Spinner, ErrorState, useConfirmationDialog, Pagination, ProductSelector, StatusBadge as SharedStatusBadge } from "../../../components/billing-shared";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -28,17 +28,7 @@ const BILLING_INTERVAL_OPTIONS = [
 ];
 
 function StatusBadge({ status }) {
-  const styles = {
-    active: "bg-emerald-100 text-emerald-700",
-    inactive: "bg-slate-100 text-slate-600",
-    archived: "bg-slate-100 text-slate-600",
-  };
-  return (
-    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${styles[status] || "bg-slate-100 text-slate-700"}`}>
-      {status === "active" ? <CheckCircle size={12} /> : <Clock size={12} />}
-      {status || "unknown"}
-    </span>
-  );
+  return <SharedStatusBadge status={status || "unknown"} icon={status === "active" ? CheckCircle : Clock} />;
 }
 
 const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };

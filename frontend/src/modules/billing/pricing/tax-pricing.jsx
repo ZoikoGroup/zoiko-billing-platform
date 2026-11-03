@@ -6,7 +6,7 @@ import HRPage from "../../../components/HRPage";
 import { DataTable, Button, Modal } from "../../../components/billing-ui";
 import { taxPricingApi } from "../../../service/billingService";
 import { formatDisplayDate, extractArray } from "../../../utils/billing-helpers";
-import { Spinner, EmptyState, ErrorState } from "../../../components/billing-shared";
+import { Spinner, EmptyState, ErrorState, StatusBadge as SharedStatusBadge } from "../../../components/billing-shared";
 import useLatestRequest from "../utils/useLatestRequest";
 
 const TAX_TYPE_OPTIONS = [
@@ -30,9 +30,7 @@ function todayIsoDate() {
 }
 
 function StatusBadge({ is_active }) {
-  return is_active
-    ? <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">Active</span>
-    : <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-700">Inactive</span>;
+  return <SharedStatusBadge status={is_active ? "active" : "inactive"} />;
 }
 
 const EMPTY_FORM = {
