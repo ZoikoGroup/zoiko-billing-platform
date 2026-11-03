@@ -6,7 +6,7 @@ import { formatDisplayDate, formatDisplayCurrency, extractArray } from "../../..
 import useLatestRequest from "../utils/useLatestRequest";
 import { sumInBaseCurrency } from "../../../utils/currency-conversion";
 import { useCurrency } from "../utils/CurrencyContext";
-import { ErrorState, PageSkeleton, SuccessMessage, DashboardHeader, DashboardStatCard, DASHBOARD_KPI_GRID, Pagination, useConfirmationDialog } from "../../../components/billing-shared";
+import { ErrorState, PageSkeleton, SuccessMessage, DashboardHeader, DashboardStatCard, DASHBOARD_KPI_GRID, Pagination, useConfirmationDialog, StatusBadge as SharedStatusBadge } from "../../../components/billing-shared";
 import { useBillingDateRange } from "../utils/DateRangeContext";
 import ActiveUrlFilterChips from "../utils/ActiveUrlFilterChips";
 import { Button, Modal, Stepper } from "../../../components/billing-ui";
@@ -58,11 +58,8 @@ const PAYMENT_TYPE_FILTER_OPTIONS = [
 ];
 
 function StatusBadge({ status }) {
-  const s = STATUS_OPTIONS.find((o) => o.value === status);
-  if (!s) return <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-700">{status || "unknown"}</span>;
   const icons = { cleared: CheckCircle, pending: Clock, processing: Clock, failed: XCircle, refunded: RefreshCw, cancelled: Ban };
-  const Icon = icons[status] || Clock;
-  return <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${s.color}`}><Icon size={12} /> {s.label}</span>;
+  return <SharedStatusBadge status={status} icon={icons[status] || Clock} />;
 }
 
 export default function PaymentListPage() {

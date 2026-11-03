@@ -61,7 +61,7 @@ export function pipelineCard(summary, fallbackCurrency) {
 const STATUS_ICONS = { accepted: CheckCircle, rejected: XCircle, converted: RefreshCw, draft: Clock, sent: Send, cancelled: Ban, expired: Clock };
 
 function StatusBadge({ status }) {
-  return <SharedStatusBadge status={status} options={STATUS_OPTIONS} icon={STATUS_ICONS[status] || Clock} />;
+  return <SharedStatusBadge status={status} icon={STATUS_ICONS[status] || Clock} />;
 }
 
 export default function QuotationListPage() {

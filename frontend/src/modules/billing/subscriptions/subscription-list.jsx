@@ -4,7 +4,7 @@ import { Repeat, Search, Filter, X, ChevronDown, Plus, AlertCircle, CheckCircle,
 import { subscriptionApi } from "../../../service/billingService";
 import { loadGlobalBillingConfig } from "../../../service/billingConfigCache";
 import { formatDisplayDate, formatDisplayCurrency, extractArray } from "../../../utils/billing-helpers";
-import { ErrorState, PageSkeleton, DashboardHeader, DashboardStatCard, DASHBOARD_KPI_GRID, Pagination, useConfirmationDialog } from "../../../components/billing-shared";
+import { ErrorState, PageSkeleton, DashboardHeader, DashboardStatCard, DASHBOARD_KPI_GRID, Pagination, useConfirmationDialog, StatusBadge as SharedStatusBadge } from "../../../components/billing-shared";
 import { useTerminology } from "../utils/TerminologyContext";
 import { useBillingDateRange } from "../utils/DateRangeContext";
 import { useListUrlFilters } from "../utils/useListUrlFilters";
@@ -25,11 +25,8 @@ const STATUS_OPTIONS = [
 const STATUS_FILTER_OPTIONS = [...STATUS_OPTIONS];
 
 function StatusBadge({ status }) {
-  const s = STATUS_OPTIONS.find((o) => o.value === status);
-  if (!s) return <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-700">{status || "unknown"}</span>;
   const icons = { active: CheckCircle, paused: PauseCircle, past_due: AlertCircle, cancelled: XCircle, expired: Clock };
-  const Icon = icons[status] || Clock;
-  return <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${s.color}`}><Icon size={12} /> {s.label}</span>;
+  return <SharedStatusBadge status={status} icon={icons[status] || Clock} />;
 }
 
 function SortHeader({ field, label, sortField, sortDir, onSort, align }) {

@@ -140,6 +140,22 @@ export const STATUS_META = {
   in_progress: { label: "In Progress", color: "bg-amber-100 text-amber-700" },
   fulfilled: { label: "Fulfilled", color: "bg-emerald-100 text-emerald-700" },
   broken: { label: "Broken", color: "bg-red-100 text-red-700" },
+  resolved: { label: "Resolved", color: "bg-emerald-100 text-emerald-700" },
+  // invoices / credit notes
+  refunded: { label: "Refunded", color: "bg-pink-100 text-pink-700" },
+  written_off: { label: "Written Off", color: "bg-slate-100 text-slate-600" },
+  fully_applied: { label: "Fully Applied", color: "bg-emerald-100 text-emerald-700" },
+  voided: { label: "Voided", color: "bg-slate-200 text-slate-600" },
+  // quotations / contracts / subscriptions
+  accepted: { label: "Accepted", color: "bg-emerald-100 text-emerald-700" },
+  converted: { label: "Converted", color: "bg-indigo-100 text-indigo-700" },
+  expired: { label: "Expired", color: "bg-slate-100 text-slate-600" },
+  terminated: { label: "Terminated", color: "bg-red-100 text-red-700" },
+  past_due: { label: "Past Due", color: "bg-red-100 text-red-700" },
+  // customers / products / catalog records
+  inactive: { label: "Inactive", color: "bg-slate-100 text-slate-600" },
+  suspended: { label: "Suspended", color: "bg-amber-100 text-amber-700" },
+  archived: { label: "Archived", color: "bg-slate-100 text-slate-600" },
 };
 
 /** Lookup helper — returns `{ label, color }` or undefined for unknown states. */
