@@ -289,8 +289,8 @@ export default function ContractListPage() {
         <div ref={listRef} className="scroll-mt-6 bg-white border border-slate-200 rounded-3xl shadow-[0_4px_20px_rgba(0,0,0,0.02)] overflow-hidden">
           <div className="p-6 border-b border-slate-100">
             <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center gap-3 flex-1">
-                <div className="relative flex-1 max-w-md">
+              <div className="flex flex-wrap items-center gap-3 flex-1 max-sm:basis-full">
+                <div className="relative flex-1 max-w-md max-sm:basis-full max-sm:max-w-none">
                   <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                   <input type="text" placeholder="Search contracts..." value={search}
                     onChange={(e) => setSearch(e.target.value)}
