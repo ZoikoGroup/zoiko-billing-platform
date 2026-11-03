@@ -214,7 +214,7 @@ export default function TaxConfigurationPage() {
               {TAX_RULE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
             <button onClick={addJurisdiction} disabled={!newJurisdiction.name}
-              className="flex items-center gap-1 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 disabled:opacity-50">
+              className="flex items-center gap-1 px-4 py-2 border border-brand-200 bg-white text-brand-700 rounded-lg text-sm font-medium hover:bg-brand-50 disabled:opacity-50 max-sm:min-h-11">
               <Plus size={16} /> Add
             </button>
           </div>
@@ -270,7 +270,7 @@ export default function TaxConfigurationPage() {
               ))}
             </select>
             <button onClick={addExemption} disabled={!newExemption.name}
-              className="flex items-center gap-1 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 disabled:opacity-50">
+              className="flex items-center gap-1 px-4 py-2 border border-brand-200 bg-white text-brand-700 rounded-lg text-sm font-medium hover:bg-brand-50 disabled:opacity-50 max-sm:min-h-11">
               <Plus size={16} /> Add
             </button>
           </div>

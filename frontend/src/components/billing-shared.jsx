@@ -907,7 +907,8 @@ export function DashboardEmptyPanel({ title, message, icon: Icon = FileText, cta
         <div className="flex flex-wrap items-center justify-center gap-2">
           {ctaText && onCtaClick && (
             <button onClick={onCtaClick}
-              className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-semibold rounded-xl shadow-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 focus-visible:ring-offset-2">
+              className="inline-flex items-center gap-1.5 px-4 py-2 border border-brand-200 bg-white text-brand-700 hover:bg-brand-50 text-xs font-semibold rounded-xl transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 focus-visible:ring-offset-2 max-sm:min-h-11">
+              {/* Outlined: the page header keeps the one primary action. */}
               {ctaText}
             </button>
           )}

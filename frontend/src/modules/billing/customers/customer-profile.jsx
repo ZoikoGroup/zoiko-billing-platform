@@ -1025,11 +1025,11 @@ export default function CustomerProfilePage() {
             <FileText className="h-4 w-4" /> Create Invoice
           </button>
           <button onClick={() => navigate(`/billing/quotations?create=1&customer_id=${id}`)}
-            className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 shadow-sm transition-all hover:shadow-md">
+            className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
             <FileText className="h-4 w-4" /> Create Quotation
           </button>
           <button onClick={() => navigate(`/billing/payments?create=1&customer_id=${id}`)}
-            className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 shadow-sm transition-all hover:shadow-md">
+            className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
             <CreditCard className="h-4 w-4" /> Record Payment
           </button>
           <button onClick={() => setActiveTab('billing-overview')} title="Choose one of this customer's invoices to send"

@@ -493,7 +493,7 @@ export default function CreditNotesPage() {
               emptyMessage={hasActiveFilters ? "Try adjusting your search or filters" : "No credit notes yet"}
               emptyIcon={Receipt}
               emptyAction={!hasActiveFilters ? (
-                <Button variant="primary" icon={Plus} onClick={openCreateModal}>
+                <Button variant="secondary" icon={Plus} onClick={openCreateModal}>
                   Create your first credit note
                 </Button>
               ) : undefined}

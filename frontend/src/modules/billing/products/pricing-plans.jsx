@@ -306,7 +306,7 @@ export default function ProductPricingPlansPage() {
               <p className="text-slate-500 font-medium">No active pricing plans yet</p>
               <p className="text-slate-500 text-sm mt-1 mb-4">Create an active plan to see it here</p>
               <button onClick={() => { setShowForm(true); setEditPlan(null); setFormData(getDefaultFormData()); setSelectedProductLabel(""); }}
-                className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-medium hover:shadow-lg">
+                className="inline-flex items-center gap-2 px-5 py-2.5 border border-brand-200 bg-white text-brand-700 hover:bg-brand-50 rounded-xl text-sm font-medium">
                 <Plus size={18} /> Add Plan
               </button>
             </div>
