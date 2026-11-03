@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, Repeat, RefreshCw, AlertCircle, Loader2, Play, XCircle, FileText, FileText as FileTextIcon, DollarSign, DollarSign as DollarSignIcon, CreditCard, Calendar, Receipt, Shield as ShieldIcon, Activity, Package, Building2, Clock, FileEdit, History, RotateCcw as RotateCcwIcon, CheckCircle, PauseCircle, AlertTriangle } from "lucide-react";
 import HRPage from "../../../components/HRPage";
 import { DataTable, Button, Modal } from "../../../components/billing-ui";
-import { StatusBadge as SharedStatusBadge } from "../../../components/billing-shared";
+import { StatusBadge as SharedStatusBadge, Spinner } from "../../../components/billing-shared";
 import { subscriptionApi, contractApi, customerApi, invoiceApi, paymentApi, auditApi } from "../../../service/billingService";
 import { formatDisplayCurrency, formatDisplayDate, extractArray } from "../../../utils/billing-helpers";
 import { useTerminology } from "../utils/TerminologyContext";
@@ -139,7 +139,7 @@ export default function SubscriptionDetailPage() {
   if (loading) {
     return (
       <HRPage title="Subscription Detail" subtitle="Loading subscription details...">
-        <div className="flex items-center justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-brand-600" /></div>
+        <Spinner />
       </HRPage>
     );
   }

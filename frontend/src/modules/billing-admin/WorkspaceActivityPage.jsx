@@ -4,11 +4,9 @@ import { auditApi, invoiceApi } from "../../service/billingService";
 import { loadGlobalBillingConfig } from "../../service/billingConfigCache";
 import WorkspaceHeader from "./WorkspaceHeader";
 import { formatOrgMoney } from "./workspace-format";
-import {
-  Activity, FileText, CreditCard, Users, Repeat, Package, Settings, Clock,
-  Loader2, Filter, RefreshCw,
-} from "lucide-react";
+import { Activity, FileText, CreditCard, Users, Repeat, Package, Settings, Clock, Filter, RefreshCw } from "lucide-react";
 import { formatDisplayDateTime } from "../../utils/billing-helpers";
+import { Spinner } from "../../components/billing-shared";
 
 const ENTITY_ICONS = {
   invoice: FileText,
@@ -137,7 +135,7 @@ export default function WorkspaceActivityPage() {
   if (loading) {
     return (
       <div className="p-4 sm:p-6 lg:p-8" style={{ background: "#ffffff", minHeight: "calc(100vh - 4rem)" }}>
-        <div className="flex items-center justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-brand" /></div>
+        <Spinner />
       </div>
     );
   }

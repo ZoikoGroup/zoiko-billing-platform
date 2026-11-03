@@ -1,9 +1,7 @@
 import { useState, useEffect, Children, cloneElement, isValidElement, useId } from "react";
-import {
-  Save, RefreshCw, AlertCircle, CheckCircle, Hash, DollarSign, FileText, Image, Loader2,
-} from "lucide-react";
+import { Save, RefreshCw, AlertCircle, CheckCircle, Hash, DollarSign, FileText, Image } from "lucide-react";
 import { SettingsPageShell, SettingsSaveBar, useUnsavedChangesGuard } from "../../../components/billing-ui";
-import { ErrorState } from "../../../components/billing-shared";
+import { ErrorState, Spinner } from "../../../components/billing-shared";
 import ConfirmDialog from "../../../components/ConfirmDialog";
 import { settingsApi } from "../../../service/billingService";
 import { getCurrencySelectOptions } from "../../../utils/currency";
@@ -156,7 +154,7 @@ export default function QuotationSettingsPage() {
   if (loading) {
     return (
       <SettingsPageShell title="Quotation Settings" description="Loading settings..." icon={FileText} crumbs={[{ label: "Billing", href: "/billing" }, { label: "Quotations", href: "/billing/quotations" }, { label: "Settings" }]}>
-        <div className="flex items-center justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-brand-600" /></div>
+        <Spinner />
       </SettingsPageShell>
     );
   }

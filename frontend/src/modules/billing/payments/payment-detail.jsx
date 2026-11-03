@@ -5,7 +5,7 @@ import { ArrowLeft, CreditCard, RefreshCw, AlertCircle, Loader2, CheckCircle,
   XCircle, RotateCcw } from "lucide-react"
 import HRPage from "../../../components/HRPage";
 import { Button, Modal } from "../../../components/billing-ui";
-import { StatusBadge as SharedStatusBadge } from "../../../components/billing-shared";
+import { StatusBadge as SharedStatusBadge, Spinner } from "../../../components/billing-shared";
 import { paymentApi, invoiceApi, customerApi, auditApi, refundApi } from "../../../service/billingService";
 import { formatDisplayCurrency, formatDisplayDate, extractArray } from "../../../utils/billing-helpers";
 
@@ -211,7 +211,7 @@ export default function PaymentDetailPage() {
   if (loading) {
     return (
       <HRPage title="Payment Detail" subtitle="Loading payment details...">
-        <div className="flex items-center justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-brand-600" /></div>
+        <Spinner />
       </HRPage>
     );
   }

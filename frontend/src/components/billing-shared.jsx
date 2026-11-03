@@ -23,8 +23,8 @@ export function formatLastUpdated(value, options = { hour: "2-digit", minute: "2
 
 export function Spinner() {
   return (
-    <div className="flex items-center justify-center py-12">
-      <div className="h-8 w-8 rounded-full border-4 border-slate-200 border-t-brand animate-spin" />
+    <div role="status" aria-label="Loading" className="flex items-center justify-center py-12">
+      <div className="h-8 w-8 rounded-full border-4 border-slate-200 border-t-brand animate-spin" aria-hidden="true" />
     </div>
   );
 }
