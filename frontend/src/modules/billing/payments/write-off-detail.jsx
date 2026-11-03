@@ -4,6 +4,7 @@ import { ArrowLeft, ScrollText, RefreshCw, AlertCircle, Loader2, Send, CheckCirc
   Ban, Printer, Download, Mail, X, Undo2, Clock } from "lucide-react"
 import HRPage from "../../../components/HRPage";
 import { Button, Modal } from "../../../components/billing-ui";
+import { StatusBadge as SharedStatusBadge } from "../../../components/billing-shared";
 import { writeOffApi } from "../../../service/billingService";
 import { formatDisplayCurrency, formatDisplayDate } from "../../../utils/billing-helpers";
 import { useTerminology } from "../utils/TerminologyContext";
@@ -20,21 +21,8 @@ const CAN_APPROVE_WRITE_OFF_ROLES = ["finance_approver", "super_admin"];
 // pdfmake + vfs_fonts are lazy-loaded inside buildWriteOffPdf() so the
 // ~1.74 MB font bundle is only fetched when the user clicks "Download".
 
-const STATUS_STYLES = {
-  draft: "bg-slate-100 text-slate-600",
-  pending_approval: "bg-amber-100 text-amber-700",
-  approved: "bg-indigo-100 text-indigo-700",
-  executed: "bg-emerald-100 text-emerald-700",
-  reversed: "bg-orange-100 text-orange-700",
-  cancelled: "bg-slate-200 text-slate-600",
-};
-
 function StatusBadge({ status }) {
-  return (
-    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${STATUS_STYLES[status] || "bg-slate-100 text-slate-600"}`}>
-      {status ? status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "Unknown"}
-    </span>
-  );
+  return <SharedStatusBadge status={status} />;
 }
 
 async function buildWriteOffPdf(writeOff, orgSettings = {}) {
