@@ -133,14 +133,6 @@ function DiscountFormModal({ show, onClose, onSave, editItem, saving }) {
     setFormError("");
   }, [editItem, show]);
 
-  // Escape closes the dialog (not while saving).
-  useEffect(() => {
-    if (!show) return undefined;
-    const onKey = (e) => { if (e.key === "Escape" && !saving) onClose(); };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [show, onClose, saving]);
-
   if (!show) return null;
 
   const set = (key, val) => setForm(f => ({ ...f, [key]: val }));
