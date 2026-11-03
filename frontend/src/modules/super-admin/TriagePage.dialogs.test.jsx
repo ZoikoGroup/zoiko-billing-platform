@@ -17,6 +17,9 @@ vi.mock("../../service/privilegedAccessService", () => ({
   getJobTelemetry: vi.fn(() => Promise.resolve({ jobs: [] })),
   retryJob: vi.fn(),
 }));
+vi.mock("../../context/AuthContext", () => ({
+  useAuth: () => ({ user: { id: 7, role: "super_admin" } }),
+}));
 
 import TriagePage from "./TriagePage";
 
@@ -62,9 +65,9 @@ describe("Triage incident dialog", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
-  it("each row's Inspect button is named after its incident and opens it", async () => {
+  it("each row's Details button opens its incident", async () => {
     render(<MemoryRouter initialEntries={["/super-admin/triage"]}><TriagePage /></MemoryRouter>);
-    fireEvent.click(await screen.findByRole("button", { name: `Inspect ${INCIDENT.title}` }));
+    fireEvent.click(await screen.findByRole("button", { name: /details/i }));
     expect(await screen.findByRole("dialog", { name: INCIDENT.title })).toBeInTheDocument();
   });
 });
