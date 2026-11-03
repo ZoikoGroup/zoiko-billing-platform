@@ -901,7 +901,7 @@ export default function PricingPlansPage() {
                 )}
               </div>
               <button onClick={() => setShowFilters(!showFilters)}
-                className={`p-2.5 rounded-xl border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}
+                className={`p-2.5 max-sm:p-3 rounded-xl border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}
                 aria-label={hasActiveFilters ? `Toggle filters (${activeFilterCount} active)` : "Toggle filters"} aria-pressed={showFilters}>
                 <span className="relative block">
                   <Filter size={18} />
@@ -913,7 +913,7 @@ export default function PricingPlansPage() {
                   )}
                 </span>
               </button>
-              <button onClick={handleRefresh} disabled={refreshing} className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30" aria-label="Refresh pricing plans">
+              <button onClick={handleRefresh} disabled={refreshing} className="p-2.5 max-sm:p-3 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30" aria-label="Refresh pricing plans">
                 <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
               </button>
             </div>
@@ -1049,9 +1049,9 @@ export default function PricingPlansPage() {
                   return (
                     <li key={plan.id} className={`px-4 py-3 ${selectedIds.has(plan.id) ? "bg-brand-50/50" : ""}`}>
                       <div className="flex items-start gap-3">
-                        <input type="checkbox" checked={selectedIds.has(plan.id)} onChange={() => handleSelectOne(plan.id)}
+                        <label className="-ml-3 flex h-11 w-11 shrink-0 items-center justify-center"><input type="checkbox" checked={selectedIds.has(plan.id)} onChange={() => handleSelectOne(plan.id)}
                           aria-label={`Select ${plan.name || "pricing plan"}`}
-                          className="mt-3 h-5 w-5 shrink-0 rounded border-slate-300 text-brand-600 focus:ring-brand/30" />
+                          className="h-5 w-5 rounded border-slate-300 text-brand-600 focus:ring-brand/30" /></label>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex min-h-11 min-w-0 items-center gap-3">

@@ -436,11 +436,11 @@ export default function CreditNotesPage() {
                   aria-label="Search credit notes"
                 />
                 <button onClick={() => setShowFilters(!showFilters)}
-                  className={`p-2.5 rounded-xl border transition-colors ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}
+                  className={`p-2.5 max-sm:p-3 rounded-xl border transition-colors ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}
                   aria-label="Toggle filters">
                   <Filter size={18} />
                 </button>
-                <button onClick={handleRefresh} disabled={refreshing} className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50" aria-label="Refresh">
+                <button onClick={handleRefresh} disabled={refreshing} className="p-2.5 max-sm:p-3 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50" aria-label="Refresh">
                   <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
                 </button>
               </div>

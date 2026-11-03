@@ -338,7 +338,7 @@ export default function TierManagementPage() {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <button onClick={fetchTiers} disabled={refreshing || !selectedPlanId} aria-label="Refresh tiers"
-                className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50">
+                className="p-2.5 max-sm:p-3 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50">
                 <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
               </button>
               <button onClick={openAddModal} disabled={!selectedPlanId}

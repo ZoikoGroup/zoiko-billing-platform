@@ -280,11 +280,11 @@ export default function BillingHistoryPage() {
                 onClick={() => setShowFilters(!showFilters)}
                 aria-label="Toggle filters"
                 aria-pressed={showFilters}
-                className={`p-2.5 rounded-xl border transition-colors ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}
+                className={`p-2.5 max-sm:p-3 rounded-xl border transition-colors ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}
               >
                 <Filter size={18} />
               </button>
-              <button onClick={handleRefresh} disabled={refreshing} aria-label="Refresh" className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50">
+              <button onClick={handleRefresh} disabled={refreshing} aria-label="Refresh" className="p-2.5 max-sm:p-3 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50">
                 <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
               </button>
               <button onClick={clearFilters} disabled={!hasActiveFilters}

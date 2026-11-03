@@ -364,7 +364,7 @@ export function DashboardDateRangeFilter({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label="Select date range"
-        className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
+        className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 max-sm:min-h-11"
       >
         <Calendar size={15} className="text-brand-500" />
         <span className="whitespace-nowrap">{selectedLabel}</span>
@@ -463,7 +463,7 @@ export function DashboardHeader({
   return (
     <div className="rounded-3xl bg-white border border-slate-200 p-4 sm:p-6 md:p-8 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
       {crumbs.length > 0 && (
-        <nav aria-label="Breadcrumb" className="mb-3 flex items-center gap-1.5 text-xs font-medium text-slate-500">
+        <nav aria-label="Breadcrumb" className="mb-1 flex items-center gap-1.5 text-xs font-medium text-slate-500 sm:mb-3">
           {crumbs.map((crumb, idx) => {
             const isLast = idx === crumbs.length - 1;
             return (
@@ -1684,7 +1684,7 @@ export function ExportMenu({ onExportCSV, onExportJSON, onExportExcel, className
         onClick={() => setOpen(!open)}
         disabled={Boolean(suppression)}
         title={suppression ? `Exports disabled: ${suppression}` : undefined}
-        className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+        className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors disabled:cursor-not-allowed disabled:opacity-50 max-sm:min-h-11"
         aria-label="Export data"
         aria-disabled={Boolean(suppression) || undefined}
       >

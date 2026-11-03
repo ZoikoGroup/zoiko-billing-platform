@@ -246,13 +246,13 @@ export default function RetainersPage() {
               {search && <button onClick={() => setSearch("")} aria-label="Clear search" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600"><X size={16} /></button>}
             </div>
           <button onClick={() => setShowFilters(!showFilters)} aria-label="Toggle filters" aria-expanded={showFilters}
-            className={`p-2.5 rounded-xl border transition-colors ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}><Filter size={18} /></button>
-          <button onClick={handleRefresh} disabled={refreshing} aria-label="Refresh" className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50">
+            className={`p-2.5 max-sm:p-3 rounded-xl border transition-colors ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}><Filter size={18} /></button>
+          <button onClick={handleRefresh} disabled={refreshing} aria-label="Refresh" className="p-2.5 max-sm:p-3 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50">
             <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
           </button>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={handleExportJSON} className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50" title="Export JSON" aria-label="Export JSON"><Download size={18} /></button>
+          <button onClick={handleExportJSON} className="p-2.5 max-sm:p-3 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50" title="Export JSON" aria-label="Export JSON"><Download size={18} /></button>
           <button onClick={openCreateModal} className="inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium text-white bg-brand-600 rounded-xl hover:bg-brand-700 transition-colors">
             <Plus size={16} /> New Retainer
           </button>
