@@ -1,10 +1,7 @@
-import React, { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
-  Activity,
-  AlertCircle,
   AlertTriangle,
-  ArrowRight,
   CheckCircle2,
   ChevronRight,
   ClipboardList,
@@ -12,19 +9,12 @@ import {
   HelpCircle,
   Power,
   RefreshCw,
-  ScrollText,
-  ShieldAlert,
-  ShieldCheck,
-  UserCheck,
-  UserX,
 } from "lucide-react";
 import {
   getTriageSummary,
   acknowledgeAttentionItem,
-  assignAttentionItem,
   transitionAttentionItem,
   suppressAttentionItem,
-  listAttentionItems,
 } from "../../service/commandCenterService";
 import { getJobTelemetry, retryJob } from "../../service/privilegedAccessService";
 import { Button, Modal, PageHeader, SectionCard } from "../../components/billing-ui";
@@ -383,7 +373,9 @@ export default function TriagePage({ showReprocessing, embedded = false } = {}) 
                           </div>
                           <button
                             type="button"
-                            className="inline-flex items-center gap-1 text-xs font-bold text-brand-600 hover:text-brand-800"
+                            onClick={(e) => { e.stopPropagation(); setSelectedIncident(item); }}
+                            aria-label={`Inspect ${item.title}`}
+                            className="inline-flex items-center gap-1 text-xs font-bold text-brand-600 hover:text-brand-800 max-sm:min-h-11"
                           >
                             Inspect <ChevronRight size={14} />
                           </button>
