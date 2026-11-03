@@ -1033,7 +1033,7 @@ export default function CustomerProfilePage() {
             <CreditCard className="h-4 w-4" /> Record Payment
           </button>
           <button onClick={() => setActiveTab('billing-overview')} title="Choose one of this customer's invoices to send"
-            className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-amber-600 rounded-lg hover:bg-amber-700 shadow-sm transition-all hover:shadow-md">
+            className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-amber-700 rounded-lg hover:bg-amber-800 shadow-sm transition-all hover:shadow-md">
             <Mail className="h-4 w-4" /> Send Invoice
           </button>
           <div className="w-px h-6 bg-brand-200 mx-1 hidden sm:block" />
