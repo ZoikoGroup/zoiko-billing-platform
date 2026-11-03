@@ -302,7 +302,7 @@ export default function ContractListPage() {
                   {search && <button onClick={() => setSearch("")} aria-label="Clear search" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600"><X size={16} /></button>}
                 </div>
                 <button onClick={() => setShowFilters(!showFilters)} aria-label="Toggle filters" aria-pressed={showFilters}
-                  className={`p-2.5 rounded-xl border transition-colors ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+                  className={`p-2.5 max-sm:p-3 rounded-xl border transition-colors ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
                   <Filter size={18} />
                 </button>
                 {selectedIds.size > 0 && (
@@ -408,9 +408,9 @@ export default function ContractListPage() {
                   {contracts.map((c) => (
                     <li key={c.id} className="px-4 py-3">
                       <div className="flex items-start gap-3">
-                        <input type="checkbox" checked={selectedIds.has(c.id)} onChange={() => handleSelectOne(c.id)}
+                        <label className="-ml-3 flex h-11 w-11 shrink-0 items-center justify-center"><input type="checkbox" checked={selectedIds.has(c.id)} onChange={() => handleSelectOne(c.id)}
                           aria-label={`Select contract ${c.contract_number || c.id}`}
-                          className="mt-3 h-5 w-5 shrink-0 rounded border-slate-300 text-brand-600 focus:ring-brand/30" />
+                          className="h-5 w-5 rounded border-slate-300 text-brand-600 focus:ring-brand/30" /></label>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-start justify-between gap-2">
                             <button onClick={() => navigate(`/billing/contracts/${c.id}`)} className="min-h-11 min-w-0 text-left font-medium text-slate-800 hover:text-brand-600 transition-colors">

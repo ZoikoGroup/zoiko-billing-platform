@@ -294,7 +294,8 @@ function HeaderActions({ actions, primaryAction, moreActions = [] }) {
 // <a href>, so modifier-clicks and the unsaved-changes guard still work);
 // a plain link where a component renders outside a router.
 export function CrumbLink({ href, children }) {
-  const className = "transition-colors hover:text-brand-600";
+  // 44px tap height on phones (the breadcrumb row's bottom margin shrinks to match).
+  const className = "transition-colors hover:text-brand-600 max-sm:inline-flex max-sm:min-h-11 max-sm:items-center";
   return useInRouterContext()
     ? <Link to={href} className={className}>{children}</Link>
     : <a href={href} className={className}>{children}</a>;
@@ -331,7 +332,7 @@ export function PageHeader({
   return (
     <div className={`rounded-3xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_12px_28px_-8px_rgba(15,23,42,0.08)] sm:p-6 md:p-8 ${className}`}>
       {crumbs.length > 0 && (
-        <nav aria-label="Breadcrumb" className="mb-3 flex items-center gap-1.5 text-xs font-medium text-slate-500">
+        <nav aria-label="Breadcrumb" className="mb-1 flex items-center gap-1.5 text-xs font-medium text-slate-500 sm:mb-3">
           {crumbs.map((crumb, idx) => {
             const isLast = idx === crumbs.length - 1;
             return (
@@ -721,14 +722,17 @@ function DataTableCards({
             >
               <div className="flex items-start gap-3">
                 {onSelectionChange && (
-                  <input
-                    type="checkbox"
-                    aria-label="Select row"
-                    checked={selected}
-                    onChange={() => toggleRow(key)}
-                    onClick={(e) => e.stopPropagation()}
-                    className="mt-0.5 h-5 w-5 shrink-0 rounded border-slate-300 accent-brand"
-                  />
+                  // 44x44 tap area around the 20px box; the click stays off the row.
+                  <label className="-ml-3 -mt-3 flex h-11 w-11 shrink-0 items-center justify-center" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      aria-label="Select row"
+                      checked={selected}
+                      onChange={() => toggleRow(key)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="h-5 w-5 rounded border-slate-300 accent-brand"
+                    />
+                  </label>
                 )}
                 <div className="min-w-0 flex-1">
                   {/* [&_*]:min-w-0 lets cell renders built for wide table cells (icon +
