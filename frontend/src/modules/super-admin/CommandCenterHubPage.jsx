@@ -100,7 +100,7 @@ function Section({ title, subtitle, icon: Icon, delay = 0, children }) {
             )}
             {title}
           </h2>
-          {subtitle && <p className="mt-0.5 text-xs text-slate-500">{subtitle}</p>}
+          {subtitle && <p className="mt-0.5 text-xs text-slate-600">{subtitle}</p>}
         </div>
       </div>
       {children}

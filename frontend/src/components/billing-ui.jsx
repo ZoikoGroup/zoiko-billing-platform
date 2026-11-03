@@ -1073,7 +1073,7 @@ export function Stepper({ steps = [], current = 0, onSelect, className = "" }) {
   // overflow-x-hidden (which hid the right-hand steps). -m-1/p-1 leaves room
   // for the focus ring inside the scroll container without shifting layout.
   return (
-    <ol ref={listRef} className={`-m-1 flex min-w-0 items-center overflow-x-auto p-1 ${className}`} aria-label="Wizard progress">
+    <ol ref={listRef} tabIndex={0} className={`-m-1 flex min-w-0 items-center overflow-x-auto p-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 ${className}`} aria-label="Wizard progress">
       {steps.map((step, idx) => {
         const isDone = idx < current;
         const isActive = idx === current;
@@ -1712,7 +1712,7 @@ export function useActiveSection(scrollRef) {
 // The one "* Required" note a form shows (T7).
 export function RequiredNote({ className = "" }) {
   return (
-    <p className={`text-xs text-slate-500 ${className}`}>
+    <p className={`text-xs text-slate-600 ${className}`}>
       <span className="text-red-500">*</span> Required
     </p>
   );
