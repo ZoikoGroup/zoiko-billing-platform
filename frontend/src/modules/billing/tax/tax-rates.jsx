@@ -4,7 +4,7 @@ import {
   Plus, AlertCircle, CheckCircle, Clock, Pencil, DollarSign, Landmark, Globe, Upload
 } from "lucide-react";
 import { taxApi } from "../../../service/billingService";
-import { Button, Modal } from "../../../components/billing-ui";
+import { DataTable, Button, Modal } from "../../../components/billing-ui";
 import TaxRateImportWizard from "./tax-rate-import-wizard";
 import { formatDisplayDate, extractArray } from "../../../utils/billing-helpers";
 import { getCurrencySelectOptions } from "../../../utils/currency";
@@ -225,12 +225,6 @@ export default function TaxRatesPage() {
     return 0;
   });
 
-  const SortHeader = ({ field, label }) => (
-    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider cursor-pointer select-none hover:text-slate-700" onClick={() => handleSort(field)}>
-      <div className="flex items-center gap-1">{label}<ArrowUpDown size={12} className={`${sortField === field ? "text-brand-600" : "text-slate-300"}`} /></div>
-    </th>
-  );
-
   const headerProps = {
     title: "Tax Rates",
     subtitle: "Manage tax rates, jurisdictions, and default rates",
@@ -319,8 +313,8 @@ export default function TaxRatesPage() {
       <div className="bg-white border border-slate-200 rounded-3xl shadow-[0_4px_20px_rgba(0,0,0,0.02)] overflow-hidden">
         <div className="p-6 border-b border-slate-100">
           <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-3 flex-1">
-              <div className="relative flex-1 max-w-md">
+            <div className="flex flex-wrap items-center gap-3 flex-1 max-sm:basis-full">
+              <div className="relative flex-1 max-w-md max-sm:basis-full max-sm:max-w-none">
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                 <input type="text" placeholder="Search tax rates..." value={search}
                   onChange={(e) => setSearch(e.target.value)}
@@ -329,7 +323,7 @@ export default function TaxRatesPage() {
                 {search && <button onClick={() => setSearch("")} aria-label="Clear search" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600"><X size={16} /></button>}
               </div>
               <button onClick={() => setShowFilters(!showFilters)} aria-label="Toggle filters" aria-pressed={showFilters}
-                className={`p-2.5 rounded-xl border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+                className={`p-2.5 max-sm:p-3 rounded-xl border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
                 <Filter size={18} />
               </button>
               {hasActiveFilters && (
@@ -384,76 +378,46 @@ export default function TaxRatesPage() {
           )}
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-100">
-                <SortHeader field="name" label="Name" />
-                <SortHeader field="rate" label="Rate" />
-                <SortHeader field="tax_type" label="Type" />
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Currency</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Jurisdiction</th>
-                <SortHeader field="status" label="Status" />
-                <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Default</th>
-                <SortHeader field="created_at" label="Created" />
-                <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {sortedRates.length === 0 ? (
-                <tr>
-                  <td colSpan={9} className="px-4 py-16 text-center">
-                    <div className="flex flex-col items-center">
-                      <Receipt size={40} className="text-slate-300 mb-3" />
-                      <p className="text-slate-500 font-medium">{hasActiveFilters ? "No tax rates match your filters" : "No tax rates yet"}</p>
-                      <p className="text-slate-500 text-sm mt-1">{hasActiveFilters ? "Try adjusting your search or filters" : "Add your first tax rate to get started"}</p>
-                      {hasActiveFilters && (
-                        <button onClick={clearFilters} className="mt-3 text-sm font-medium text-brand-600 hover:text-brand-700">Clear filters</button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ) : sortedRates.map((rate) => (
-                <tr key={rate.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-4 py-4">
-                    <div className="flex items-center gap-3">
+        <DataTable
+          stickyHeader={false}
+          data={sortedRates}
+          rowKey={(rate) => rate.id}
+          sortKey={sortField}
+          sortDir={sortDir}
+          onSort={handleSort}
+          emptyIcon={Receipt}
+          emptyTitle={hasActiveFilters ? "No tax rates match your filters" : "No tax rates yet"}
+          emptyAction={hasActiveFilters ? (
+            <button onClick={clearFilters} className="mt-3 text-sm font-medium text-brand-600 hover:text-brand-700">Clear filters</button>
+          ) : null}
+          emptyMessage={hasActiveFilters ? "Try adjusting your search or filters" : "Add your first tax rate to get started"}
+          columns={[
+            { key: "name", label: "Name", sortable: true, render: (rate) => <><div className="flex items-center gap-3">
                       <div className="h-9 w-9 rounded-full bg-gradient-to-br from-brand to-brand-hover text-white flex items-center justify-center text-sm font-bold">
                         {(rate.name || "?").charAt(0).toUpperCase()}
                       </div>
                       <div>
                         <p className="font-medium text-slate-800">{rate.name || "Unnamed"}</p>
                       </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-4">
-                    <span className="font-semibold text-slate-800">{parseFloat(rate.rate || 0).toFixed(2)}%</span>
-                  </td>
-                  <td className="px-4 py-4"><StatusBadge status={rate.tax_type} options={TAX_TYPE_BADGE_OPTIONS} fallbackColor="bg-slate-100 text-slate-600" /></td>
-                  <td className="px-4 py-4 text-sm text-slate-600">
-                    {rate.currency_code ? (
+                    </div></> },
+            { key: "rate", label: "Rate", sortable: true, render: (rate) => <><span className="font-semibold text-slate-800">{parseFloat(rate.rate || 0).toFixed(2)}%</span></> },
+            { key: "tax_type", label: "Type", sortable: true, render: (rate) => <><StatusBadge status={rate.tax_type} options={TAX_TYPE_BADGE_OPTIONS} fallbackColor="bg-slate-100 text-slate-600" /></> },
+            { key: "currency", label: "Currency", render: (rate) => <span className="text-sm text-slate-600">{rate.currency_code ? (
                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-brand-100 text-brand-700">
                         {rate.currency_code}
                       </span>
-                    ) : "—"}
-                  </td>
-                  <td className="px-4 py-4 text-sm text-slate-600">
-                    {rate.jurisdiction || "—"}
-                  </td>
-                  <td className="px-4 py-4">
-                    <StatusBadge status={rate.is_active ? "active" : "inactive"} options={STATUS_BADGE_OPTIONS} icon={rate.is_active !== false ? CheckCircle : Clock} />
-                  </td>
-                  <td className="px-4 py-4 text-center">
-                    {rate.is_default ? (
+                    ) : "—"}</span> },
+            { key: "jurisdiction", label: "Jurisdiction", render: (rate) => <span className="text-sm text-slate-600">{rate.jurisdiction || "—"}</span> },
+            { key: "status", label: "Status", sortable: true, render: (rate) => <><StatusBadge status={rate.is_active ? "active" : "inactive"} options={STATUS_BADGE_OPTIONS} icon={rate.is_active !== false ? CheckCircle : Clock} /></> },
+            { key: "default", label: "Default", align: "center", render: (rate) => <>{rate.is_default ? (
                       <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-700">
                         Default
                       </span>
                     ) : (
                       <span className="text-slate-500 text-xs">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-4 text-sm text-slate-500">{formatDisplayDate(rate.created_at)}</td>
-                  <td className="px-4 py-4 text-right">
-                    <div className="flex items-center justify-end gap-1">
+                    )}</> },
+            { key: "created_at", label: "Created", sortable: true, render: (rate) => <span className="text-sm text-slate-500">{formatDisplayDate(rate.created_at)}</span> },
+            { key: "actions", label: "Actions", align: "right", mobileRole: "actions", render: (rate) => <><div className="flex items-center justify-end gap-1">
                       <button onClick={() => { setEditRate(rate); setFormData({ name: rate.name || "", code: rate.code || "", rate: (parseFloat(rate.rate || 0)).toString(), tax_type: rate.tax_type || "sales_tax", jurisdiction: rate.jurisdiction || "", is_active: rate.is_active !== false, is_compound: !!rate.is_compound, is_recoverable: rate.is_recoverable !== false, country_code: rate.country_code || "", currency_code: rate.currency_code || "", tax_type_label: rate.tax_type_label || "", is_default: !!rate.is_default, priority: rate.priority || 0 }); setShowForm(true); }}
                        className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-blue-600 transition-colors" title="Edit" aria-label={`Edit tax rate ${rate.name || ""}`}
                       >
@@ -465,13 +429,9 @@ export default function TaxRatesPage() {
                           <Clock size={16} />
                         </button>
                       )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                    </div></> },
+          ]}
+        />
 
         <Pagination page={safePage} totalPages={totalPages} onPageChange={setCurrentPage}>
           {total} total tax rate(s)

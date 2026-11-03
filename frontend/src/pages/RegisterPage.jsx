@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   AlertCircle,
@@ -24,6 +24,8 @@ import {
   getDefaultTimezoneForCountry,
 } from "../utils/registrationRegions";
 import LandingHeader from "../landing/LandingHeader";
+import useMediaQuery from "../hooks/useMediaQuery";
+import { useUnsavedChangesGuard } from "../components/billing-ui";
 import Footer from "../landing/Footer";
 import {
   FEATURE_META,
@@ -137,6 +139,21 @@ export default function RegisterPage() {
   const [showCompare, setShowCompare] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [localError, setLocalError] = useState(null);
+
+  // Below lg the order summary sits under the whole form, so the submit
+  // button moves into a bar pinned to the bottom of the screen; an error
+  // from the server is scrolled into view, since the user is usually at the
+  // bottom of the page when it arrives.
+  const belowLg = useMediaQuery("(max-width: 1023.98px)");
+  const errorRef = useRef(null);
+  useEffect(() => {
+    if (localError && belowLg) errorRef.current?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+  }, [localError, belowLg]);
+
+  // Nothing is saved until the form is submitted, so leaving with typed
+  // details (reload, tab close, an in-app link) asks first.
+  const [initialForm] = useState(() => JSON.stringify(form));
+  useUnsavedChangesGuard(!submitting && JSON.stringify(form) !== initialForm, "Your account details haven't been submitted. Leave this page and discard them?");
 
   // Country → default currency intelligence served by the backend's
   // authoritative mapping (GET /api/auth/country-defaults). The backend
@@ -498,7 +515,7 @@ export default function RegisterPage() {
               {/* 3 — account details */}
               <Stepper n={3} title="Your organization & admin account">
                 {localError && (
-                  <div role="alert" className="mb-5 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3.5 text-sm text-red-800">
+                  <div ref={errorRef} role="alert" className="mb-5 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3.5 text-sm text-red-800">
                     <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                     <span>{localError}</span>
                   </div>
@@ -644,15 +661,17 @@ export default function RegisterPage() {
                   </p>
                 )}
 
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  <span>{ctaLabel}</span>
-                  {!submitting && <ArrowRight className="h-4 w-4" />}
-                </button>
+                {!belowLg && (
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    <span>{ctaLabel}</span>
+                    {!submitting && <ArrowRight className="h-4 w-4" />}
+                  </button>
+                )}
 
                 <p className="mt-4 flex items-center justify-center gap-1.5 text-[11px] text-slate-500">
                   {startMode === "paid" ? <Lock className="h-3.5 w-3.5" /> : <ShieldCheck className="h-3.5 w-3.5" />}
@@ -662,6 +681,32 @@ export default function RegisterPage() {
                 </p>
               </div>
             </aside>
+
+            {belowLg && (
+              <>
+                {/* Keeps the end of the page clear of the pinned bar. */}
+                <div aria-hidden="true" className="h-20" />
+                <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-4px_24px_rgba(0,0,0,0.06)] backdrop-blur">
+                  <div className="mx-auto flex max-w-6xl items-center gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold text-slate-900">{selectedPlan.name}</p>
+                      <p className="text-xs text-slate-500">
+                        {startMode === "trial" ? "$0 today" : `$${selectedPlan.price} due today`}
+                      </p>
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={submitting}
+                      className="ml-auto flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                      <span>{ctaLabel}</span>
+                      {!submitting && <ArrowRight className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </form>
         </div>
       </main>

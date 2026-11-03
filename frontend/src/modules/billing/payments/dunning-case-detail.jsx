@@ -6,22 +6,12 @@ import {
 } from "lucide-react";
 import HRPage from "../../../components/HRPage";
 import { Button, Modal } from "../../../components/billing-ui";
+import { StatusBadge as SharedStatusBadge } from "../../../components/billing-shared";
 import { dunningApi, promiseToPayApi } from "../../../service/billingService";
 import { formatDisplayCurrency, formatDisplayDate } from "../../../utils/billing-helpers";
 
-const STATUS_STYLES = {
-  active: "bg-amber-100 text-amber-700",
-  resolved: "bg-emerald-100 text-emerald-700",
-  escalated: "bg-red-100 text-red-700",
-  closed: "bg-slate-100 text-slate-500",
-};
-
 function StatusBadge({ status }) {
-  return (
-    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${STATUS_STYLES[status] || "bg-slate-100 text-slate-600"}`}>
-      {status ? status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "Unknown"}
-    </span>
-  );
+  return <SharedStatusBadge status={status} />;
 }
 
 export default function DunningCaseDetailPage() {

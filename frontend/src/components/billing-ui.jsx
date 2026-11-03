@@ -15,6 +15,7 @@
 
 import { createContext, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { Link, useInRouterContext } from "react-router-dom";
 import useMediaQuery, { BELOW_MD, BELOW_SM } from "../hooks/useMediaQuery";
 import {
   ArrowLeft,
@@ -124,8 +125,9 @@ const BUTTON_VARIANTS = {
 };
 
 const BUTTON_SIZES = {
-  sm: "px-3 py-1.5 text-xs gap-1.5 rounded-lg",
-  md: "px-4 py-2.5 text-sm gap-2 rounded-xl",
+  // max-sm:min-h-11 — 44px tap height on phones; desktop sizes unchanged.
+  sm: "px-3 py-1.5 text-xs gap-1.5 rounded-lg max-sm:min-h-11",
+  md: "px-4 py-2.5 text-sm gap-2 rounded-xl max-sm:min-h-11",
 };
 
 export function Button({
@@ -163,10 +165,11 @@ export function Button({
  * OverflowMenu — "⋯" button + menu of secondary actions
  * ------------------------------------------------------------------ */
 
-// items: [{ key?, label, icon?, onClick, disabled?, danger? }]. Esc and an
+// items: [{ key?, label, icon?, onClick, disabled?, danger? }]. direction="up"
+// opens the menu above the trigger (for bars pinned to the bottom). Esc and an
 // outside tap close it; arrow keys move between items; focus returns to the
 // trigger on Esc. Used by PageHeader on phones and available to pages.
-export function OverflowMenu({ items = [], label = "More actions", align = "right", className = "" }) {
+export function OverflowMenu({ items = [], label = "More actions", align = "right", direction = "down", className = "" }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
   const buttonRef = useRef(null);
@@ -225,7 +228,7 @@ export function OverflowMenu({ items = [], label = "More actions", align = "righ
           role="menu"
           aria-label={label}
           onKeyDown={onMenuKeyDown}
-          className={`absolute ${align === "left" ? "left-0" : "right-0"} z-50 mt-2 w-56 max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl`}
+          className={`absolute ${align === "left" ? "left-0" : "right-0"} ${direction === "up" ? "bottom-full mb-2" : "mt-2"} z-50 w-56 max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl`}
         >
           {items.map((item) => {
             const ItemIcon = item.icon;
@@ -304,6 +307,16 @@ export const PageHeaderAccentContext = createContext(null);
 // The sidebar's own gradient (BillingShell <aside>), shared so navy headers and
 // hero banners are the exact same colour as the navigation beside them.
 export const NAVY_SURFACE = "bg-linear-to-br from-[#0B1220] via-[#101B33] to-[#0A0F1F]";
+// Breadcrumb link: client-side navigation inside the app's router (a real
+// <a href>, so modifier-clicks and the unsaved-changes guard still work);
+// a plain link where a component renders outside a router.
+export function CrumbLink({ href, children, className = "" }) {
+  // 44px tap height on phones (the breadcrumb row's bottom margin shrinks to match).
+  const linkClass = `transition-colors hover:text-brand-600 ${className} max-sm:inline-flex max-sm:min-h-11 max-sm:items-center`;
+  return useInRouterContext()
+    ? <Link to={href} className={linkClass}>{children}</Link>
+    : <a href={href} className={linkClass}>{children}</a>;
+}
 
 export function PageHeader({
   crumbs = [],
@@ -339,16 +352,14 @@ export function PageHeader({
   return (
     <div className={`rounded-3xl border p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_12px_28px_-8px_rgba(15,23,42,0.08)] sm:p-6 md:p-8 ${isNavy ? `border-white/10 ${NAVY_SURFACE}` : "border-slate-200 bg-white"} ${className}`}>
       {crumbs.length > 0 && (
-        <nav aria-label="Breadcrumb" className={`mb-3 flex items-center gap-1.5 text-xs font-medium ${isNavy ? "text-white/70" : "text-slate-500"}`}>
+        <nav aria-label="Breadcrumb" className={`mb-1 flex items-center gap-1.5 text-xs font-medium sm:mb-3 ${isNavy ? "text-white/70" : "text-slate-500"}`}>
           {crumbs.map((crumb, idx) => {
             const isLast = idx === crumbs.length - 1;
             return (
               <span key={crumb.label + idx} className="inline-flex items-center gap-1.5">
                 {idx > 0 && <ChevronRight size={13} className={`${isNavy ? "text-white/50" : "text-slate-300"}`} />}
                 {!isLast && crumb.href ? (
-                  <a href={crumb.href} className={`transition-colors ${isNavy ? "hover:text-white" : "hover:text-brand-600"}`} onClick={(e) => e.preventDefault()}>
-                    {crumb.label}
-                  </a>
+                  <CrumbLink href={crumb.href} className={isNavy ? "hover:text-white" : "hover:text-brand-600"}>{crumb.label}</CrumbLink>
                 ) : (
                   <span className={`font-semibold ${isLast ? (isNavy ? "text-white" : "text-slate-600") : ""}`}>{crumb.label}</span>
                 )}
@@ -623,8 +634,12 @@ function DataTableCards({
   emptyMessage,
   EmptyIcon,
   emptyAction,
+  sortKey,
+  sortDir,
+  onSort,
 }) {
   const roles = useMemo(() => resolveCardRoles(columns), [columns]);
+  const sortableCols = columns.filter((col) => col.sortable);
   const byRole = (role) => columns.filter((col) => roles[col.key] === role);
   const cell = (col, row, idx) => (col.render ? col.render(row, idx) : row[col.key]);
   const titleCols = byRole("title");
@@ -676,6 +691,35 @@ function DataTableCards({
           Select all
         </label>
       )}
+      {/* Cards have no header row, so sortable columns get a sort menu and a
+          direction toggle that call the same onSort as the table headers. */}
+      {onSort && sortableCols.length > 0 && (
+        <div className="flex items-center justify-end gap-2 border-b border-slate-100 px-4 py-2 text-sm text-slate-500">
+          <label className="flex items-center gap-2">
+            <span>Sort</span>
+            <select
+              value={sortKey ?? ""}
+              onChange={(e) => { if (e.target.value) onSort(e.target.value); }}
+              aria-label="Sort by"
+              className="min-h-11 rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-700"
+            >
+              {!sortableCols.some((col) => col.key === sortKey) && <option value="">Default</option>}
+              {sortableCols.map((col) => (
+                <option key={col.key} value={col.key}>{typeof col.label === "string" ? col.label : col.key}</option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            onClick={() => { if (sortKey) onSort(sortKey); }}
+            disabled={!sortableCols.some((col) => col.key === sortKey)}
+            aria-label={sortDir === "asc" ? "Sort descending" : "Sort ascending"}
+            className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 disabled:opacity-40"
+          >
+            {sortDir === "asc" ? <ArrowUp size={16} /> : <ArrowDown size={16} />}
+          </button>
+        </div>
+      )}
       <ul className="divide-y divide-slate-100">
         {data.map((row, idx) => {
           const key = rowKey(row, idx);
@@ -698,14 +742,17 @@ function DataTableCards({
             >
               <div className="flex items-start gap-3">
                 {onSelectionChange && (
-                  <input
-                    type="checkbox"
-                    aria-label="Select row"
-                    checked={selected}
-                    onChange={() => toggleRow(key)}
-                    onClick={(e) => e.stopPropagation()}
-                    className="mt-0.5 h-5 w-5 shrink-0 rounded border-slate-300 accent-brand"
-                  />
+                  // 44x44 tap area around the 20px box; the click stays off the row.
+                  <label className="-ml-3 -mt-3 flex h-11 w-11 shrink-0 items-center justify-center" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      aria-label="Select row"
+                      checked={selected}
+                      onChange={() => toggleRow(key)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="h-5 w-5 rounded border-slate-300 accent-brand"
+                    />
+                  </label>
                 )}
                 <div className="min-w-0 flex-1">
                   {/* [&_*]:min-w-0 lets cell renders built for wide table cells (icon +
@@ -848,6 +895,9 @@ export function DataTable({
           emptyMessage={emptyMessage}
           EmptyIcon={EmptyIcon}
           emptyAction={emptyAction}
+          sortKey={sortKey}
+          sortDir={sortDir}
+          onSort={onSort}
         />
       ) : (
         <div
@@ -1043,7 +1093,7 @@ export function Stepper({ steps = [], current = 0, onSelect, className = "" }) {
   // overflow-x-hidden (which hid the right-hand steps). -m-1/p-1 leaves room
   // for the focus ring inside the scroll container without shifting layout.
   return (
-    <ol ref={listRef} className={`-m-1 flex min-w-0 items-center overflow-x-auto p-1 ${className}`} aria-label="Wizard progress">
+    <ol ref={listRef} tabIndex={0} className={`-m-1 flex min-w-0 items-center overflow-x-auto p-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 ${className}`} aria-label="Wizard progress">
       {steps.map((step, idx) => {
         const isDone = idx < current;
         const isActive = idx === current;
@@ -1536,15 +1586,18 @@ export function SearchInput({ value, onChange, placeholder = "Search…", classN
         onChange={(e) => setDisplay(e.target.value)}
         placeholder={placeholder}
         aria-label={placeholder}
-        className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-8 text-sm text-slate-800 placeholder:text-slate-500 transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30"
+        className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-8 text-sm text-slate-800 placeholder:text-slate-500 transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30 [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-decoration]:hidden"
         {...rest}
       />
       {display && (
         <button
           type="button"
-          onClick={() => setDisplay("")}
+          onClick={() => {
+            setDisplay("");
+            onChange?.("");
+          }}
           aria-label="Clear search"
-          className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-md p-0.5 text-slate-500 hover:text-slate-600"
+          className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-md p-0.5 text-slate-500 hover:text-slate-600 focus:outline-none focus:ring-2 focus:ring-brand/30"
         >
           <X size={14} />
         </button>
@@ -1637,7 +1690,7 @@ export function FormGrid({ cols = 2, dense = false, className = "", children }) 
 // sectioned forms stay close to their unsectioned height.
 // From lg the fields inside are slightly denser too: shorter controls and
 // label spacing (desktop only; phones keep the 44px+ touch sizes).
-const FORM_SECTION_DENSE =
+export const FORM_SECTION_DENSE =
   "lg:[&_label]:mb-1 lg:[&_input:not([type=checkbox]):not([type=radio])]:py-2 lg:[&_select]:py-2 lg:[&_textarea]:py-2";
 
 export function FormSection({ title, description, icon, children, className = "" }) {
@@ -1679,7 +1732,7 @@ export function useActiveSection(scrollRef) {
 // The one "* Required" note a form shows (T7).
 export function RequiredNote({ className = "" }) {
   return (
-    <p className={`text-xs text-slate-500 ${className}`}>
+    <p className={`text-xs text-slate-600 ${className}`}>
       <span className="text-red-500">*</span> Required
     </p>
   );
@@ -1688,10 +1741,13 @@ export function RequiredNote({ className = "" }) {
 // Sticky context bar for create/edit pages on phones: back, title and
 // "Step X of Y", pinned under the app top bar while the form scrolls (T4).
 // Hidden from sm up, where the page's own header stays in view.
+// No negative top margin: inside the padded <main>, sticky top-0 resolves at
+// the padding edge, so pulling the bar into the padding made it overlap the
+// next element once pinned.
 export function FormPageBar({ title, onBack, backLabel = "Back", step, totalSteps, className = "" }) {
   return (
     <div
-      className={`sticky top-0 z-30 -mx-4 -mt-6 mb-4 flex min-h-14 items-center gap-1 border-b border-slate-200 bg-white/95 px-2 backdrop-blur sm:hidden ${className}`}
+      className={`sticky top-0 z-30 -mx-4 mb-4 flex min-h-14 items-center gap-1 border-b border-slate-200 bg-white/95 px-2 backdrop-blur sm:hidden ${className}`}
     >
       {onBack && (
         <button
@@ -1728,7 +1784,7 @@ export function FormActionBar({
   secondary,
 }) {
   return (
-    <StickyFooter contentClassName="mx-auto flex max-w-6xl items-center justify-end gap-2 sm:gap-3 max-sm:[&>*]:flex-1">
+    <StickyFooter contentClassName="mx-auto flex max-w-6xl items-center justify-end gap-2 sm:gap-3 max-sm:[&>*]:flex-1 max-sm:[&>*]:min-h-11">
       {secondary}
       {onCancel && (
         <Button variant="secondary" onClick={onCancel} disabled={busy}>
@@ -1746,6 +1802,40 @@ export function FormActionBar({
       >
         {primaryLabel}
       </Button>
+    </StickyFooter>
+  );
+}
+
+// Page frame for module settings pages: the shared PageHeader plus the
+// page's sections, inside the shell's own padding (no second padded layer).
+export function SettingsPageShell({ title, description, icon, crumbs = [], children }) {
+  return (
+    <div className="space-y-6">
+      <PageHeader crumbs={crumbs} title={title} description={description} icon={icon} />
+      <div>{children}</div>
+    </div>
+  );
+}
+
+// Pinned save bar for settings pages, which save the whole page at once:
+// the page's own actions (Refresh / Discard / Save, passed as children)
+// plus whether anything is unsaved, so Save stays in reach from every
+// section. Buttons are 44px on phones; `compactStatus` hides the status
+// text on phones when a page has three actions.
+export function SettingsSaveBar({ hasChanges, saved = false, compactStatus = false, children }) {
+  return (
+    <StickyFooter contentClassName="mx-auto flex max-w-6xl items-center gap-2 sm:gap-3 max-sm:[&_button]:min-h-11">
+      <p role="status" aria-live="polite" className={`min-w-0 flex-1 text-sm font-medium max-sm:line-clamp-2 max-sm:text-xs sm:truncate ${compactStatus ? "max-sm:hidden" : ""}`}>
+        {saved ? (
+          <span className="text-emerald-700">Saved</span>
+        ) : hasChanges ? (
+          <span className="text-amber-700">Unsaved changes</span>
+        ) : (
+          <span className="text-slate-500">No changes</span>
+        )}
+      </p>
+      {/* Wraps rather than overflowing if the actions ever outgrow the bar. */}
+      <div className={`flex min-w-0 flex-wrap items-center justify-end gap-2 ${compactStatus ? "max-sm:ml-auto" : ""}`}>{children}</div>
     </StickyFooter>
   );
 }

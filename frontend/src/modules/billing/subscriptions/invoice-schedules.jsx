@@ -4,8 +4,9 @@ import { Calendar, Search, Filter, X, RefreshCw,
   AlertCircle, Clock, CheckCircle, FileText, Plus } from "lucide-react"
 import HRPage from "../../../components/HRPage";
 import { ErrorState } from "../../../components/billing-shared";
+import { DataTable } from "../../../components/billing-ui";
 import { subscriptionApi } from "../../../service/billingService";
-import { extractArray } from "../../../utils/billing-helpers";
+import { extractArray, formatDisplayDate } from "../../../utils/billing-helpers";
 import { formatCurrency } from "../../../utils/locale";
 import useLatestRequest from "../utils/useLatestRequest";
 
@@ -20,7 +21,7 @@ const STATUS_OPTIONS = [
   { value: "past_due", label: "Past Due" },
 ];
 
-const formatDate = (d) => d ? new Date(d).toLocaleDateString() : "—";
+const formatDate = (d) => d ? formatDisplayDate(d) : "—";
 
 export default function InvoiceSchedulesPage() {
   const navigate = useNavigate();
@@ -89,6 +90,20 @@ export default function InvoiceSchedulesPage() {
   thisWeek.setDate(thisWeek.getDate() + 7);
   const thisMonth = new Date(now);
   thisMonth.setMonth(thisMonth.getMonth() + 1);
+
+  // Next-billing emphasis for a schedule row (overdue / this week / this month).
+  const billingInfo = (s) => {
+    const nbDate = s.next_billing_at ? new Date(s.next_billing_at) : null;
+    const isOverdue = nbDate && nbDate < now && s.status === "active";
+    const isThisWeek = nbDate && nbDate >= now && nbDate <= thisWeek;
+    const isThisMonth = nbDate && nbDate >= now && nbDate <= thisMonth;
+
+    let billingStyle = "text-slate-500";
+    if (isOverdue) billingStyle = "text-red-600 font-medium";
+    else if (isThisWeek) billingStyle = "text-amber-600 font-medium";
+    else if (isThisMonth) billingStyle = "text-blue-600";
+    return { isOverdue, isThisWeek, billingStyle };
+  };
 
   const dueThisWeek = schedules.filter(
     (s) => s.next_billing_at && new Date(s.next_billing_at) >= now && new Date(s.next_billing_at) <= thisWeek
@@ -286,74 +301,49 @@ export default function InvoiceSchedulesPage() {
             <p className="text-xs text-slate-500">{hasActiveFilters ? "Try adjusting your filters." : "No subscription billing schedules available."}</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-100">
-                  <th className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase tracking-wider">Subscription</th>
-                  <th className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase tracking-wider">Status</th>
-                  <th className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase tracking-wider">Plan</th>
-                  <th className="text-right py-3 px-4 font-medium text-slate-500 text-xs uppercase tracking-wider">Amount</th>
-                  <th className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase tracking-wider">Next Billing</th>
-                  <th className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase tracking-wider">Term End</th>
-                  <th className="text-left py-3 px-4 font-medium text-slate-500 text-xs uppercase tracking-wider">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {displaySchedules.map((s) => {
-                  const nbDate = s.next_billing_at ? new Date(s.next_billing_at) : null;
-                  const isOverdue = nbDate && nbDate < now && s.status === "active";
-                  const isThisWeek = nbDate && nbDate >= now && nbDate <= thisWeek;
-                  const isThisMonth = nbDate && nbDate >= now && nbDate <= thisMonth;
-
-                  let billingStyle = "text-slate-500";
-                  if (isOverdue) billingStyle = "text-red-600 font-medium";
-                  else if (isThisWeek) billingStyle = "text-amber-600 font-medium";
-                  else if (isThisMonth) billingStyle = "text-blue-600";
-
-                  return (
-                    <tr key={s.id} className="border-b border-slate-50 hover:bg-slate-50">
-                      <td className="py-3 px-4">
-                        <span className="font-medium text-slate-900">{s.subscription_number || `#${s.id}`}</span>
-                      </td>
-                      <td className="py-3 px-4">
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
-                          s.status === "active" ? "bg-emerald-100 text-emerald-700" :
-                          s.status === "paused" ? "bg-amber-100 text-amber-700" :
-                          s.status === "past_due" ? "bg-red-100 text-red-700" :
-                          s.status === "cancelled" ? "bg-slate-100 text-slate-500" :
-                          "bg-slate-100 text-slate-600"
-                        }`}>
-                          {s.status ? s.status.charAt(0).toUpperCase() + s.status.slice(1) : "Unknown"}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-slate-600">
-                        {s.plan?.plan_name || s.plan_name || `Plan #${s.plan_id}`}
-                      </td>
-                      <td className="py-3 px-4 text-right font-medium text-slate-900">
-                        {formatCurrency(s.unit_price, s.currency || "—")}
-                        {s.quantity > 1 && <span className="text-xs text-slate-500 ml-1">x{s.quantity}</span>}
-                      </td>
-                      <td className={`py-3 px-4 whitespace-nowrap ${billingStyle}`}>
-                        {s.next_billing_at ? formatDate(s.next_billing_at) : "—"}
-                        {isOverdue && <span className="ml-1.5 text-xs text-red-500">(Overdue)</span>}
-                        {isThisWeek && !isOverdue && <span className="ml-1.5 text-xs text-amber-500">(This week)</span>}
-                      </td>
-                      <td className="py-3 px-4 text-slate-500 whitespace-nowrap">
-                        {s.current_term_end ? formatDate(s.current_term_end) : "—"}
-                      </td>
-                      <td className="py-3 px-4">
-                        <button onClick={() => navigate(`/billing/subscriptions/${s.id}`)}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-brand-600 bg-brand-50 rounded-lg hover:bg-brand-100">
-                          <FileText className="h-3.5 w-3.5" /> View
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            stickyHeader={false}
+            data={displaySchedules}
+            rowKey={(s) => s.id}
+            columns={[
+              { key: "subscription", label: "Subscription", render: (s) => <span className="font-medium text-slate-900">{s.subscription_number || `#${s.id}`}</span> },
+              { key: "status", label: "Status", render: (s) => (
+                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                  s.status === "active" ? "bg-emerald-100 text-emerald-700" :
+                  s.status === "paused" ? "bg-amber-100 text-amber-700" :
+                  s.status === "past_due" ? "bg-red-100 text-red-700" :
+                  s.status === "cancelled" ? "bg-slate-100 text-slate-500" :
+                  "bg-slate-100 text-slate-600"
+                }`}>
+                  {s.status ? s.status.charAt(0).toUpperCase() + s.status.slice(1) : "Unknown"}
+                </span>
+              ) },
+              { key: "plan", label: "Plan", render: (s) => <span className="text-slate-600">{s.plan?.plan_name || s.plan_name || `Plan #${s.plan_id}`}</span> },
+              { key: "amount", label: "Amount", align: "right", render: (s) => (
+                <span className="font-medium text-slate-900">
+                  {formatCurrency(s.unit_price, s.currency || "—")}
+                  {s.quantity > 1 && <span className="text-xs text-slate-500 ml-1">x{s.quantity}</span>}
+                </span>
+              ) },
+              { key: "next_billing", label: "Next Billing", render: (s) => {
+                const { isOverdue, isThisWeek, billingStyle } = billingInfo(s);
+                return (
+                  <span className={`whitespace-nowrap ${billingStyle}`}>
+                    {s.next_billing_at ? formatDate(s.next_billing_at) : "—"}
+                    {isOverdue && <span className="ml-1.5 text-xs text-red-500">(Overdue)</span>}
+                    {isThisWeek && !isOverdue && <span className="ml-1.5 text-xs text-amber-500">(This week)</span>}
+                  </span>
+                );
+              } },
+              { key: "term_end", label: "Term End", render: (s) => <span className="text-slate-500 whitespace-nowrap">{s.current_term_end ? formatDate(s.current_term_end) : "—"}</span> },
+              { key: "actions", label: "Actions", mobileRole: "actions", render: (s) => (
+                <button onClick={() => navigate(`/billing/subscriptions/${s.id}`)}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-brand-600 bg-brand-50 rounded-lg hover:bg-brand-100 max-md:min-h-11">
+                  <FileText className="h-3.5 w-3.5" /> View
+                </button>
+              ) },
+            ]}
+          />
         )}
 
         {!loading && !error && totalPages > 1 && (

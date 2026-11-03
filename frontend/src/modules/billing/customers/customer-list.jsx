@@ -16,6 +16,7 @@ import { useTerminology } from "../utils/TerminologyContext";
 import useLatestRequest from "../utils/useLatestRequest";
 import { useConfirmationDialog, PageSkeleton, ErrorState, Pagination, StatusBadge as SharedStatusBadge } from "../../../components/billing-shared";
 import CustomerFormDialog from "./customer-form-dialog";
+import useMediaQuery, { BELOW_SM } from "../../../hooks/useMediaQuery";
 import { useDropUrlParam } from "../utils/useListUrlFilters";
 import ActiveUrlFilterChips from "../utils/ActiveUrlFilterChips";
 
@@ -113,6 +114,7 @@ export default function CustomerListPage() {
 
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [selectAll, setSelectAll] = useState(false);
+  const isPhone = useMediaQuery(BELOW_SM);
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -589,8 +591,8 @@ export default function CustomerListPage() {
       <div className="bg-white border border-slate-200 rounded-3xl shadow-[0_4px_20px_rgba(0,0,0,0.02)] overflow-hidden">
         <div className="p-6 border-b border-slate-100">
           <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-3 flex-1">
-              <div className="relative flex-1 max-w-md">
+            <div className="flex flex-wrap items-center gap-3 flex-1 max-sm:basis-full">
+              <div className="relative flex-1 max-w-md max-sm:basis-full max-sm:max-w-none">
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                 <input type="text" placeholder={getLabel("searchPlaceholder")} aria-label={getLabel("searchPlaceholder")} value={search}
                   onChange={(e) => setSearch(e.target.value)}
@@ -598,13 +600,13 @@ export default function CustomerListPage() {
                 {search && <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600" aria-label="Clear search"><X size={16} /></button>}
               </div>
               <button onClick={() => setShowFilters(!showFilters)}
-                className={`p-2.5 rounded-xl border transition-colors ${showFilters || hasActiveFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}
+                className={`p-2.5 max-sm:p-3 rounded-xl border transition-colors ${showFilters || hasActiveFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}
                 aria-label="Toggle filters" aria-pressed={showFilters}>
                 <Filter size={18} />
               </button>
               <div className="relative">
                 <button onClick={() => setShowColumnSelector(!showColumnSelector)}
-                  className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50"
+                  className="p-2.5 max-sm:p-3 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50"
                   aria-label="Choose visible columns" aria-pressed={showColumnSelector}>
                   <Columns size={18} />
                 </button>
@@ -622,7 +624,7 @@ export default function CustomerListPage() {
                   </div>
                 )}
               </div>
-              <button onClick={handleRefresh} disabled={refreshing} className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50" aria-label="Refresh list">
+              <button onClick={handleRefresh} disabled={refreshing} className="p-2.5 max-sm:p-3 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50" aria-label="Refresh list">
                 <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
               </button>
             </div>
@@ -635,7 +637,7 @@ export default function CustomerListPage() {
                   <button onClick={() => handleExport("json")} className="block w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 rounded-lg">Export JSON</button>
                 </div>
               </div>
-              <button onClick={() => setShowCreateModal(true)} className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-medium hover:shadow-lg"><Plus size={18} /> {getLabel("newButton")}</button>
+              <button onClick={() => setShowCreateModal(true)} className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-medium hover:shadow-lg max-sm:min-h-11"><Plus size={18} /> {getLabel("newButton")}</button>
             </div>
           </div>
 
@@ -710,6 +712,103 @@ export default function CustomerListPage() {
           </div>
         )}
 
+        {/* Phones: one card per customer instead of a 13-column table swiped
+            sideways. Same selection, open, edit and sort handlers; optional
+            fields follow the column picker. Desktop / tablet keep the table. */}
+        {isPhone ? (
+          <div>
+            <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-2">
+              <label className="flex min-h-11 items-center gap-2 text-sm text-slate-600">
+                <input type="checkbox" checked={selectAll} onChange={(e) => handleSelectAll(e.target.checked)} className="h-5 w-5 rounded border-slate-300 text-brand-600 focus:ring-brand/30" aria-label={`Select all ${plural.toLowerCase()}`} />
+                Select all
+              </label>
+              <label className="flex items-center gap-2 text-sm text-slate-500">
+                <span>Sort</span>
+                <select
+                  value={`${sortField}:${sortDir}`}
+                  onChange={(e) => { const [field, dir] = e.target.value.split(":"); setSortField(field); setSortDir(dir); setCurrentPage(1); }}
+                  className="min-h-11 rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-700"
+                  aria-label="Sort by"
+                >
+                  {![["name", "asc"], ["name", "desc"], ["status", "asc"], ["status", "desc"], ["created_at", "desc"], ["created_at", "asc"]].some(([f, d]) => f === sortField && d === sortDir) && (
+                    <option value={`${sortField}:${sortDir}`}>Default</option>
+                  )}
+                  <option value="name:asc">Name A–Z</option>
+                  <option value="name:desc">Name Z–A</option>
+                  <option value="status:asc">Status A–Z</option>
+                  <option value="status:desc">Status Z–A</option>
+                  <option value="created_at:desc">Newest first</option>
+                  <option value="created_at:asc">Oldest first</option>
+                </select>
+              </label>
+            </div>
+            {customers.length === 0 ? (
+              <div className="px-4 py-16 text-center">
+                <div className="flex flex-col items-center"><Users size={40} className="text-slate-300 mb-3" /><p className="text-slate-500 font-medium">{getLabel("emptyState")}</p><p className="text-slate-500 text-sm mt-1">{search || hasActiveFilters ? "Try adjusting your search or filters" : `Add your first ${getLabel("singularLower")} to get started`}</p></div>
+              </div>
+            ) : (
+              <ul className="divide-y divide-slate-100">
+                {customers.map((customer) => (
+                  <li key={customer.id} className={`px-4 py-3 ${selectedIds.has(customer.id) ? "bg-brand-50/50" : ""}`}>
+                    <div className="flex items-start gap-3">
+                      <label className="-ml-3 flex h-11 w-11 shrink-0 items-center justify-center"><input type="checkbox" checked={selectedIds.has(customer.id)} onChange={() => handleSelectOne(customer.id)} className="h-5 w-5 rounded border-slate-300 text-brand-600 focus:ring-brand/30" aria-label={`Select ${customer.display_name || customer.company_name || singular.toLowerCase()}`} /></label>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <button onClick={() => navigate(`/billing/customers/${customer.id}`)} className="flex min-h-11 min-w-0 items-center gap-3 text-left group">
+                            <div className="h-8 w-8 rounded-full bg-gradient-to-br from-brand to-brand-hover text-white flex items-center justify-center text-sm font-bold flex-shrink-0">
+                              {(customer.display_name || customer.company_name || "?").charAt(0).toUpperCase()}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-medium text-slate-800 group-hover:text-brand-600 transition-colors truncate">{customer.display_name || customer.company_name || "Unnamed"}</p>
+                              <p className="text-xs text-slate-500">{customer.customer_code || customer.id}</p>
+                            </div>
+                          </button>
+                          <div className="shrink-0 pt-2"><SharedStatusBadge status={customer.status} options={STATUS_OPTIONS} icon={STATUS_ICONS[customer.status] || Clock} /></div>
+                        </div>
+                        {visibleColumns.includes("contact") && (customer.email || customer.phone) && (
+                          <div className="mt-1 flex flex-col gap-0.5">
+                            {customer.email && <span className="flex min-w-0 items-center gap-1 text-xs text-slate-500"><Mail size={12} className="shrink-0" /><span className="truncate">{customer.email}</span></span>}
+                            {customer.phone && <span className="flex items-center gap-1 text-xs text-slate-500"><Phone size={12} />{customer.phone}</span>}
+                          </div>
+                        )}
+                        <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                          {visibleColumns.includes("outstanding") && (
+                            <div><dt className="text-slate-500">Outstanding</dt><dd className={`font-medium ${parseFloat(customer.outstanding_balance || 0) > 0 ? "text-amber-600" : "text-slate-800"}`}>{formatDisplayCurrency(customer.outstanding_balance || 0, baseCurrency)}</dd></div>
+                          )}
+                          {visibleColumns.includes("revenue") && (
+                            <div><dt className="text-slate-500">Revenue</dt><dd className="font-medium text-slate-800">{formatDisplayCurrency(customer.total_revenue || 0, baseCurrency)}</dd></div>
+                          )}
+                          {visibleColumns.includes("credit_limit") && (
+                            <div><dt className="text-slate-500">Credit Limit</dt><dd className="font-medium text-slate-800">{formatDisplayCurrency(customer.credit_limit || 0, baseCurrency)}</dd></div>
+                          )}
+                          {visibleColumns.includes("company") && (
+                            <div className="min-w-0"><dt className="text-slate-500">Company</dt><dd className="truncate text-slate-600">{customer.company_name || "—"}</dd></div>
+                          )}
+                          {visibleColumns.includes("customer_type") && (
+                            <div><dt className="text-slate-500">Type</dt><dd className="capitalize text-slate-600">{customer.customer_type?.replace(/_/g, " ") || "—"}</dd></div>
+                          )}
+                          {visibleColumns.includes("currency") && (
+                            <div><dt className="text-slate-500">Currency</dt><dd className="text-slate-600">{customer.currency || "—"}</dd></div>
+                          )}
+                          {visibleColumns.includes("payment_terms") && (
+                            <div><dt className="text-slate-500">Terms</dt><dd className="capitalize text-slate-600">{customer.payment_terms?.replace(/_/g, " ") || "—"}</dd></div>
+                          )}
+                          <div><dt className="text-slate-500">Created</dt><dd className="text-slate-600">{formatDisplayDate(customer.created_at)}</dd></div>
+                        </dl>
+                        <div className="mt-2 flex items-center justify-end gap-2">
+                          <button onClick={() => navigate(`/billing/customers/${customer.id}`)} className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-brand-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30" title="View" aria-label={`View ${customer.display_name || customer.company_name || singular.toLowerCase()}`}><FileText size={16} /></button>
+                          <button onClick={() => { setEditCustomer({ ...customer }); setShowEditModal(true); }} className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-blue-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500" title="Edit" aria-label={`Edit ${customer.display_name || customer.company_name || singular.toLowerCase()}`}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -781,6 +880,7 @@ export default function CustomerListPage() {
             </tbody>
           </table>
         </div>
+        )}
 
         <Pagination page={safePage} totalPages={totalPages} onPageChange={setCurrentPage}>
           {total} total {singular.toLowerCase()}(s)

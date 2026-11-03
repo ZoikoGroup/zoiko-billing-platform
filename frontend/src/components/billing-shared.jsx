@@ -11,7 +11,7 @@ import { assertExportsAllowed, getExportSuppression } from "../utils/export-help
 // to every one of them. The stat-card sparkline below is hand-rolled SVG for
 // exactly this reason; ExecutiveSummary is likewise recharts-free by design.
 import { ExecutiveSummary } from "./executive-summary";
-import { OverflowMenu } from "./billing-ui";
+import { CrumbLink, OverflowMenu } from "./billing-ui";
 import useMediaQuery, { BELOW_SM } from "../hooks/useMediaQuery";
 
 export function formatLastUpdated(value, options = { hour: "2-digit", minute: "2-digit" }) {
@@ -23,8 +23,8 @@ export function formatLastUpdated(value, options = { hour: "2-digit", minute: "2
 
 export function Spinner() {
   return (
-    <div className="flex items-center justify-center py-12">
-      <div className="h-8 w-8 rounded-full border-4 border-slate-200 border-t-brand animate-spin" />
+    <div role="status" aria-label="Loading" className="flex items-center justify-center py-12">
+      <div className="h-8 w-8 rounded-full border-4 border-slate-200 border-t-brand animate-spin" aria-hidden="true" />
     </div>
   );
 }
@@ -140,6 +140,23 @@ export const STATUS_META = {
   in_progress: { label: "In Progress", color: "bg-amber-100 text-amber-700" },
   fulfilled: { label: "Fulfilled", color: "bg-emerald-100 text-emerald-700" },
   broken: { label: "Broken", color: "bg-red-100 text-red-700" },
+  resolved: { label: "Resolved", color: "bg-emerald-100 text-emerald-700" },
+  // invoices / credit notes
+  refunded: { label: "Refunded", color: "bg-pink-100 text-pink-700" },
+  written_off: { label: "Written Off", color: "bg-slate-100 text-slate-600" },
+  fully_applied: { label: "Fully Applied", color: "bg-emerald-100 text-emerald-700" },
+  voided: { label: "Voided", color: "bg-slate-200 text-slate-600" },
+  // quotations / contracts / subscriptions
+  accepted: { label: "Accepted", color: "bg-emerald-100 text-emerald-700" },
+  converted: { label: "Converted", color: "bg-indigo-100 text-indigo-700" },
+  expired: { label: "Expired", color: "bg-slate-100 text-slate-600" },
+  terminated: { label: "Terminated", color: "bg-red-100 text-red-700" },
+  past_due: { label: "Past Due", color: "bg-red-100 text-red-700" },
+  // customers / products / catalog records
+  inactive: { label: "Inactive", color: "bg-slate-100 text-slate-600" },
+  suspended: { label: "Suspended", color: "bg-amber-100 text-amber-700" },
+  archived: { label: "Archived", color: "bg-slate-100 text-slate-600" },
+  deprecated: { label: "Deprecated", color: "bg-slate-100 text-slate-600" },
 };
 
 /** Lookup helper — returns `{ label, color }` or undefined for unknown states. */
@@ -364,7 +381,7 @@ export function DashboardDateRangeFilter({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label="Select date range"
-        className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
+        className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 max-sm:min-h-11"
       >
         <Calendar size={15} className="text-brand-500" />
         <span className="whitespace-nowrap">{selectedLabel}</span>
@@ -463,16 +480,14 @@ export function DashboardHeader({
   return (
     <div className="rounded-3xl bg-white border border-slate-200 p-4 sm:p-6 md:p-8 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
       {crumbs.length > 0 && (
-        <nav aria-label="Breadcrumb" className="mb-3 flex items-center gap-1.5 text-xs font-medium text-slate-500">
+        <nav aria-label="Breadcrumb" className="mb-1 flex items-center gap-1.5 text-xs font-medium text-slate-500 sm:mb-3">
           {crumbs.map((crumb, idx) => {
             const isLast = idx === crumbs.length - 1;
             return (
               <span key={crumb.label + idx} className="inline-flex items-center gap-1.5">
                 {idx > 0 && <ChevronRight size={13} className="text-slate-300" />}
                 {!isLast && crumb.href ? (
-                  <a href={crumb.href} className="transition-colors hover:text-brand-600" onClick={(e) => e.preventDefault()}>
-                    {crumb.label}
-                  </a>
+                  <CrumbLink href={crumb.href}>{crumb.label}</CrumbLink>
                 ) : (
                   <span className={isLast ? "font-semibold text-slate-600" : ""}>{crumb.label}</span>
                 )}
@@ -842,7 +857,7 @@ export function DashboardStatCardSkeleton() {
 
 export function DashboardChartCardSkeleton() {
   return (
-    <div className="bg-white border border-slate-200 rounded-3xl p-6 animate-pulse h-full" aria-hidden="true">
+    <div className="bg-white border border-slate-200 rounded-3xl p-4 sm:p-6 animate-pulse h-full" aria-hidden="true">
       <div className="h-5 bg-slate-200 rounded w-40 mb-6" />
       <div className="h-64 bg-slate-100 rounded-lg" />
     </div>
@@ -868,9 +883,11 @@ export class DashboardChartErrorBoundary extends Component {
 
 export function DashboardChartCard({ title, children, className = "", action }) {
   return (
-    <div className={`bg-white border border-slate-200 rounded-3xl p-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)] h-full flex flex-col min-w-0 ${className}`}>
-      <div className="flex items-center justify-between mb-6 gap-3">
-        <h2 className="text-lg font-bold text-slate-800 truncate">{title}</h2>
+    <div className={`bg-white border border-slate-200 rounded-3xl p-4 sm:p-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)] h-full flex flex-col min-w-0 ${className}`}>
+      {/* Wraps so a header action (e.g. a period toggle) drops under the
+          title on phones instead of pushing past the card. */}
+      <div className="flex flex-wrap items-center justify-between mb-6 gap-3">
+        <h2 className="min-w-0 text-lg font-bold text-slate-800 truncate">{title}</h2>
         {action}
       </div>
       <div className="flex-1 min-w-0 min-h-0">{children}</div>
@@ -890,7 +907,8 @@ export function DashboardEmptyPanel({ title, message, icon: Icon = FileText, cta
         <div className="flex flex-wrap items-center justify-center gap-2">
           {ctaText && onCtaClick && (
             <button onClick={onCtaClick}
-              className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-semibold rounded-xl shadow-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 focus-visible:ring-offset-2">
+              className="inline-flex items-center gap-1.5 px-4 py-2 border border-brand-200 bg-white text-brand-700 hover:bg-brand-50 text-xs font-semibold rounded-xl transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 focus-visible:ring-offset-2 max-sm:min-h-11">
+              {/* Outlined: the page header keeps the one primary action. */}
               {ctaText}
             </button>
           )}
@@ -1684,7 +1702,7 @@ export function ExportMenu({ onExportCSV, onExportJSON, onExportExcel, className
         onClick={() => setOpen(!open)}
         disabled={Boolean(suppression)}
         title={suppression ? `Exports disabled: ${suppression}` : undefined}
-        className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+        className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors disabled:cursor-not-allowed disabled:opacity-50 max-sm:min-h-11"
         aria-label="Export data"
         aria-disabled={Boolean(suppression) || undefined}
       >

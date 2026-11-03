@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, Children, cloneElement, isValidElement, useId } from "react";
 import { Save, RefreshCw, AlertCircle, CheckCircle, Hash, DollarSign, Percent, Mail, Phone, FileText, ToggleLeft, Calendar, Globe, Image, Settings } from "lucide-react";
-import { PageHeader, Button } from "../../../components/billing-ui";
+import { PageHeader, Button, SettingsSaveBar, useUnsavedChangesGuard } from "../../../components/billing-ui";
 
 const inputClass =
   "block w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder:text-slate-500 transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30";
@@ -114,6 +114,7 @@ export default function InvoiceSettingsPage() {
 const [original, setOriginal] = useState({});
   
   const hasChanges = Object.keys(form).some((key) => form[key] !== original[key]);
+  useUnsavedChangesGuard(hasChanges, "You have unsaved settings. Leave this page and discard them?");
   
   const validationError = form.invoice_number_format.includes("{SEQ}")
     ? ""
@@ -248,7 +249,7 @@ const [original, setOriginal] = useState({});
 
   if (loading) {
     return (
-      <div className="px-4 py-6 sm:px-6">
+      <div>
         {header()}
         <div className="flex items-center justify-center py-12" role="status" aria-label="Loading invoice settings">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500" />
@@ -259,7 +260,7 @@ const [original, setOriginal] = useState({});
 
   if (loadFailed) {
     return (
-      <div className="px-4 py-6 sm:px-6">
+      <div>
         {header()}
         <ErrorState title="Couldn't load invoice settings" message={error} onRetry={fetchSettings} />
       </div>
@@ -296,20 +297,8 @@ const [original, setOriginal] = useState({});
   else taxRateHint = `${activeTaxRates.length} active rate${activeTaxRates.length === 1 ? "" : "s"} available`;
 
   return (
-    <div className="px-4 py-6 sm:px-6">
-      {header([
-        saved && (
-          <span key="saved" role="status" className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-emerald-700 bg-emerald-50 rounded-lg">
-            <CheckCircle className="h-4 w-4" /> Saved
-          </span>
-        ),
-        <Button key="refresh" variant="secondary" size="md" onClick={fetchSettings} icon={RefreshCw}>
-          Refresh
-        </Button>,
-        <Button key="save" variant="primary" size="md" onClick={handleSave} disabled={!hasChanges || saving || Boolean(validationError)} loading={saving} icon={Save}>
-          Save Changes
-        </Button>,
-      ])}
+    <div>
+      {header()}
 
       {error && (
         <div role="alert" className="mb-6 p-4 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700 flex items-center gap-2">
@@ -558,6 +547,14 @@ const [original, setOriginal] = useState({});
           </SettingsField>
         </SettingsSection>
       </div>
+      <SettingsSaveBar hasChanges={hasChanges} saved={saved}>
+        <Button key="refresh" variant="secondary" size="md" onClick={fetchSettings} icon={RefreshCw}>
+          Refresh
+        </Button>
+        <Button key="save" variant="primary" size="md" onClick={handleSave} disabled={!hasChanges || saving || Boolean(validationError)} loading={saving} icon={Save}>
+          Save Changes
+        </Button>
+      </SettingsSaveBar>
     </div>
   );
 }

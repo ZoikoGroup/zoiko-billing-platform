@@ -724,6 +724,7 @@ class AttentionCountsResponse(BaseModel):
     p3: int
     total_open: int
     sla_breaches: int
+    unread: int = 0
 
 
 class AttentionAssignRequest(BaseModel):

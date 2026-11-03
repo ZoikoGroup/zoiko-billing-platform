@@ -31,12 +31,12 @@ afterEach(() => {
 const renderPage = (wrap = (c) => c) => render(<MemoryRouter>{wrap(<ProductSettingsPage />)}</MemoryRouter>);
 
 describe("BUG-11.6 Product Settings save bar", () => {
-  it("reserves right-side space for the assistant launcher and keeps page content clear of the bar", async () => {
+  it("uses the normal gutter (the assistant launcher is in the top bar) and keeps page content clear of the bar", async () => {
     renderPage();
     const bar = await screen.findByTestId("product-settings-save-bar");
-    // Launcher occupies 24-80px from the right edge; pr-24 (96px) keeps the
-    // actions out of that region.
-    expect(bar.className).toMatch(/\bpr-24\b/);
+    // The launcher no longer floats bottom-right, so no pr-24 is reserved for it.
+    expect(bar.className).toMatch(/\bpx-4\b/);
+    expect(bar.className).not.toMatch(/\bpr-24\b/);
     expect(bar.className).toMatch(/\bfixed\b/);
     // The form content reserves bottom space so nothing hides behind the bar.
     expect(document.querySelector(".pb-28")).not.toBeNull();

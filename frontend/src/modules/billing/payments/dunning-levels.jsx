@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Plus, Trash2, Loader2, AlertCircle, Layers, Pencil, CheckCircle, Save } from "lucide-react";
 import HRPage from "../../../components/HRPage";
-import { Button, Modal } from "../../../components/billing-ui";
+import { Button, Modal, DataTable } from "../../../components/billing-ui";
 import { dunningApi } from "../../../service/billingService";
 import { formatDisplayCurrency } from "../../../utils/billing-helpers";
 import { ErrorState, useConfirmationDialog } from "../../../components/billing-shared";
@@ -210,59 +210,45 @@ export default function DunningLevelsPage() {
       )}
 
       <div className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-100">
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Level</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Name</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Days Overdue</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Action</th>
-                <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Fee</th>
-                <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {loading ? (
-                <tr><td colSpan={6} className="px-4 py-16 text-center"><Loader2 className="h-6 w-6 animate-spin text-brand-600 mx-auto" /></td></tr>
-              ) : loadFailed ? (
-                <tr><td colSpan={6} className="px-4 py-8"><ErrorState title="Couldn't load dunning levels" message={error} onRetry={fetchLevels} /></td></tr>
-              ) : levels.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-4 py-16 text-center">
-                    <div className="flex flex-col items-center">
-                      <Layers size={40} className="text-slate-300 mb-3" />
-                      <p className="text-slate-500 font-medium">No dunning levels configured</p>
-                      <p className="text-slate-500 text-sm mt-1">Add levels to enable automated reminder escalation.</p>
-                    </div>
-                  </td>
-                </tr>
-              ) : levels.map((l) => (
-                <tr key={l.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-4 py-4 font-medium text-slate-800">Level {l.level_number}</td>
-                  <td className="px-4 py-4 text-slate-600">{l.name}</td>
-                  <td className="px-4 py-4 text-slate-600">{l.min_days_overdue}{l.max_days_overdue != null ? `–${l.max_days_overdue}` : "+"} days</td>
-                  <td className="px-4 py-4"><span className="capitalize text-slate-600">{(l.action_type || "").replace(/_/g, " ")}</span></td>
-                  <td className="px-4 py-4 text-right text-slate-600">
-                    {Number(l.fee_amount) > 0 && formatDisplayCurrency(l.fee_amount, "—")}
-                    {Number(l.fee_percentage) > 0 && ` ${l.fee_percentage}%`}
-                    {!Number(l.fee_amount) && !Number(l.fee_percentage) && "—"}
-                  </td>
-                  <td className="px-4 py-4 text-right whitespace-nowrap">
-                    <button onClick={() => openEdit(l)} aria-label={`Edit level ${l.level_number}`} title="Edit"
-                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-brand-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30">
-                      <Pencil size={15} />
-                    </button>
-                    <button onClick={() => handleDelete(l)} disabled={deleteLoading === l.id} aria-label={`Delete level ${l.level_number}`} title="Delete"
-                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-red-600 transition-colors disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30">
-                      {deleteLoading === l.id ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        {loading ? (
+          <div className="px-4 py-16 text-center"><Loader2 className="h-6 w-6 animate-spin text-brand-600 mx-auto" /></div>
+        ) : loadFailed ? (
+          <div className="px-4 py-8"><ErrorState title="Couldn't load dunning levels" message={error} onRetry={fetchLevels} /></div>
+        ) : (
+          <DataTable
+            stickyHeader={false}
+            data={levels}
+            rowKey={(l) => l.id}
+            emptyIcon={Layers}
+            emptyTitle="No dunning levels configured"
+            emptyMessage="Add levels to enable automated reminder escalation."
+            columns={[
+              { key: "level", label: "Level", render: (l) => <span className="font-medium text-slate-800">Level {l.level_number}</span> },
+              { key: "name", label: "Name", render: (l) => <span className="text-slate-600">{l.name}</span> },
+              { key: "days", label: "Days Overdue", render: (l) => <span className="text-slate-600">{l.min_days_overdue}{l.max_days_overdue != null ? `–${l.max_days_overdue}` : "+"} days</span> },
+              { key: "action_type", label: "Action", render: (l) => <span className="capitalize text-slate-600">{(l.action_type || "").replace(/_/g, " ")}</span> },
+              { key: "fee", label: "Fee", align: "right", render: (l) => (
+                <span className="text-slate-600">
+                  {Number(l.fee_amount) > 0 && formatDisplayCurrency(l.fee_amount, "—")}
+                  {Number(l.fee_percentage) > 0 && ` ${l.fee_percentage}%`}
+                  {!Number(l.fee_amount) && !Number(l.fee_percentage) && "—"}
+                </span>
+              ) },
+              { key: "actions", label: "Actions", align: "right", mobileRole: "actions", render: (l) => (
+                <span className="whitespace-nowrap">
+                  <button onClick={() => openEdit(l)} aria-label={`Edit level ${l.level_number}`} title="Edit"
+                    className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-brand-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 max-md:inline-flex max-md:h-11 max-md:w-11 max-md:items-center max-md:justify-center">
+                    <Pencil size={15} />
+                  </button>
+                  <button onClick={() => handleDelete(l)} disabled={deleteLoading === l.id} aria-label={`Delete level ${l.level_number}`} title="Delete"
+                    className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-red-600 transition-colors disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 max-md:inline-flex max-md:h-11 max-md:w-11 max-md:items-center max-md:justify-center">
+                    {deleteLoading === l.id ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
+                  </button>
+                </span>
+              ) },
+            ]}
+          />
+        )}
       </div>
 
       {showModal && (

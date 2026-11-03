@@ -7,6 +7,8 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { platformSelfServiceApi } from "../../service/platformSelfServiceApi";
+import { DataTable } from "../../components/billing-ui";
+import { formatDisplayNumber } from "../../utils/billing-helpers";
 
 const STATUS_BADGE = {
   active: "bg-emerald-50 text-emerald-700 border-emerald-200",
@@ -55,8 +57,7 @@ function rowFlag(row) {
 }
 
 function formatNumber(value) {
-  if (value == null) return "—";
-  return Number(value).toLocaleString();
+  return formatDisplayNumber(value);
 }
 
 // Plane 1 org-facing usage diagnostics (GET /billing/workspace/usage): real
@@ -152,49 +153,35 @@ export default function WorkspaceUsagePage() {
           </div>
         ) : (
           <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-slate-50/70 border-b border-slate-100 text-[11px] uppercase tracking-wider font-bold text-slate-500">
-                    <th className="py-3 px-5">Entitlement</th>
-                    <th className="py-3 px-5">Window</th>
-                    <th className="py-3 px-5 text-right">Count</th>
-                    <th className="py-3 px-5 text-right">Limit</th>
-                    <th className="py-3 px-5 text-right">Used</th>
-                    <th className="py-3 px-5">Flag</th>
-                    <th className="py-3 px-5">Enforcement</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 text-sm">
-                  {counters.map((row) => {
-                    const flag = rowFlag(row);
-                    const pct = row.limit != null ? Math.round((row.count / row.limit) * 100) : null;
-                    return (
-                      <tr key={row.id} className="hover:bg-slate-50/50 transition">
-                        <td className="py-3.5 px-5">
-                          <span className="font-mono text-xs font-semibold text-[#1A56DB]">{row.entitlement_key}</span>
-                        </td>
-                        <td className="py-3.5 px-5 text-xs text-slate-500">{row.window_key}</td>
-                        <td className="py-3.5 px-5 text-right font-bold text-slate-900">{formatNumber(row.count)}</td>
-                        <td className="py-3.5 px-5 text-right">
-                          <span className={row.limit == null ? "text-slate-400" : "font-semibold text-slate-800"}>
-                            {row.limit == null ? "Unknown" : formatNumber(row.limit)}
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-5 text-right text-xs font-semibold text-slate-600">{pct == null ? "—" : `${pct}%`}</td>
-                        <td className="py-3.5 px-5">
-                          <FlagPill tone={flag.tone}>
-                            {flag.tone === "red" ? <AlertTriangle className="w-3 h-3" /> : flag.tone === "ok" ? <ShieldCheck className="w-3 h-3" /> : null}
-                            {flag.label}
-                          </FlagPill>
-                        </td>
-                        <td className="py-3.5 px-5 text-xs text-slate-500 capitalize">{(row.enforcement_type || "—").replace(/_/g, " ")}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <DataTable
+              stickyHeader={false}
+              data={counters}
+              rowKey={(row) => row.id}
+              columns={[
+                { key: "entitlement_key", label: "Entitlement", render: (row) => <span className="font-mono text-xs font-semibold text-[#1A56DB]">{row.entitlement_key}</span> },
+                { key: "window_key", label: "Window", render: (row) => <span className="text-xs text-slate-500">{row.window_key}</span> },
+                { key: "count", label: "Count", align: "right", render: (row) => <span className="font-bold text-slate-900">{formatNumber(row.count)}</span> },
+                { key: "limit", label: "Limit", align: "right", render: (row) => (
+                  <span className={row.limit == null ? "text-slate-400" : "font-semibold text-slate-800"}>
+                    {row.limit == null ? "Unknown" : formatNumber(row.limit)}
+                  </span>
+                ) },
+                { key: "used", label: "Used", align: "right", render: (row) => {
+                  const pct = row.limit != null ? Math.round((row.count / row.limit) * 100) : null;
+                  return <span className="text-xs font-semibold text-slate-600">{pct == null ? "—" : `${pct}%`}</span>;
+                } },
+                { key: "flag", label: "Flag", mobileRole: "badge", render: (row) => {
+                  const flag = rowFlag(row);
+                  return (
+                    <FlagPill tone={flag.tone}>
+                      {flag.tone === "red" ? <AlertTriangle className="w-3 h-3" /> : flag.tone === "ok" ? <ShieldCheck className="w-3 h-3" /> : null}
+                      {flag.label}
+                    </FlagPill>
+                  );
+                } },
+                { key: "enforcement_type", label: "Enforcement", render: (row) => <span className="text-xs text-slate-500 capitalize">{(row.enforcement_type || "—").replace(/_/g, " ")}</span> },
+              ]}
+            />
           </div>
         )}
       </div>

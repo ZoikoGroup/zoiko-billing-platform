@@ -178,7 +178,7 @@ function Section({ title, subtitle, icon: Icon, action, delay = 0, children }) {
             )}
             {title}
           </h2>
-          {subtitle && <p className="mt-0.5 text-xs text-slate-500">{subtitle}</p>}
+          {subtitle && <p className="mt-0.5 text-xs text-slate-600">{subtitle}</p>}
         </div>
         {action}
       </div>
@@ -297,15 +297,16 @@ function StatusDonut({ counts, onSelect }) {
             <button
               type="button"
               onClick={() => onSelect(d.key)}
-              className={`group flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 text-left text-sm transition hover:bg-slate-50 ${d.value === 0 ? "opacity-50" : ""}`}
+              className={`group flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 text-left text-sm transition hover:bg-slate-50`}
             >
-              <span className="flex items-center gap-2 text-slate-700">
+              {/* Zero rows read lighter via text colour (opacity dropped them below 4.5:1 contrast). */}
+              <span className={`flex items-center gap-2 ${d.value === 0 ? "text-slate-500" : "text-slate-700"}`}>
                 <span className="h-2.5 w-2.5 rounded-full" style={{ background: d.color }} aria-hidden="true" />
                 {d.name}
               </span>
               <span className="flex items-center gap-2">
                 <span className="font-bold text-slate-900">{d.value}</span>
-                <span className="w-9 text-right text-[11px] text-slate-400">{total ? Math.round((d.value / total) * 100) : 0}%</span>
+                <span className="w-9 text-right text-[11px] text-slate-500">{total ? Math.round((d.value / total) * 100) : 0}%</span>
                 <ChevronRight size={13} className="text-slate-300 group-hover:text-slate-500" />
               </span>
             </button>

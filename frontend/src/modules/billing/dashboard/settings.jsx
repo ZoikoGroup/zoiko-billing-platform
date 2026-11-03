@@ -16,6 +16,9 @@ import { formatNumber, getEffectiveLocale } from "../../../utils/locale";
 import { formatLastUpdated, DashboardHeader, ErrorState } from "../../../components/billing-shared";
 import { TAX_ROUNDING_NOT_APPLIED_NOTICE } from "../tax/tax-helpers";
 import useLatestRequest from "../utils/useLatestRequest";
+import { SettingsSaveBar, OverflowMenu, DataTable, useUnsavedChangesGuard } from "../../../components/billing-ui";
+import useMediaQuery, { BELOW_SM } from "../../../hooks/useMediaQuery";
+import { formatDisplayDate, formatDisplayDateTime } from "../../../utils/billing-helpers";
 
 const TABS = [
   { id: "general", label: "General", icon: Building2 },
@@ -455,7 +458,7 @@ function Field({ label, description, children, className = "", error, tooltip, i
         {tooltip && (
           <span className="group relative inline-flex" role="tooltip">
             <span className="text-slate-500 cursor-help text-xs border border-slate-300 rounded-full w-4 h-4 flex items-center justify-center" aria-hidden="true">?</span>
-            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-xs text-white bg-slate-800 rounded opacity-0 group-hover:opacity-100 whitespace-nowrap z-10 pointer-events-none">{tooltip}</span>
+            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-xs text-white bg-slate-800 rounded opacity-0 group-hover:opacity-100 w-max max-w-56 whitespace-normal sm:max-w-none sm:whitespace-nowrap z-10 pointer-events-none">{tooltip}</span>
           </span>
         )}
       </div>
@@ -740,6 +743,9 @@ export default function BillingSettingsPage() {
   const confirmResetTimerRef = useRef(null);
 
   const hasChanges = original ? JSON.stringify(form) !== JSON.stringify(original) : false;
+  // Reload is covered by the beforeunload effect below; this adds in-app links.
+  useUnsavedChangesGuard(hasChanges, "You have unsaved billing settings. Leave this page and discard them?");
+  const isPhone = useMediaQuery(BELOW_SM);
 
 
   const [lastSavedTimestamp, setLastSavedTimestamp] = useState(null);
@@ -1343,7 +1349,7 @@ export default function BillingSettingsPage() {
 
   if (loading) {
     return (
-      <div className="bg-transparent text-slate-800 p-6 font-sans min-h-screen space-y-8" aria-label="Loading billing configuration">
+      <div className="bg-transparent text-slate-800 sm:p-6 font-sans min-h-screen space-y-8" aria-label="Loading billing configuration">
         <div className="rounded-3xl bg-white border border-slate-200 p-6 md:p-8 shadow-[0_4px_20px_rgba(0,0,0,0.03)] animate-pulse">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-2xl bg-slate-200 shrink-0" />
@@ -1380,7 +1386,7 @@ export default function BillingSettingsPage() {
 
   if (loadFailed) {
     return (
-      <div className="bg-transparent text-slate-800 p-6 font-sans min-h-screen space-y-8">
+      <div className="bg-transparent text-slate-800 sm:p-6 font-sans min-h-screen space-y-8">
         <ErrorState title="Couldn't load billing configuration" message={error} onRetry={fetchConfig} />
       </div>
     );
@@ -1388,7 +1394,7 @@ export default function BillingSettingsPage() {
 
   return (
     <HighlightContext.Provider value={highlightedField}>
-    <div className="bg-transparent text-slate-800 p-6 font-sans min-h-screen space-y-8">
+    <div className="bg-transparent text-slate-800 sm:p-6 font-sans min-h-screen space-y-8">
       <style>{`
         @keyframes fieldHighlightPulse {
           0% { box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.5); border-color: #eab308; }
@@ -1429,25 +1435,6 @@ export default function BillingSettingsPage() {
                 <button onClick={() => { setForm(JSON.parse(JSON.stringify(original))); setFieldStatus({}); setShowUnsavedWarning(false); }} className="ml-2 text-amber-600 underline text-xs hover:text-amber-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 rounded">Undo all</button>
               </div>
             )}
-            <button onClick={handleValidate} disabled={validating}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-medium transition-colors disabled:opacity-50 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand)]/50">
-              <Check size={14} />
-              Validate
-            </button>
-            <button onClick={handleReset} disabled={!hasChanges}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl border text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand)]/50 ${
-                confirmReset
-                  ? "border-red-300 bg-red-50 text-red-700"
-                  : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
-              }`}>
-              <RotateCcw size={14} />
-              {confirmReset ? "Confirm Reset" : "Reset"}
-            </button>
-            <button onClick={handleSave} disabled={saving || !hasChanges}
-              className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-[var(--color-brand)] to-[var(--color-brand-700)] text-white rounded-xl text-sm font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand)]/50 focus-visible:ring-offset-1">
-              {saving ? <RefreshCw size={16} className="animate-spin" /> : <Save size={16} />}
-              {saving ? "Saving..." : "Save Changes"}
-            </button>
           </div>
         }
       />
@@ -1577,7 +1564,7 @@ export default function BillingSettingsPage() {
               <button key={tab.id} onClick={() => setActiveTab(tab.id)} role="tab" aria-selected={isActive} aria-controls={`panel-${tab.id}`}
                 tabIndex={isActive ? 0 : -1}
                 onKeyDown={(e) => { if (e.key === "ArrowRight") { const idx = TABS.findIndex(t => t.id === tab.id); const next = TABS[(idx + 1) % TABS.length]; setActiveTab(next.id); } if (e.key === "ArrowLeft") { const idx = TABS.findIndex(t => t.id === tab.id); const prev = TABS[(idx - 1 + TABS.length) % TABS.length]; setActiveTab(prev.id); } }}
-                className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-xl transition-all whitespace-nowrap ${
+                className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-xl transition-all whitespace-nowrap max-sm:min-h-11 ${
                   isActive
                     ? `${TAB_ACTIVE_CLASSES[tab.id]} bg-slate-50 shadow-sm`
                     : "border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50/50"
@@ -1727,8 +1714,8 @@ export default function BillingSettingsPage() {
           <Card title="Regional Settings" icon={Globe} color="brand">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
               <Field label="Default Currency" tooltip="Primary currency for billing">
-                <div className="flex items-center gap-2">
-                  <div className="flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="min-w-48 flex-1">
                     <SearchableSelect value={form.default_currency}
                       onChange={(v) => update("default_currency", v)}
                       options={CURRENCY_OPTIONS_WITH_INFO}
@@ -1768,8 +1755,8 @@ export default function BillingSettingsPage() {
                   ]} />
               </Field>
               <Field label="Date Format">
-                <div className="flex items-center gap-2">
-                  <div className="flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="min-w-48 flex-1">
                     <Select value={form.date_format} onChange={(e) => update("date_format", e.target.value)}
                       ariaLabel="Date Format"
                       options={["DD-MM-YYYY","MM-DD-YYYY","YYYY-MM-DD","DD-MM-YY","MM-DD-YY"]} />
@@ -1780,24 +1767,24 @@ export default function BillingSettingsPage() {
                 </div>
               </Field>
               <Field label="Fiscal Year Start" tooltip="Month and day when fiscal year starts (MM-DD)" error={fieldErrors.fiscal_year_start}>
-                <div className="flex items-center gap-2">
-                  <div className="flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="min-w-48 flex-1">
                     <Input ariaLabel="Fiscal Year Start" value={form.fiscal_year_start} onChange={(e) => update("fiscal_year_start", e.target.value)} placeholder="MM-DD" />
                   </div>
                   <div className="shrink-0"><StatusBadge status={fieldStatus.fiscal_year_start} /></div>
                 </div>
               </Field>
               <Field label="Fiscal Year End" tooltip="Month and day when fiscal year ends (MM-DD)" error={fieldErrors.fiscal_year_end}>
-                <div className="flex items-center gap-2">
-                  <div className="flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="min-w-48 flex-1">
                     <Input ariaLabel="Fiscal Year End" value={form.fiscal_year_end} onChange={(e) => update("fiscal_year_end", e.target.value)} placeholder="MM-DD" />
                   </div>
                   <div className="shrink-0"><StatusBadge status={fieldStatus.fiscal_year_end} /></div>
                 </div>
               </Field>
               <Field label="Timezone">
-                <div className="flex items-center gap-2">
-                  <div className="flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="min-w-48 flex-1">
                     <Select value={form.timezone} onChange={(e) => update("timezone", e.target.value)}
                       ariaLabel="Timezone"
                       options={["UTC","America/New_York","America/Chicago","America/Denver","America/Los_Angeles","Europe/London","Europe/Berlin","Europe/Paris","Asia/Tokyo","Asia/Shanghai","Asia/Dubai","Asia/Kolkata","Australia/Sydney","Africa/Johannesburg"]} />
@@ -1902,8 +1889,8 @@ export default function BillingSettingsPage() {
           <Card title="Numbering" icon={FileText} color="blue">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
               <Field id="invoice_prefix" label="Invoice Prefix" tooltip="Prefix for invoice numbers" error={fieldErrors.invoice_prefix}>
-                <div className="flex items-center gap-2">
-                  <div className="flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="min-w-48 flex-1">
                     <Input id="invoice_prefix" value={form.invoice_prefix} onChange={(e) => update("invoice_prefix", e.target.value)} ariaLabel="Invoice prefix" />
                   </div>
                   <div className="shrink-0"><StatusBadge status={fieldStatus.invoice_prefix} /></div>
@@ -2161,8 +2148,8 @@ export default function BillingSettingsPage() {
           <Card title="Payment Terms" icon={Wallet} color="emerald">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <Field label="Default Payment Terms">
-                <div className="flex items-center gap-2">
-                  <div className="flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="min-w-48 flex-1">
                     <Select id="default_payment_terms" value={form.default_payment_terms} onChange={(e) => update("default_payment_terms", e.target.value)}
                       options={["due_on_receipt","net_7","net_10","net_15","net_30","net_45","net_60","net_90"]} />
                   </div>
@@ -2213,12 +2200,12 @@ export default function BillingSettingsPage() {
               </button>
               {exchangeRates?.last_refreshed && (
                 <span className="text-xs text-slate-500">
-                  Last updated: {new Date(exchangeRates.last_refreshed).toLocaleString()}
+                  Last updated: {formatDisplayDateTime(exchangeRates.last_refreshed)}
                 </span>
               )}
               {!exchangeRates?.last_refreshed && exchangeRates?.timestamp && (
                 <span className="text-xs text-slate-500">
-                  Last updated: {new Date(exchangeRates.timestamp).toLocaleString()}
+                  Last updated: {formatDisplayDateTime(exchangeRates.timestamp)}
                 </span>
               )}
             </div>
@@ -2285,8 +2272,8 @@ export default function BillingSettingsPage() {
                   options={[{value:"exclusive",label:"Exclusive (added to subtotal)"},{value:"inclusive",label:"Inclusive (included in price)"}]} />
               </Field>
               <Field label="Tax Label" tooltip="Display label for tax (e.g. VAT, GST, Sales Tax)">
-                <div className="flex items-center gap-2">
-                  <div className="flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="min-w-48 flex-1">
                     <Input id="tax_label" value={form.tax_label} onChange={(e) => update("tax_label", e.target.value)} />
                   </div>
                   <div className="shrink-0"><StatusBadge status={fieldStatus.tax_label} flash={transientFields.has('tax_label')} /></div>
@@ -2513,6 +2500,50 @@ export default function BillingSettingsPage() {
           Audit logs capture all configuration changes for compliance.
         </p>
       </div>
+
+      {/* Validate / Reset / Save stay pinned at the bottom while the tabs scroll.
+          Phones: Save plus a "⋯" menu with Validate and Reset (same handlers;
+          Reset still asks for a second tap, shown as "Confirm Reset"). */}
+      <SettingsSaveBar hasChanges={hasChanges} saved={saved}>
+        {isPhone ? (
+          <>
+            <OverflowMenu
+              direction="up"
+              items={[
+                { key: "validate", label: "Validate", icon: Check, disabled: validating, onClick: handleValidate },
+                { key: "reset", label: confirmReset ? "Confirm Reset" : "Reset", icon: RotateCcw, danger: confirmReset, disabled: !hasChanges, onClick: handleReset },
+              ]}
+            />
+            <button onClick={handleSave} disabled={saving || !hasChanges}
+              className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-[var(--color-brand)] to-[var(--color-brand-700)] text-white rounded-xl text-sm font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand)]/50 focus-visible:ring-offset-1">
+              {saving ? <RefreshCw size={16} className="animate-spin" /> : <Save size={16} />}
+              {saving ? "Saving..." : "Save Changes"}
+            </button>
+          </>
+        ) : (
+          <>
+            <button onClick={handleValidate} disabled={validating}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-medium transition-colors disabled:opacity-50 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand)]/50">
+              <Check size={14} />
+              Validate
+            </button>
+            <button onClick={handleReset} disabled={!hasChanges}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl border text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand)]/50 ${
+                confirmReset
+                  ? "border-red-300 bg-red-50 text-red-700"
+                  : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
+              }`}>
+              <RotateCcw size={14} />
+              {confirmReset ? "Confirm Reset" : "Reset"}
+            </button>
+            <button onClick={handleSave} disabled={saving || !hasChanges}
+              className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-[var(--color-brand)] to-[var(--color-brand-700)] text-white rounded-xl text-sm font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand)]/50 focus-visible:ring-offset-1">
+              {saving ? <RefreshCw size={16} className="animate-spin" /> : <Save size={16} />}
+              {saving ? "Saving..." : "Save Changes"}
+            </button>
+          </>
+        )}
+      </SettingsSaveBar>
     </div>
     </HighlightContext.Provider>
   );
@@ -2797,7 +2828,7 @@ function AdministrationPanel() {
                 </div>
               </div>
             )}
-            <p className="text-xs text-slate-500">Checked at: {health.checked_at ? new Date(health.checked_at).toLocaleString() : "—"}</p>
+            <p className="text-xs text-slate-500">Checked at: {health.checked_at ? formatDisplayDateTime(health.checked_at) : "—"}</p>
           </div>
         ) : (
           <div className="flex items-center gap-2 p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-500">
@@ -2901,7 +2932,7 @@ function AdministrationPanel() {
                     <p className="text-sm font-medium text-slate-800 truncate">{tpl.name}</p>
                     <p className="text-xs text-slate-500">
                       {tpl.size_bytes ? `${(tpl.size_bytes / 1024).toFixed(1)} KB` : ""}
-                      {tpl.last_modified ? ` · ${new Date(tpl.last_modified).toLocaleDateString()}` : ""}
+                      {tpl.last_modified ? ` · ${formatDisplayDate(tpl.last_modified)}` : ""}
                     </p>
                   </div>
                   <button onClick={() => handlePreviewTemplate(tpl.name)}
@@ -3002,46 +3033,29 @@ function AdministrationPanel() {
         ) : numberingDiag?.error ? (
           <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700"><AlertCircle size={14} /> {numberingDiag.error}</div>
         ) : numberingDiag && numberingDiag.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="bg-slate-50">
-                  <th className="text-left px-3 py-2 font-semibold text-slate-500">Entity</th>
-                  <th className="text-left px-3 py-2 font-semibold text-slate-500">Prefix</th>
-                  <th className="text-left px-3 py-2 font-semibold text-slate-500">Format</th>
-                  <th className="text-left px-3 py-2 font-semibold text-slate-500">Reset</th>
-                  <th className="text-center px-3 py-2 font-semibold text-slate-500">Valid</th>
-                  <th className="text-left px-3 py-2 font-semibold text-slate-500">Next #</th>
-                  <th className="text-left px-3 py-2 font-semibold text-slate-500">Warnings</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {numberingDiag.map((item, i) => (
-                  <tr key={item.entity || i} className="hover:bg-slate-50">
-                    <td className="px-3 py-2 font-medium text-slate-800 capitalize">{item.entity}</td>
-                    <td className="px-3 py-2 text-slate-600 font-mono">{item.prefix}</td>
-                    <td className="px-3 py-2 text-slate-600 font-mono text-[11px]">{item.format}</td>
-                    <td className="px-3 py-2 text-slate-600">{item.sequence_reset}</td>
-                    <td className="px-3 py-2 text-center">
-                      {item.valid ? (
-                        <CheckCircle size={14} className="text-green-500 inline" />
-                      ) : (
-                        <AlertCircle size={14} className="text-red-500 inline" />
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-slate-600 font-mono">{item.next_number ?? "—"}</td>
-                    <td className="px-3 py-2">
-                      {item.warnings?.length > 0 ? (
-                        <span className="text-amber-600 text-[11px]">{item.warnings.join("; ")}</span>
-                      ) : item.suggestion ? (
-                        <span className="text-blue-600 text-[11px]">{item.suggestion}</span>
-                      ) : "—"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            dense
+            stickyHeader={false}
+            data={numberingDiag}
+            rowKey={(item, i) => item.entity || i}
+            columns={[
+              { key: "entity", label: "Entity", render: (item) => <span className="font-medium text-slate-800 capitalize">{item.entity}</span> },
+              { key: "prefix", label: "Prefix", render: (item) => <span className="text-slate-600 font-mono">{item.prefix}</span> },
+              { key: "format", label: "Format", render: (item) => <span className="text-slate-600 font-mono text-[11px]">{item.format}</span> },
+              { key: "sequence_reset", label: "Reset", render: (item) => <span className="text-slate-600">{item.sequence_reset}</span> },
+              { key: "valid", label: "Valid", mobileRole: "badge", render: (item) => (item.valid ? (
+                <CheckCircle size={14} className="text-green-500 inline" />
+              ) : (
+                <AlertCircle size={14} className="text-red-500 inline" />
+              )) },
+              { key: "next_number", label: "Next #", render: (item) => <span className="text-slate-600 font-mono">{item.next_number ?? "—"}</span> },
+              { key: "warnings", label: "Warnings", render: (item) => (item.warnings?.length > 0 ? (
+                <span className="text-amber-600 text-[11px]">{item.warnings.join("; ")}</span>
+              ) : item.suggestion ? (
+                <span className="text-blue-600 text-[11px]">{item.suggestion}</span>
+              ) : "—") },
+            ]}
+          />
         ) : (
           <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-500 text-center">Click "Load" to check numbering configuration</div>
         )}
@@ -3062,40 +3076,25 @@ function AdministrationPanel() {
         ) : taxDiag?.error ? (
           <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700"><AlertCircle size={14} /> {taxDiag.error}</div>
         ) : taxDiag && taxDiag.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="bg-slate-50">
-                  <th className="text-left px-3 py-2 font-semibold text-slate-500">Field</th>
-                  <th className="text-left px-3 py-2 font-semibold text-slate-500">Value</th>
-                  <th className="text-center px-3 py-2 font-semibold text-slate-500">Valid</th>
-                  <th className="text-left px-3 py-2 font-semibold text-slate-500">Suggestion</th>
-                  <th className="text-left px-3 py-2 font-semibold text-slate-500">Warnings</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {taxDiag.map((item, i) => (
-                  <tr key={item.field || i} className="hover:bg-slate-50">
-                    <td className="px-3 py-2 font-medium text-slate-800">{item.field}</td>
-                    <td className="px-3 py-2 text-slate-600 font-mono max-w-[120px] truncate" title={String(item.value ?? "")}>{String(item.value ?? "—")}</td>
-                    <td className="px-3 py-2 text-center">
-                      {item.valid ? (
-                        <CheckCircle size={14} className="text-green-500 inline" />
-                      ) : (
-                        <AlertCircle size={14} className="text-red-500 inline" />
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-slate-600 text-[11px] max-w-[160px]">{item.suggestion || "—"}</td>
-                    <td className="px-3 py-2">
-                      {item.warnings?.length > 0 ? (
-                        <span className="text-amber-600 text-[11px]">{item.warnings.join("; ")}</span>
-                      ) : "—"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            dense
+            stickyHeader={false}
+            data={taxDiag}
+            rowKey={(item, i) => item.field || i}
+            columns={[
+              { key: "field", label: "Field", render: (item) => <span className="font-medium text-slate-800">{item.field}</span> },
+              { key: "value", label: "Value", render: (item) => <span className="block text-slate-600 font-mono max-w-[120px] truncate" title={String(item.value ?? "")}>{String(item.value ?? "—")}</span> },
+              { key: "valid", label: "Valid", mobileRole: "badge", render: (item) => (item.valid ? (
+                <CheckCircle size={14} className="text-green-500 inline" />
+              ) : (
+                <AlertCircle size={14} className="text-red-500 inline" />
+              )) },
+              { key: "suggestion", label: "Suggestion", render: (item) => <span className="block text-slate-600 text-[11px] max-w-[160px]">{item.suggestion || "—"}</span> },
+              { key: "warnings", label: "Warnings", render: (item) => (item.warnings?.length > 0 ? (
+                <span className="text-amber-600 text-[11px]">{item.warnings.join("; ")}</span>
+              ) : "—") },
+            ]}
+          />
         ) : (
           <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-500 text-center">Click "Load" to check tax configuration</div>
         )}
@@ -3260,7 +3259,7 @@ function AdministrationPanel() {
               </div>
             )}
             {enhancedValidation.validated_at && (
-              <p className="text-xs text-slate-500">Validated at: {new Date(enhancedValidation.validated_at).toLocaleString()}</p>
+              <p className="text-xs text-slate-500">Validated at: {formatDisplayDateTime(enhancedValidation.validated_at)}</p>
             )}
           </div>
         ) : (

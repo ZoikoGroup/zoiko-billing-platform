@@ -8,7 +8,7 @@ import {
 } from "recharts";
 import { useNavigate } from "react-router-dom";
 import { pricingApi, productApi, subscriptionApi, currencyPricingApi, discountApi } from "../../../service/billingService";
-import { extractArray, formatDisplayCurrency } from "../../../utils/billing-helpers";
+import { extractArray, formatDisplayCurrency, formatDisplayDate } from "../../../utils/billing-helpers";
 import {
   DashboardHeader, DashboardStatCard, DashboardStatCardSkeleton, DashboardChartCard,
   DashboardChartCardSkeleton, DashboardChartErrorBoundary, DashboardEmptyPanel,
@@ -485,7 +485,7 @@ export default function PricingDashboardPage() {
                   <div key={p.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
                     <div>
                       <p className="text-sm font-medium text-slate-800">{p.name}</p>
-                      <p className="text-xs text-slate-500">{p.updated_at ? new Date(p.updated_at).toLocaleDateString() : "—"}</p>
+                      <p className="text-xs text-slate-500">{p.updated_at ? formatDisplayDate(p.updated_at) : "—"}</p>
                     </div>
                     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                       p.is_active ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"

@@ -6,6 +6,7 @@ import { getOrganizationDetails } from "../../service/orgAdminService";
 import WorkspaceHeader from "./WorkspaceHeader";
 import { normalizeOrgName, formatFiscalYearRange } from "./workspace-format";
 import { Building2, Mail, MapPin, Landmark, CalendarDays, Coins, FileText, ShieldCheck, Loader2, Users, ArrowRight, ScrollText } from "lucide-react";
+import { formatDisplayDate } from "../../utils/billing-helpers";
 
 function Field({ label, value }) {
   return (
@@ -152,7 +153,7 @@ export default function WorkspaceOrganizationPage() {
           <Field label="Organization Code" value={orgCode} />
           <Field label="Status" value={status} />
           <Field label="Industry" value={org?.industry || config?.industry} />
-          <Field label="Registration Date" value={org?.created_at ? new Date(org.created_at).toLocaleDateString() : "—"} />
+          <Field label="Registration Date" value={org?.created_at ? formatDisplayDate(org.created_at) : "—"} />
         </Card>
 
         <Card title="Contact & Address" icon={Mail}>

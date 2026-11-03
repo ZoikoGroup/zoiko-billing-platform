@@ -16,6 +16,7 @@ import { useCommandCenter } from "../../context/CommandCenterContext";
 import usePolling from "../../hooks/usePolling";
 import { getApiTelemetry, getEmailDeliveryOverview, getTriageSummary } from "../../service/commandCenterService";
 import LaunchReadinessPage from "./LaunchReadinessPage";
+import { formatPercent } from "../../utils/billing-helpers";
 
 /**
  * ZB-SA-CMD-003 §22 — the Command Center hub: one page that answers "what
@@ -75,7 +76,7 @@ const LENSES = [
 ];
 
 function fmtPct(value) {
-  return value == null ? "—" : `${(value * 100).toFixed(2)}%`;
+  return value == null ? "—" : formatPercent(value * 100, 2);
 }
 
 function greeting() {
@@ -100,7 +101,7 @@ function Section({ title, subtitle, icon: Icon, delay = 0, children }) {
             )}
             {title}
           </h2>
-          {subtitle && <p className="mt-0.5 text-xs text-slate-500">{subtitle}</p>}
+          {subtitle && <p className="mt-0.5 text-xs text-slate-600">{subtitle}</p>}
         </div>
       </div>
       {children}

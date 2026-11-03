@@ -9,12 +9,13 @@ import {
 import HRPage from "../../../components/HRPage";
 import { subscriptionApi } from "../../../service/billingService";
 import { formatCurrency } from "../../../utils/locale";
-import { extractArray } from "../../../utils/billing-helpers";
+import { extractArray, formatDisplayDate } from "../../../utils/billing-helpers";
 import { Spinner, ErrorState, EmptyState, DateRangeFilter, useDateRange, ExportMenu } from "../../../components/billing-shared";
 import { filterByDateRange, downloadExcel, downloadJSON, downloadCSV } from "../../../utils/export-helpers";
 import { useTerminology } from "../utils/TerminologyContext";
 import { sumByCurrency } from "../../../utils/currency-conversion";
 import { useCurrency } from "../utils/CurrencyContext";
+import { DataTable } from "../../../components/billing-ui";
 
 const TABS = [
   { key: "overview", label: "Overview", icon: FileText },
@@ -304,45 +305,27 @@ export default function SubscriptionReportsPage() {
                   <button onClick={() => downloadJSON(fSubscriptions, "all-subscriptions.json")}
                     className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200"><Download className="h-3.5 w-3.5" /> Export</button>
                 </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-100">
-                        <th scope="col" className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Subscription</th>
-                        <th scope="col" className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">{singular}</th>
-                        <th scope="col" className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Plan</th>
-                        <th scope="col" className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Status</th>
-                        <th scope="col" className="text-right py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Amount</th>
-                        <th scope="col" className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Start Date</th>
-                        <th scope="col" className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Next Billing</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {fSubscriptions.slice(0, 20).map((s) => (
-                        <tr key={s.id} className="border-b border-slate-50 hover:bg-slate-50">
-                          <td className="py-3 px-3 font-medium text-slate-900">{s.subscription_number || `#${s.id}`}</td>
-                          <td className="py-3 px-3 text-slate-600">{s.customer_name || s.customer?.name || (s.customer_id ? `${singular} #${s.customer_id}` : `Unassigned ${singular}`)}</td>
-                          <td className="py-3 px-3 text-slate-600">{s.plan?.plan_name || s.plan_name || (s.plan_id ? `Plan #${s.plan_id}` : "Unassigned Plan")}</td>
-                          <td className="py-3 px-3">
-                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                <DataTable
+                  stickyHeader={false}
+                  data={fSubscriptions.slice(0, 20)}
+                  rowKey={(s) => s.id}
+                  columns={[
+                    { key: "subscription", label: "Subscription", render: (s) => <span className="font-medium text-slate-900">{s.subscription_number || `#${s.id}`}</span> },
+                    { key: "singular", label: singular, render: (s) => <span className="text-slate-600">{s.customer_name || s.customer?.name || (s.customer_id ? `${singular} #${s.customer_id}` : `Unassigned ${singular}`)}</span> },
+                    { key: "plan", label: "Plan", render: (s) => <span className="text-slate-600">{s.plan?.plan_name || s.plan_name || (s.plan_id ? `Plan #${s.plan_id}` : "Unassigned Plan")}</span> },
+                    { key: "status", label: "Status", render: (s) => <><span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
                               s.status === "active" ? "bg-emerald-100 text-emerald-700" :
                               s.status === "paused" ? "bg-amber-100 text-amber-700" :
                               s.status === "past_due" ? "bg-red-100 text-red-700" :
                               s.status === "cancelled" || s.status === "expired" ? "bg-slate-100 text-slate-600" :
                               "bg-slate-100 text-slate-500"
-                            }`}>{s.status}</span>
-                          </td>
-                          <td className="py-3 px-3 text-right font-medium text-slate-900">
-                            {formatCurrency(s.unit_price, orgCurrency)}
-                            {s.quantity > 1 && <span className="text-xs text-slate-500 ml-1">x{s.quantity}</span>}
-                          </td>
-                          <td className="py-3 px-3 text-slate-500 whitespace-nowrap">{s.start_date ? new Date(s.start_date).toLocaleDateString() : "—"}</td>
-                          <td className="py-3 px-3 text-slate-500 whitespace-nowrap">{s.next_billing_at ? new Date(s.next_billing_at).toLocaleDateString() : "—"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                            }`}>{s.status}</span></> },
+                    { key: "amount", label: "Amount", align: "right", render: (s) => <span className="font-medium text-slate-900">{formatCurrency(s.unit_price, orgCurrency)}
+                            {s.quantity > 1 && <span className="text-xs text-slate-500 ml-1">x{s.quantity}</span>}</span> },
+                    { key: "start_date", label: "Start Date", render: (s) => <span className="text-slate-500 whitespace-nowrap">{s.start_date ? formatDisplayDate(s.start_date) : "—"}</span> },
+                    { key: "next_billing", label: "Next Billing", render: (s) => <span className="text-slate-500 whitespace-nowrap">{s.next_billing_at ? formatDisplayDate(s.next_billing_at) : "—"}</span> },
+                  ]}
+                />
               </div>
             </>
           )}

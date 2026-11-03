@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
-import { DollarSign, Search, Filter, X, RefreshCw, Plus, AlertCircle, CheckCircle, Clock, Layers, Trash2, Pencil, ChevronDown, ArrowUpDown, LayoutGrid, List, Sparkles, Check, BadgeCheck, Gift, Zap } from "lucide-react";
+import { DollarSign, Search, Filter, X, RefreshCw, Plus, AlertCircle, CheckCircle, Clock, Layers, Trash2, Pencil, ChevronDown, LayoutGrid, List, Sparkles, Check, BadgeCheck, Gift, Zap } from "lucide-react";
 import HRPage from "../../../components/HRPage";
-import { Button, Modal } from "../../../components/billing-ui";
+import { DataTable, Button, Modal } from "../../../components/billing-ui";
 import { pricingApi, productApi } from "../../../service/billingService";
 import { formatDisplayDate, extractArray } from "../../../utils/billing-helpers";
 import { useCurrency } from "../utils/CurrencyContext";
 import useLatestRequest from "../utils/useLatestRequest";
-import { Spinner, ErrorState, useConfirmationDialog, Pagination, ProductSelector } from "../../../components/billing-shared";
+import { Spinner, ErrorState, useConfirmationDialog, Pagination, ProductSelector, StatusBadge as SharedStatusBadge } from "../../../components/billing-shared";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -28,17 +28,7 @@ const BILLING_INTERVAL_OPTIONS = [
 ];
 
 function StatusBadge({ status }) {
-  const styles = {
-    active: "bg-emerald-100 text-emerald-700",
-    inactive: "bg-slate-100 text-slate-600",
-    archived: "bg-slate-100 text-slate-600",
-  };
-  return (
-    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${styles[status] || "bg-slate-100 text-slate-700"}`}>
-      {status === "active" ? <CheckCircle size={12} /> : <Clock size={12} />}
-      {status || "unknown"}
-    </span>
-  );
+  return <SharedStatusBadge status={status || "unknown"} icon={status === "active" ? CheckCircle : Clock} />;
 }
 
 const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
@@ -281,12 +271,6 @@ export default function ProductPricingPlansPage() {
   const productCurrencyById = new Map(products.map((p) => [String(p.id), p.currency || baseCurrency]));
   const getPlanCurrency = (plan) => productCurrencyById.get(String(plan?.product_id)) || baseCurrency;
 
-  const SortHeader = ({ field, label }) => (
-    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider cursor-pointer select-none hover:text-slate-700" onClick={() => handleSort(field)}>
-      <div className="flex items-center gap-1">{label}<ArrowUpDown size={12} className={`${sortField === field ? "text-brand-600" : "text-slate-300"}`} /></div>
-    </th>
-  );
-
   if (loading) {
     return <HRPage title="Pricing Plans" subtitle="Product pricing plans"><Spinner /></HRPage>;
   }
@@ -322,7 +306,7 @@ export default function ProductPricingPlansPage() {
               <p className="text-slate-500 font-medium">No active pricing plans yet</p>
               <p className="text-slate-500 text-sm mt-1 mb-4">Create an active plan to see it here</p>
               <button onClick={() => { setShowForm(true); setEditPlan(null); setFormData(getDefaultFormData()); setSelectedProductLabel(""); }}
-                className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-medium hover:shadow-lg">
+                className="inline-flex items-center gap-2 px-5 py-2.5 border border-brand-200 bg-white text-brand-700 hover:bg-brand-50 rounded-xl text-sm font-medium">
                 <Plus size={18} /> Add Plan
               </button>
             </div>
@@ -377,8 +361,8 @@ export default function ProductPricingPlansPage() {
       <div className="bg-white border border-slate-200 rounded-3xl shadow-[0_4px_20px_rgba(0,0,0,0.02)] overflow-hidden">
         <div className="p-6 border-b border-slate-100">
           <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-3 flex-1">
-              <div className="relative flex-1 max-w-md">
+            <div className="flex flex-wrap items-center gap-3 flex-1 max-sm:basis-full">
+              <div className="relative flex-1 max-w-md max-sm:basis-full max-sm:max-w-none">
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                 <input type="text" placeholder="Search pricing plans..." value={search} aria-label="Search pricing plans"
                   onChange={(e) => setSearch(e.target.value)}
@@ -386,7 +370,7 @@ export default function ProductPricingPlansPage() {
                 {search && <button onClick={() => setSearch("")} aria-label="Clear search" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600"><X size={16} /></button>}
               </div>
               <button onClick={() => setShowFilters(!showFilters)} aria-label="Toggle filters" aria-pressed={showFilters}
-                className={`p-2.5 rounded-xl border transition-colors ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+                className={`p-2.5 max-sm:p-3 rounded-xl border transition-colors ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
                 <Filter size={18} />
               </button>
               <button onClick={clearFilters} disabled={!hasActiveFilters}
@@ -396,7 +380,7 @@ export default function ProductPricingPlansPage() {
                 Clear filters
               </button>
               <button onClick={() => { setRefreshing(true); fetchPlans(); }} disabled={refreshing} aria-label="Refresh"
-                className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50">
+                className="p-2.5 max-sm:p-3 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50">
                 <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
               </button>
             </div>
@@ -466,80 +450,63 @@ export default function ProductPricingPlansPage() {
           )}
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-100">
-                <SortHeader field="name" label="Plan Name" />
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Type</th>
-                <SortHeader field="price" label="Price" />
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Billing</th>
-                <SortHeader field="status" label="Status" />
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Tiers</th>
-                <SortHeader field="created_at" label="Created" />
-                <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {sortedPlans.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="px-4 py-16 text-center">
-                    <div className="flex flex-col items-center">
-                      <DollarSign size={40} className="text-slate-300 mb-3" />
-                      <p className="text-slate-500 font-medium">{hasActiveFilters ? "No pricing plans match your filters" : "No pricing plans yet"}</p>
-                      <p className="text-slate-500 text-sm mt-1">{hasActiveFilters ? "Try adjusting your search or filters" : "Add your first pricing plan to get started"}</p>
-                      {hasActiveFilters && (
-                        <button onClick={clearFilters} className="mt-3 text-sm font-medium text-brand-600 hover:text-brand-700">Clear filters</button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ) : sortedPlans.map((plan) => (
-                <tr key={plan.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-4 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="h-9 w-9 rounded-full bg-gradient-to-br from-brand to-brand-hover text-white flex items-center justify-center text-sm font-bold">
-                        {(plan.name || "?").charAt(0).toUpperCase()}
-                      </div>
-                      <div>
-                        <p className="font-medium text-slate-800">{plan.name || "Unnamed"}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-4">
-                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700 capitalize">
-                      {plan.plan_type?.replace("_", " ") || "flat"}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4 text-sm font-medium text-slate-800">{formatCurrency(plan.price || 0, getPlanCurrency(plan))}</td>
-                  <td className="px-4 py-4 text-sm text-slate-600 capitalize">{plan.billing_interval?.replace("_", " ") || "—"}</td>
-                  <td className="px-4 py-4"><StatusBadge status={plan.status} /></td>
-                  <td className="px-4 py-4">
-                    {plan.plan_type === "tiered" || plan.plan_type === "volume" || plan.plan_type === "graduated" ? (
-                      <button onClick={() => openTierModal(plan.id)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-brand-600 bg-brand-50 rounded-lg hover:bg-brand-100">
-                        <Layers size={12} /> Tiers
-                      </button>
-                    ) : (
-                      <span className="text-xs text-slate-500">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-4 text-sm text-slate-500">{formatDisplayDate(plan.created_at)}</td>
-                  <td className="px-4 py-4 text-right">
-                    <button onClick={() => { setEditPlan(plan); setFormData({ name: plan.name || "", plan_type: plan.plan_type || "flat", price: plan.price?.toString() || "", billing_interval: plan.billing_interval || "monthly", status: plan.status || "active", trial_days: plan.trial_days?.toString() || "", setup_fee: plan.setup_fee?.toString() || "", product_id: plan.product_id || "", effective_from: plan.effective_from || localToday(), effective_to: plan.effective_to || "" }); setSelectedProductLabel(products.find((p) => String(p.id) === String(plan.product_id))?.name || ""); setShowForm(true); }}
-                      className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-blue-600 transition-colors" title="Edit" aria-label="Edit">
-                      <Pencil size={16} />
-                    </button>
-                    <button onClick={() => handleDeactivatePlan(plan)}
-                      className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-red-600 transition-colors" title="Deactivate" aria-label="Deactivate">
-                      <Trash2 size={16} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          stickyHeader={false}
+          data={sortedPlans}
+          rowKey={(plan) => plan.id}
+          sortKey={sortField}
+          sortDir={sortDir}
+          onSort={handleSort}
+          emptyIcon={DollarSign}
+          emptyTitle={hasActiveFilters ? "No pricing plans match your filters" : "No pricing plans yet"}
+          emptyMessage={hasActiveFilters ? "Try adjusting your search or filters" : "Add your first pricing plan to get started"}
+          emptyAction={hasActiveFilters ? (
+            <button onClick={clearFilters} className="mt-3 text-sm font-medium text-brand-600 hover:text-brand-700">Clear filters</button>
+          ) : null}
+          columns={[
+            { key: "name", label: "Plan Name", sortable: true, render: (plan) => (
+              <div className="flex items-center gap-3">
+                <div className="h-9 w-9 rounded-full bg-gradient-to-br from-brand to-brand-hover text-white flex items-center justify-center text-sm font-bold">
+                  {(plan.name || "?").charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <p className="font-medium text-slate-800">{plan.name || "Unnamed"}</p>
+                </div>
+              </div>
+            ) },
+            { key: "plan_type", label: "Type", render: (plan) => (
+              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700 capitalize">
+                {plan.plan_type?.replace("_", " ") || "flat"}
+              </span>
+            ) },
+            { key: "price", label: "Price", sortable: true, mobileRole: "amount", render: (plan) => <span className="text-sm font-medium text-slate-800">{formatCurrency(plan.price || 0, getPlanCurrency(plan))}</span> },
+            { key: "billing_interval", label: "Billing", render: (plan) => <span className="text-sm text-slate-600 capitalize">{plan.billing_interval?.replace("_", " ") || "—"}</span> },
+            { key: "status", label: "Status", sortable: true, render: (plan) => <StatusBadge status={plan.status} /> },
+            { key: "tiers", label: "Tiers", render: (plan) => (
+              plan.plan_type === "tiered" || plan.plan_type === "volume" || plan.plan_type === "graduated" ? (
+                <button onClick={() => openTierModal(plan.id)}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-brand-600 bg-brand-50 rounded-lg hover:bg-brand-100 max-md:min-h-11">
+                  <Layers size={12} /> Tiers
+                </button>
+              ) : (
+                <span className="text-xs text-slate-500">—</span>
+              )
+            ) },
+            { key: "created_at", label: "Created", sortable: true, render: (plan) => <span className="text-sm text-slate-500">{formatDisplayDate(plan.created_at)}</span> },
+            { key: "actions", label: "Actions", align: "right", mobileRole: "actions", render: (plan) => (
+              <>
+                <button onClick={() => { setEditPlan(plan); setFormData({ name: plan.name || "", plan_type: plan.plan_type || "flat", price: plan.price?.toString() || "", billing_interval: plan.billing_interval || "monthly", status: plan.status || "active", trial_days: plan.trial_days?.toString() || "", setup_fee: plan.setup_fee?.toString() || "", product_id: plan.product_id || "", effective_from: plan.effective_from || localToday(), effective_to: plan.effective_to || "" }); setSelectedProductLabel(products.find((p) => String(p.id) === String(plan.product_id))?.name || ""); setShowForm(true); }}
+                  className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-blue-600 transition-colors max-md:inline-flex max-md:h-11 max-md:w-11 max-md:items-center max-md:justify-center" title="Edit" aria-label="Edit">
+                  <Pencil size={16} />
+                </button>
+                <button onClick={() => handleDeactivatePlan(plan)}
+                  className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-red-600 transition-colors max-md:inline-flex max-md:h-11 max-md:w-11 max-md:items-center max-md:justify-center" title="Deactivate" aria-label="Deactivate">
+                  <Trash2 size={16} />
+                </button>
+              </>
+            ) },
+          ]}
+        />
 
         <Pagination page={safePage} totalPages={totalPages} onPageChange={setCurrentPage}>
           {total} total plan(s)

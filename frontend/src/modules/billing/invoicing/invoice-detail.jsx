@@ -1,30 +1,16 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { ArrowLeft, FileText, RefreshCw, AlertCircle, Loader2, Send, CheckCircle, Ban, Repeat, Printer, Copy, CreditCard, Undo2, Mail, X, Receipt, Trash2, RotateCcw, Bell, ShieldAlert, Edit3 } from "lucide-react";
-import { PageHeader, Button, Modal, StickyFooter, ActivityTimeline, CommunicationHistory } from "../../../components/billing-ui";
+import { PageHeader, Button, Modal, StickyFooter, OverflowMenu, ActivityTimeline, CommunicationHistory } from "../../../components/billing-ui";
+import useMediaQuery, { BELOW_SM } from "../../../hooks/useMediaQuery";
 import { invoiceApi, auditApi, paymentApi, stripeApi } from "../../../service/billingService";
 import { isEntitlementLimitError } from "../../../service/api";
-import { SubscriptionLimitReached } from "../../../components/billing-shared";
+import { SubscriptionLimitReached, StatusBadge as SharedStatusBadge } from "../../../components/billing-shared";
 import { formatDisplayCurrency, formatDisplayDate } from "../../../utils/billing-helpers";
 import { useTerminology } from "../utils/TerminologyContext";
 
 function StatusBadge({ status }) {
-  const styles = {
-    draft: "bg-slate-100 text-slate-600",
-    pending: "bg-blue-100 text-blue-700",
-    sent: "bg-blue-100 text-blue-700",
-    paid: "bg-emerald-100 text-emerald-700",
-    overdue: "bg-red-100 text-red-700",
-    partially_paid: "bg-amber-100 text-amber-700",
-    cancelled: "bg-slate-100 text-slate-500",
-    refunded: "bg-pink-100 text-pink-700",
-    written_off: "bg-slate-100 text-slate-500",
-  };
-  return (
-    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${styles[status] || "bg-slate-100 text-slate-600"}`}>
-      {status ? status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, " ") : "Unknown"}
-    </span>
-  );
+  return <SharedStatusBadge status={status} />;
 }
 
 const titleize = (value, fallback = "Activity") => {
@@ -54,6 +40,7 @@ export default function InvoiceDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [actionLoading, setActionLoading] = useState(null);
+  const isPhone = useMediaQuery(BELOW_SM);
   const [showSendModal, setShowSendModal] = useState(false);
   const [showMarkPaidModal, setShowMarkPaidModal] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
@@ -818,8 +805,31 @@ export default function InvoiceDetailPage() {
 
         {/* ── LINE ITEMS ── */}
         {items.length > 0 && (
-          <div className="bg-white rounded-3xl border border-slate-200 p-6">
+          <div className="bg-white rounded-3xl border border-slate-200 p-4 sm:p-6">
             <h3 className="text-lg font-semibold text-slate-900 mb-4">Line Items</h3>
+            {/* Phones: one card per line instead of a 7-column table swiped
+                sideways. Same values and formatting as the table. */}
+            {isPhone ? (
+              <ul className="divide-y divide-slate-100">
+                {items.map((item, i) => (
+                  <li key={item.id || i} className="py-3 text-sm text-slate-900">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-medium wrap-break-word"><span className="text-slate-500">{i + 1}.</span> {item.description || item.name || "Item"}</p>
+                        {item.product_id && <p className="text-xs text-slate-500">Product #{item.product_id}</p>}
+                      </div>
+                      <p className="shrink-0 text-right font-medium">{formatDisplayCurrency(item.total ?? item.total_price ?? item.quantity * item.unit_price, "—", item.invoice_currency || currency)}</p>
+                    </div>
+                    <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                      <div><dt className="text-slate-500">Qty</dt><dd>{Number(item.quantity).toFixed(2)}</dd></div>
+                      <div><dt className="text-slate-500">Unit Price</dt><dd>{formatDisplayCurrency(item.unit_price, "—", item.invoice_currency || currency)}</dd></div>
+                      <div><dt className="text-slate-500">Disc %</dt><dd>{item.discount_percentage ? `${Number(item.discount_percentage).toFixed(1)}%` : "—"}</dd></div>
+                      <div><dt className="text-slate-500">Tax %</dt><dd>{item.tax_percentage ? `${Number(item.tax_percentage).toFixed(1)}%` : "—"}</dd></div>
+                    </dl>
+                  </li>
+                ))}
+              </ul>
+            ) : (
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-slate-200">
                 <thead>
@@ -851,12 +861,13 @@ export default function InvoiceDetailPage() {
                 </tbody>
               </table>
             </div>
+            )}
             {items.some(i => i.original_currency && i.invoice_currency && i.original_currency !== i.invoice_currency) && (
               <div className="mt-4 p-3 bg-amber-50 rounded-xl border border-amber-100">
                 <p className="text-xs font-semibold text-amber-700 uppercase tracking-wider mb-2">Currency Conversion Details</p>
                 <div className="space-y-1.5 text-xs text-amber-800">
                   {items.filter(i => i.original_currency && i.invoice_currency && i.original_currency !== i.invoice_currency).map((item, idx) => (
-                    <div key={idx} className="flex items-center gap-2">
+                    <div key={idx} className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                       <span className="font-medium">{item.description || `Item ${idx + 1}`}:</span>
                       <span>{item.original_currency} {formatDisplayCurrency(item.original_amount || item.unit_price, "\u2014", item.original_currency)}</span>
                       <span>× {Number(item.exchange_rate || 1).toFixed(6)}</span>
@@ -901,6 +912,30 @@ export default function InvoiceDetailPage() {
             <p className="text-lg font-bold text-slate-900">{formatDisplayCurrency(balanceDue, "\u2014", currency)}</p>
             <StatusBadge status={invoice.status} />
           </div>
+          {/* Phones: the primary action plus a "⋯" menu (Cancel invoice,
+              Recalculate), so the bar stays two rows instead of three. */}
+          {isPhone ? (
+            <div className="flex w-full items-center gap-2">
+              <OverflowMenu
+                direction="up"
+                align="left"
+                items={[
+                  { key: "cancel", label: "Cancel invoice", icon: Ban, danger: true, disabled: actionLoading === "cancel", onClick: () => setShowCancelModal(true) },
+                  { key: "recalculate", label: actionLoading === "recalculate" ? "Recalculating…" : "Recalculate", icon: Repeat, disabled: actionLoading === "recalculate", onClick: () => handleAction("recalculate", () => invoiceApi.recalculate(id)) },
+                ]}
+              />
+              {isDraft && (
+                <Button variant="primary" icon={CheckCircle} loading={actionLoading === "finalize"} onClick={() => handleAction("finalize", () => invoiceApi.finalize(id))} className="min-h-11 flex-1">
+                  Finalize
+                </Button>
+              )}
+              {isPartiallyPaid && (
+                <Button variant="success" icon={CheckCircle} loading={actionLoading === "mark-paid"} onClick={() => setShowMarkPaidModal(true)} className="min-h-11 flex-1">
+                  Mark as Paid
+                </Button>
+              )}
+            </div>
+          ) : (
           <div className="flex flex-wrap items-center gap-2">
             {isDraft && (
               <Button variant="primary" icon={CheckCircle} loading={actionLoading === "finalize"} onClick={() => handleAction("finalize", () => invoiceApi.finalize(id))}>
@@ -919,6 +954,7 @@ export default function InvoiceDetailPage() {
               Recalculate
             </Button>
           </div>
+          )}
         </StickyFooter>
       )}
 

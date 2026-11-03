@@ -5,12 +5,13 @@ import {
 } from "lucide-react";
 import { contractApi } from "../../../service/billingService";
 import { formatDisplayDate, formatDisplayCurrency, extractArray } from "../../../utils/billing-helpers";
-import { ErrorState, PageSkeleton, DashboardHeader, DashboardStatCard, DASHBOARD_KPI_GRID, Pagination, useConfirmationDialog } from "../../../components/billing-shared";
+import { ErrorState, PageSkeleton, DashboardHeader, DashboardStatCard, DASHBOARD_KPI_GRID, Pagination, useConfirmationDialog, StatusBadge as SharedStatusBadge } from "../../../components/billing-shared";
 import { useTerminology } from "../utils/TerminologyContext";
 import { useBillingDateRange } from "../utils/DateRangeContext";
 import { useListUrlFilters } from "../utils/useListUrlFilters";
 import ActiveUrlFilterChips from "../utils/ActiveUrlFilterChips";
 import useLatestRequest from "../utils/useLatestRequest";
+import useMediaQuery, { BELOW_SM } from "../../../hooks/useMediaQuery";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -33,11 +34,8 @@ const BILLING_PERIODS = [
 ];
 
 function StatusBadge({ status }) {
-  const s = STATUS_OPTIONS.find((o) => o.value === status);
-  if (!s) return <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-700">{status || "unknown"}</span>;
   const icons = { active: CheckCircle, pending: Clock, draft: FileText, expired: Clock, terminated: XCircle, cancelled: Ban };
-  const Icon = icons[status] || Clock;
-  return <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${s.color}`}><Icon size={12} /> {s.label}</span>;
+  return <SharedStatusBadge status={status} icon={icons[status] || Clock} />;
 }
 
 function SortHeader({ field, label, sortField, sortDir, onSort }) {
@@ -95,6 +93,7 @@ export default function ContractListPage() {
 
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [selectAll, setSelectAll] = useState(false);
+  const isPhone = useMediaQuery(BELOW_SM);
   const [bulkLoading, setBulkLoading] = useState(false);
   const { confirm, ConfirmationDialog } = useConfirmationDialog();
 
@@ -290,8 +289,8 @@ export default function ContractListPage() {
         <div ref={listRef} className="scroll-mt-6 bg-white border border-slate-200 rounded-3xl shadow-[0_4px_20px_rgba(0,0,0,0.02)] overflow-hidden">
           <div className="p-6 border-b border-slate-100">
             <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center gap-3 flex-1">
-                <div className="relative flex-1 max-w-md">
+              <div className="flex flex-wrap items-center gap-3 flex-1 max-sm:basis-full">
+                <div className="relative flex-1 max-w-md max-sm:basis-full max-sm:max-w-none">
                   <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                   <input type="text" placeholder="Search contracts..." value={search}
                     onChange={(e) => setSearch(e.target.value)}
@@ -300,7 +299,7 @@ export default function ContractListPage() {
                   {search && <button onClick={() => setSearch("")} aria-label="Clear search" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600"><X size={16} /></button>}
                 </div>
                 <button onClick={() => setShowFilters(!showFilters)} aria-label="Toggle filters" aria-pressed={showFilters}
-                  className={`p-2.5 rounded-xl border transition-colors ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+                  className={`p-2.5 max-sm:p-3 rounded-xl border transition-colors ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
                   <Filter size={18} />
                 </button>
                 {selectedIds.size > 0 && (
@@ -364,6 +363,83 @@ export default function ContractListPage() {
             )}
           </div>
 
+          {/* Phones: one card per contract instead of a 9-column table swiped
+              sideways. Same selection, open and sort handlers. */}
+          {isPhone ? (
+            <div>
+              <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-2">
+                <label className="flex min-h-11 items-center gap-2 text-sm text-slate-600">
+                  <input type="checkbox" checked={selectAll} onChange={handleSelectAll}
+                    aria-label="Select all contracts"
+                    className="h-5 w-5 rounded border-slate-300 text-brand-600 focus:ring-brand/30" />
+                  Select all
+                </label>
+                <label className="flex items-center gap-2 text-sm text-slate-500">
+                  <span>Sort</span>
+                  <select
+                    value={`${sortField}:${sortDir}`}
+                    onChange={(e) => { const [field, dir] = e.target.value.split(":"); setSortField(field); setSortDir(dir); setCurrentPage(1); }}
+                    className="min-h-11 rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-700"
+                    aria-label="Sort by"
+                  >
+                    {![["start_date", "desc"], ["start_date", "asc"], ["end_date", "asc"], ["end_date", "desc"]].some(([f, d]) => f === sortField && d === sortDir) && (
+                      <option value={`${sortField}:${sortDir}`}>Default</option>
+                    )}
+                    <option value="start_date:desc">Newest start</option>
+                    <option value="start_date:asc">Oldest start</option>
+                    <option value="end_date:asc">Ending soonest</option>
+                    <option value="end_date:desc">Ending latest</option>
+                  </select>
+                </label>
+              </div>
+              {contracts.length === 0 ? (
+                <div className="px-4 py-16 text-center">
+                  <div className="flex flex-col items-center">
+                    <FileText size={40} className="text-slate-300 mb-3" />
+                    <p className="text-slate-500 font-medium">No contracts found</p>
+                    <p className="text-slate-500 text-sm mt-1">{search || statusFilter ? "Try adjusting your search or filters" : "Create your first contract to get started"}</p>
+                  </div>
+                </div>
+              ) : (
+                <ul className="divide-y divide-slate-100">
+                  {contracts.map((c) => (
+                    <li key={c.id} className="px-4 py-3">
+                      <div className="flex items-start gap-3">
+                        <label className="-ml-3 flex h-11 w-11 shrink-0 items-center justify-center"><input type="checkbox" checked={selectedIds.has(c.id)} onChange={() => handleSelectOne(c.id)}
+                          aria-label={`Select contract ${c.contract_number || c.id}`}
+                          className="h-5 w-5 rounded border-slate-300 text-brand-600 focus:ring-brand/30" /></label>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start justify-between gap-2">
+                            <button onClick={() => navigate(`/billing/contracts/${c.id}`)} className="min-h-11 min-w-0 text-left font-medium text-slate-800 hover:text-brand-600 transition-colors">
+                              <span className="flex items-center gap-2">
+                                <Receipt size={14} className="shrink-0 text-slate-500" />
+                                <span className="truncate">{c.contract_number || `#${c.id}`}</span>
+                              </span>
+                              {c.contract_name && <span className="block truncate text-xs font-normal text-slate-500 mt-0.5">{c.contract_name}</span>}
+                            </button>
+                            <div className="shrink-0 pt-2.5"><StatusBadge status={c.status} /></div>
+                          </div>
+                          <p className="truncate text-sm text-slate-600">{c.customer_name || c.customer?.name || `${singular} #${c.customer_id}`}</p>
+                          <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                            <div><dt className="text-slate-500">Value</dt><dd className="font-medium text-slate-800 text-sm">{formatDisplayCurrency(c.total_value || c.value, c.currency)}</dd></div>
+                            <div><dt className="text-slate-500">Billing</dt><dd className="capitalize text-slate-600">{c.billing_period?.replace(/_/g, " ") || "—"}</dd></div>
+                            <div><dt className="text-slate-500">Start</dt><dd className="text-slate-600">{formatDisplayDate(c.start_date)}</dd></div>
+                            <div><dt className="text-slate-500">End</dt><dd className="text-slate-600">{formatDisplayDate(c.end_date) || "—"}</dd></div>
+                          </dl>
+                          <div className="mt-1 flex justify-end">
+                            <button onClick={() => navigate(`/billing/contracts/${c.id}`)} aria-label={`View contract ${c.contract_number || `#${c.id}`}`}
+                              className="inline-flex h-11 w-11 items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500 hover:text-brand-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30" title="View">
+                              <Eye size={16} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -428,6 +504,7 @@ export default function ContractListPage() {
               </tbody>
             </table>
           </div>
+          )}
 
           <Pagination page={safePage} totalPages={totalPages} onPageChange={setCurrentPage}>
             {total} total contract(s)

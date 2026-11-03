@@ -15,6 +15,7 @@ import {
   getZoikoSubscriptionCached,
   invalidateZoikoSubscriptionCache,
 } from "../service/platformSelfServiceApi";
+import { formatDisplayDate } from "../utils/billing-helpers";
 
 /**
  * Persistent trial banner — mounted once in BillingShell so it is app-wide
@@ -38,12 +39,7 @@ function daysUntil(isoDate) {
 }
 
 function fmtDate(isoDate) {
-  if (!isoDate) return null;
-  return new Date(isoDate).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+  return isoDate ? formatDisplayDate(isoDate) : null;
 }
 
 function TrialActionMessage({ actionMsg, actionError, converting }) {

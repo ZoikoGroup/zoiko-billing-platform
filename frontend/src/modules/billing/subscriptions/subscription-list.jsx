@@ -4,12 +4,13 @@ import { Repeat, Search, Filter, X, ChevronDown, Plus, AlertCircle, CheckCircle,
 import { subscriptionApi } from "../../../service/billingService";
 import { loadGlobalBillingConfig } from "../../../service/billingConfigCache";
 import { formatDisplayDate, formatDisplayCurrency, extractArray } from "../../../utils/billing-helpers";
-import { ErrorState, PageSkeleton, DashboardHeader, DashboardStatCard, DASHBOARD_KPI_GRID, Pagination, useConfirmationDialog } from "../../../components/billing-shared";
+import { ErrorState, PageSkeleton, DashboardHeader, DashboardStatCard, DASHBOARD_KPI_GRID, Pagination, useConfirmationDialog, StatusBadge as SharedStatusBadge } from "../../../components/billing-shared";
 import { useTerminology } from "../utils/TerminologyContext";
 import { useBillingDateRange } from "../utils/DateRangeContext";
 import { useListUrlFilters } from "../utils/useListUrlFilters";
 import ActiveUrlFilterChips from "../utils/ActiveUrlFilterChips";
 import useLatestRequest from "../utils/useLatestRequest";
+import useMediaQuery, { BELOW_SM } from "../../../hooks/useMediaQuery";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -24,11 +25,8 @@ const STATUS_OPTIONS = [
 const STATUS_FILTER_OPTIONS = [...STATUS_OPTIONS];
 
 function StatusBadge({ status }) {
-  const s = STATUS_OPTIONS.find((o) => o.value === status);
-  if (!s) return <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-700">{status || "unknown"}</span>;
   const icons = { active: CheckCircle, paused: PauseCircle, past_due: AlertCircle, cancelled: XCircle, expired: Clock };
-  const Icon = icons[status] || Clock;
-  return <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${s.color}`}><Icon size={12} /> {s.label}</span>;
+  return <SharedStatusBadge status={status} icon={icons[status] || Clock} />;
 }
 
 function SortHeader({ field, label, sortField, sortDir, onSort, align }) {
@@ -81,6 +79,7 @@ export default function SubscriptionListPage() {
 
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [selectAll, setSelectAll] = useState(false);
+  const isPhone = useMediaQuery(BELOW_SM);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [orgCurrency, setOrgCurrency] = useState("");
   const { confirm, ConfirmationDialog } = useConfirmationDialog();
@@ -288,8 +287,8 @@ export default function SubscriptionListPage() {
         <div className="bg-white border border-slate-200 rounded-3xl shadow-[0_4px_20px_rgba(0,0,0,0.02)] overflow-hidden">
           <div className="p-6 border-b border-slate-100">
             <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center gap-3 flex-1">
-                <div className="relative flex-1 max-w-md">
+              <div className="flex flex-wrap items-center gap-3 flex-1 max-sm:basis-full">
+                <div className="relative flex-1 max-w-md max-sm:basis-full max-sm:max-w-none">
                   <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                   <input type="text" placeholder="Search subscriptions..." aria-label="Search subscriptions" value={search}
                     onChange={(e) => setSearch(e.target.value)}
@@ -297,7 +296,7 @@ export default function SubscriptionListPage() {
                   {search && <button onClick={() => setSearch("")} aria-label="Clear search" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600"><X size={16} /></button>}
                 </div>
                 <button onClick={() => setShowFilters(!showFilters)} aria-label="Toggle filters"
-                  className={`p-2.5 rounded-xl border transition-colors ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+                  className={`p-2.5 max-sm:p-3 rounded-xl border transition-colors ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
                   <Filter size={18} />
                 </button>
                 {selectedIds.size > 0 && (
@@ -354,6 +353,87 @@ export default function SubscriptionListPage() {
             )}
           </div>
 
+          {/* Phones: one card per subscription instead of a 10-column table
+              swiped sideways. Same selection, open and sort handlers. */}
+          {isPhone ? (
+            <div>
+              <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-2">
+                <label className="flex min-h-11 items-center gap-2 text-sm text-slate-600">
+                  <input type="checkbox" checked={selectAll} onChange={handleSelectAll} aria-label="Select all subscriptions"
+                    className="h-5 w-5 rounded border-slate-300 text-brand-600 focus:ring-brand/30" />
+                  Select all
+                </label>
+                <label className="flex items-center gap-2 text-sm text-slate-500">
+                  <span>Sort</span>
+                  <select
+                    value={`${sortField}:${sortDir}`}
+                    onChange={(e) => { const [field, dir] = e.target.value.split(":"); setSortField(field); setSortDir(dir); setCurrentPage(1); }}
+                    className="min-h-11 rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-700"
+                    aria-label="Sort by"
+                  >
+                    {![["next_billing", "asc"], ["next_billing", "desc"], ["amount", "desc"], ["amount", "asc"], ["start_date", "desc"], ["start_date", "asc"]].some(([f, d]) => f === sortField && d === sortDir) && (
+                      <option value={`${sortField}:${sortDir}`}>Default</option>
+                    )}
+                    <option value="next_billing:asc">Next billing soonest</option>
+                    <option value="next_billing:desc">Next billing latest</option>
+                    <option value="amount:desc">Amount high–low</option>
+                    <option value="amount:asc">Amount low–high</option>
+                    <option value="start_date:desc">Newest start</option>
+                    <option value="start_date:asc">Oldest start</option>
+                  </select>
+                </label>
+              </div>
+              {subscriptions.length === 0 ? (
+                <div className="px-4 py-16 text-center">
+                  <div className="flex flex-col items-center">
+                    <Repeat size={40} className="text-slate-300 mb-3" />
+                    <p className="text-slate-500 font-medium">No subscriptions found</p>
+                    <p className="text-slate-500 text-sm mt-1">{search || statusFilter ? "Try adjusting your search or filters" : "Create your first subscription to get started"}</p>
+                    {!search && !statusFilter && (
+                      <button onClick={() => navigate("/billing/subscriptions/create")}
+                        className="mt-4 inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
+                        <Plus size={16} /> Create your first subscription
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <ul className="divide-y divide-slate-100">
+                  {subscriptions.map((s) => (
+                    <li key={s.id} className="px-4 py-3">
+                      <div className="flex items-start gap-3">
+                        <label className="-ml-3 flex h-11 w-11 shrink-0 items-center justify-center"><input type="checkbox" checked={selectedIds.has(s.id)} onChange={() => handleSelectOne(s.id)} aria-label={`Select subscription ${s.subscription_number || s.id}`}
+                          className="h-5 w-5 rounded border-slate-300 text-brand-600 focus:ring-brand/30" /></label>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start justify-between gap-2">
+                            <button onClick={() => navigate(`/billing/subscriptions/${s.id}`)} className="flex min-h-11 min-w-0 items-center gap-2 text-left font-medium text-slate-800 hover:text-brand-600 transition-colors">
+                              <Receipt size={14} className="shrink-0 text-slate-500" />
+                              <span className="truncate">{s.subscription_number || `#${s.id}`}</span>
+                            </button>
+                            <div className="shrink-0 pt-2.5"><StatusBadge status={s.status} /></div>
+                          </div>
+                          <p className="truncate text-sm text-slate-600">{s.customer_name || s.customer?.name || `${singular} #${s.customer_id}`}</p>
+                          <p className="truncate text-xs text-slate-500">{s.plan_name || s.plan?.name || `Plan #${s.plan_id}`}</p>
+                          <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                            <div><dt className="text-slate-500">Amount</dt><dd className="font-medium text-slate-800 text-sm">{formatDisplayCurrency(s.amount || s.unit_price, s.currency)}</dd></div>
+                            <div><dt className="text-slate-500">Next Billing</dt><dd className="text-slate-600">{formatDisplayDate(s.next_billing_at)}</dd></div>
+                            <div><dt className="text-slate-500">Start Date</dt><dd className="text-slate-600">{formatDisplayDate(s.start_date)}</dd></div>
+                            <div><dt className="text-slate-500">Billing</dt><dd className="capitalize text-slate-600">{s.plan_billing_period || s.billing_period || "—"}</dd></div>
+                          </dl>
+                          <div className="mt-1 flex justify-end">
+                            <button onClick={() => navigate(`/billing/subscriptions/${s.id}`)}
+                              className="inline-flex h-11 w-11 items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500 hover:text-brand-600 transition-colors" title="View" aria-label="View">
+                              <Eye size={16} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -422,6 +502,7 @@ export default function SubscriptionListPage() {
               </tbody>
             </table>
           </div>
+          )}
 
           <Pagination page={safePage} totalPages={totalPages} onPageChange={setCurrentPage}>
             {total} total subscription(s)

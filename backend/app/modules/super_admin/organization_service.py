@@ -109,8 +109,11 @@ class OrganizationDirectoryService:
         if account_status not in (None, "", *ACCOUNT_STATUSES):
             raise BadRequestException(f"account_status must be one of: {', '.join(ACCOUNT_STATUSES)}")
         latest_sub, status_expr = self._account_status_case()
-        query = self.db.query(Organization).outerjoin(latest_sub, latest_sub.c.org_id == Organization.id).outerjoin(
-            CommercialSubscription, CommercialSubscription.id == latest_sub.c.sub_id
+        query = (
+            self.db.query(Organization)
+            .filter(Organization.organization_code != "ZOIKO_PLATFORM")
+            .outerjoin(latest_sub, latest_sub.c.org_id == Organization.id)
+            .outerjoin(CommercialSubscription, CommercialSubscription.id == latest_sub.c.sub_id)
         )
 
         if search:
@@ -201,6 +204,7 @@ class OrganizationDirectoryService:
         rows = (
             self.db.query(status_expr.label("account_status"), func.count(Organization.id))
             .select_from(Organization)
+            .filter(Organization.organization_code != "ZOIKO_PLATFORM")
             .outerjoin(latest_sub, latest_sub.c.org_id == Organization.id)
             .outerjoin(CommercialSubscription, CommercialSubscription.id == latest_sub.c.sub_id)
             .group_by(status_expr)

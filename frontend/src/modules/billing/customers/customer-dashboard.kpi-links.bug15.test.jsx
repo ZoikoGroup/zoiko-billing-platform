@@ -11,7 +11,8 @@ import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
 //    (the date range is not applied; the user's global range is untouched).
 //  - "Over Credit Limit" -> /billing/customers?over_credit_limit=1 (server
 //    filter with the KPI's own predicate, see test_customer_over_credit_limit_bug15.py).
-//  - "Avg Invoice" and "Avg Collection Period" stay informational (approved).
+//  - "Avg Invoice" opens invoices, its underlying records.
+//  - "Avg Collection Period" opens cleared payments, the collection records.
 //  - "Avg Revenue/<term>" must NOT link to Customer Reports, which computes a
 //    different figure (paid invoices, first 100 records, no currency
 //    conversion). It links to its own numerator instead: all-time cleared
@@ -59,6 +60,8 @@ describe("BUG-15 Customer Dashboard KPI cards", () => {
     ["Total Revenue (all time)", /^Total Revenue:/, "/billing/payments?status=cleared&all_dates=1"],
     ["Over Credit Limit", /^Over Credit Limit:/, "/billing/customers?over_credit_limit=1"],
     ["Avg Revenue (its numerator: all-time cleared payments)", /^Avg Revenue\/Customer:/, "/billing/payments?status=cleared&all_dates=1"],
+    ["period Avg Invoice", /^Last 30 Days Avg Invoice:/, "/billing/invoices"],
+    ["Avg Collection Period", /^Avg Collection Period:/, "/billing/payments?status=cleared"],
   ])("%s opens its approved destination", async (_label, name, destination) => {
     renderDashboard();
     const el = await card(name);
@@ -71,21 +74,13 @@ describe("BUG-15 Customer Dashboard KPI cards", () => {
     ["period Revenue", /^(?!Total)[\w\s()]+ Revenue:/, "/billing/payments?status=cleared"],
     ["Total Revenue", /^Total Revenue:/, "/billing/payments?status=cleared&all_dates=1"],
     ["Over Credit Limit", /^Over Credit Limit:/, "/billing/customers?over_credit_limit=1"],
+    ["period Avg Invoice", /^Last 30 Days Avg Invoice:/, "/billing/invoices"],
+    ["Avg Collection Period", /^Avg Collection Period:/, "/billing/payments?status=cleared"],
   ])("%s is keyboard-operable", async (_label, name, destination) => {
     renderDashboard();
     fireEvent.keyDown(await card(name), { key: "Enter" });
     expect((await screen.findByTestId("location")).textContent).toBe(destination);
   });
-
-  it.each(["Avg Invoice", "Avg Collection Period"])(
-    "%s stays informational (no navigation)", async (title) => {
-      renderDashboard();
-      await card(/^Total Revenue:/);
-      expect(screen.queryByRole("button", { name: new RegExp(`${title.replace("/", "\\/")}:`) })).not.toBeInTheDocument();
-      fireEvent.click(screen.getAllByText(new RegExp(title.replace("/", "\\/")))[0]);
-      expect(screen.queryByTestId("location")).not.toBeInTheDocument();
-    },
-  );
 
   it("Avg Revenue states its basis in the org's own terms", async () => {
     renderDashboard();

@@ -8,11 +8,12 @@ import {
 } from "recharts";
 import HRPage from "../../../components/HRPage";
 import { contractApi } from "../../../service/billingService";
-import { formatDisplayCurrency } from "../../../utils/billing-helpers";
+import { formatDisplayCurrency, formatDisplayDate } from "../../../utils/billing-helpers";
 import { extractArray } from "../../../utils/billing-helpers";
 import { Spinner, ErrorState, EmptyState, DateRangeFilter, useDateRange, ExportMenu } from "../../../components/billing-shared";
 import { filterByDateRange, downloadExcel, downloadJSON, downloadCSV } from "../../../utils/export-helpers";
 import { useTerminology } from "../utils/TerminologyContext";
+import { DataTable } from "../../../components/billing-ui";
 
 const TABS = [
   { key: "overview", label: "Overview", icon: FileText },
@@ -267,38 +268,22 @@ export default function ContractReportsPage() {
               </div>
               <div className="bg-white rounded-3xl border border-slate-200 p-6">
                 <h3 className="text-sm font-semibold text-slate-900 mb-4">All Contracts by Status</h3>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-100">
-                        <th scope="col" className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Contract</th>
-                        <th scope="col" className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">{singular}</th>
-                        <th scope="col" className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Status</th>
-                        <th scope="col" className="text-right py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Value</th>
-                        <th scope="col" className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Period</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {fContracts.slice(0, 20).map((c) => (
-                        <tr key={c.id} className="border-b border-slate-50 hover:bg-slate-50">
-                          <td className="py-3 px-3 font-medium text-slate-900">{c.contract_number || `#${c.id}`}</td>
-                          <td className="py-3 px-3 text-slate-600">{c.customer_name || `#${c.customer_id}`}</td>
-                          <td className="py-3 px-3">
-                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                <DataTable
+                  stickyHeader={false}
+                  data={fContracts.slice(0, 20)}
+                  rowKey={(c) => c.id}
+                  columns={[
+                    { key: "contract", label: "Contract", render: (c) => <span className="font-medium text-slate-900">{c.contract_number || `#${c.id}`}</span> },
+                    { key: "singular", label: singular, render: (c) => <span className="text-slate-600">{c.customer_name || `#${c.customer_id}`}</span> },
+                    { key: "status", label: "Status", render: (c) => <><span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
                               c.status === "active" ? "bg-emerald-100 text-emerald-700" :
                               c.status === "pending" || c.status === "draft" ? "bg-amber-100 text-amber-700" :
                               c.status === "expired" ? "bg-slate-100 text-slate-600" : "bg-red-100 text-red-700"
-                            }`}>{c.status}</span>
-                          </td>
-                          <td className="py-3 px-3 text-right font-medium text-slate-900">{formatDisplayCurrency(c.value || c.total_value, defaultCurrency)}</td>
-                          <td className="py-3 px-3 text-slate-500 whitespace-nowrap">
-                            {c.start_date ? new Date(c.start_date).toLocaleDateString() : "—"} — {c.end_date ? new Date(c.end_date).toLocaleDateString() : "—"}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                            }`}>{c.status}</span></> },
+                    { key: "value", label: "Value", align: "right", render: (c) => <span className="font-medium text-slate-900">{formatDisplayCurrency(c.value || c.total_value, defaultCurrency)}</span> },
+                    { key: "period", label: "Period", render: (c) => <span className="text-slate-500 whitespace-nowrap">{c.start_date ? formatDisplayDate(c.start_date) : "—"} — {c.end_date ? formatDisplayDate(c.end_date) : "—"}</span> },
+                  ]}
+                />
               </div>
             </>
           )}
@@ -333,34 +318,20 @@ export default function ContractReportsPage() {
                 {expiring.length === 0 ? (
                   <EmptyState icon={Clock} title="No contracts expiring" message="No contracts are expiring in the next 90 days." />
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-slate-100">
-                          <th scope="col" className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Contract</th>
-                          <th scope="col" className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">{singular}</th>
-                          <th scope="col" className="text-right py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Value</th>
-                          <th scope="col" className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">End Date</th>
-                          <th scope="col" className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Auto-Renew</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {expiring.map((c) => (
-                          <tr key={c.id} className="border-b border-slate-50 hover:bg-slate-50">
-                            <td className="py-3 px-3 font-medium text-slate-900">{c.contract_number || `#${c.id}`}</td>
-                            <td className="py-3 px-3 text-slate-600">{c.customer_name || `#${c.customer_id}`}</td>
-                            <td className="py-3 px-3 text-right font-medium text-slate-900">{formatDisplayCurrency(c.value || c.total_value, defaultCurrency)}</td>
-                            <td className="py-3 px-3 text-slate-500 whitespace-nowrap">{c.end_date ? new Date(c.end_date).toLocaleDateString() : "—"}</td>
-                            <td className="py-3 px-3">
-                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${c.auto_renew ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
+                  <DataTable
+                    stickyHeader={false}
+                    data={expiring}
+                    rowKey={(c) => c.id}
+                    columns={[
+                      { key: "contract", label: "Contract", render: (c) => <span className="font-medium text-slate-900">{c.contract_number || `#${c.id}`}</span> },
+                      { key: "singular", label: singular, render: (c) => <span className="text-slate-600">{c.customer_name || `#${c.customer_id}`}</span> },
+                      { key: "value", label: "Value", align: "right", render: (c) => <span className="font-medium text-slate-900">{formatDisplayCurrency(c.value || c.total_value, defaultCurrency)}</span> },
+                      { key: "end_date", label: "End Date", render: (c) => <span className="text-slate-500 whitespace-nowrap">{c.end_date ? formatDisplayDate(c.end_date) : "—"}</span> },
+                      { key: "auto_renew", label: "Auto-Renew", render: (c) => <><span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${c.auto_renew ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
                                 {c.auto_renew ? "Yes" : "No"}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                              </span></> },
+                    ]}
+                  />
                 )}
               </div>
             </>

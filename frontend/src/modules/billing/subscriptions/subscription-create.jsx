@@ -7,6 +7,8 @@ import { loadGlobalBillingConfig } from "../../../service/billingConfigCache";
 import { formatDisplayCurrency, formatDisplayDate, extractArray } from "../../../utils/billing-helpers";
 import { useCurrency } from "../utils/CurrencyContext";
 import { useTerminology } from "../utils/TerminologyContext";
+import { PageHeader, Button, Stepper, FormPageBar, StickyFooter, RequiredNote, FORM_SECTION_DENSE, useUnsavedChangesGuard } from "../../../components/billing-ui";
+import { useConfirmationDialog } from "../../../components/billing-shared";
 
 const WIZARD_STEPS = [
   { id: 1, label: "Source / Customer", icon: User, description: "Select customer or contract" },
@@ -264,38 +266,56 @@ export default function CreateSubscriptionWizardPage({ onClose, onCreated }) {
 
   const displayCurrency = wizardData.customer_currency || wizardData.contract_currency || orgCurrency;
 
+  // No autosave here, so leaving with entered data asks first. A contract or
+  // customer pre-selected from the link (?contract_id= / ?customer_id=) and
+  // the generated subscription number don't count as the user's input.
+  const prefilled = Boolean(contractIdParam || customerIdParam);
+  const dirty = step > 1 || Boolean(wizardData.plan_id || wizardData.notes) ||
+    (!prefilled && Boolean(wizardData.contract_id || wizardData.customer_id));
+  useUnsavedChangesGuard(dirty, "You have an unsaved subscription. Leave this page and discard it?");
+  const { confirm, ConfirmationDialog } = useConfirmationDialog();
+  const requestLeave = async () => {
+    if (loading) return;
+    if (dirty) {
+      const discard = await confirm({
+        title: "Discard this subscription?",
+        message: "The subscription hasn't been created. Leave this page and discard what you entered?",
+        confirmLabel: "Discard",
+        cancelLabel: "Keep editing",
+        tone: "danger",
+      });
+      if (!discard) return;
+    }
+    handleBack();
+  };
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <button onClick={handleBack} aria-label="Go back"
-            className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors">
-            <ArrowLeft size={20} />
-          </button>
-          <div>
-            <h1 className="text-xl font-bold text-slate-900">Create Subscription</h1>
-            <p className="text-sm text-slate-500 mt-0.5">Step {step} of {WIZARD_STEPS.length}</p>
-          </div>
-        </div>
+    <div className={`space-y-6 ${FORM_SECTION_DENSE}`}>
+      {/* Phones: sticky back / title / step bar (the page header scrolls away). */}
+      <FormPageBar
+        title="Create Subscription"
+        onBack={requestLeave}
+        backLabel="Back to subscriptions"
+        step={step}
+        totalSteps={WIZARD_STEPS.length}
+      />
+      {/* From sm up the full header shows; on phones the sticky bar above replaces it. */}
+      <div className="max-sm:hidden">
+        <PageHeader
+          crumbs={[{ label: "Billing", href: "/billing" }, { label: "Subscriptions", href: "/billing/subscriptions" }, { label: "Create Subscription" }]}
+          title="Create Subscription"
+          description={WIZARD_STEPS[step - 1]?.description}
+          icon={Package}
+          meta={<span className="text-xs font-medium text-slate-500">Step {step} of {WIZARD_STEPS.length}</span>}
+        />
       </div>
 
-      <div className="flex items-center gap-2 overflow-x-auto pb-2">
-        {WIZARD_STEPS.map((s, i) => (
-          <div key={s.id} className="flex items-center gap-2">
-            <button
-              onClick={() => { if (s.id < step) { setStep(s.id); setError(null); } }}
-              disabled={s.id > step}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-colors whitespace-nowrap ${
-                s.id === step ? "bg-brand-600 text-white" :
-                s.id < step ? "bg-brand-100 text-brand-700 hover:bg-brand-200 cursor-pointer" :
-                "bg-slate-100 text-slate-500 cursor-not-allowed"
-              }`}>
-              {s.id < step ? <CheckCircle size={14} /> : <span className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center text-xs font-bold">{s.id}</span>}
-              {s.id === 1 ? `${singular} / Source` : s.label}
-            </button>
-            {i < WIZARD_STEPS.length - 1 && <div className="w-6 h-px bg-slate-200 flex-shrink-0" />}
-          </div>
-        ))}
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
+        <Stepper
+          steps={WIZARD_STEPS.map((s) => ({ key: s.id, label: s.id === 1 ? `${singular} / Source` : s.label }))}
+          current={step - 1}
+          onSelect={(idx) => { setStep(idx + 1); setError(null); }}
+        />
       </div>
 
       {error && (
@@ -304,6 +324,7 @@ export default function CreateSubscriptionWizardPage({ onClose, onCreated }) {
         </div>
       )}
 
+      {step === 1 && <RequiredNote />}
       {step === 1 && (
         <div className="space-y-6">
           {!creationMode ? (
@@ -311,7 +332,7 @@ export default function CreateSubscriptionWizardPage({ onClose, onCreated }) {
               <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
                 <FileText size={20} className="text-brand-500" /> How would you like to create this subscription?
               </h3>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <button onClick={() => setCreationMode("contract")}
                   className="p-6 border-2 border-slate-200 rounded-lg hover:border-brand-200 hover:bg-brand-50 transition-all text-left">
                   <FileText size={28} className="text-brand-500 mb-3" />
@@ -346,7 +367,7 @@ export default function CreateSubscriptionWizardPage({ onClose, onCreated }) {
                     <button onClick={() => setWizardData((p) => ({ ...p, contract_id: "", contract_number: "", contract_name: "", customer_id: "" }))}
                       className="text-sm text-brand-600 hover:text-brand-700 font-medium">Change</button>
                   </div>
-                  <div className="grid grid-cols-4 gap-3 text-sm p-3 bg-white rounded-lg border border-slate-200">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm p-3 bg-white rounded-lg border border-slate-200">
                     <div><span className="text-xs text-slate-500">Term</span><p className="font-medium">{formatDisplayDate(wizardData.contract_start_date)} — {formatDisplayDate(wizardData.contract_end_date) || "Ongoing"}</p></div>
                     <div><span className="text-xs text-slate-500">Auto Renew</span><p className="font-medium">{wizardData.contract_auto_renew ? "Yes" : "No"}</p></div>
                     <div><span className="text-xs text-slate-500">Billing Day</span><p className="font-medium">Day {wizardData.contract_billing_day || 1}</p></div>
@@ -425,7 +446,7 @@ export default function CreateSubscriptionWizardPage({ onClose, onCreated }) {
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Subscription Number *</label>
               <input type="text" value={wizardData.subscription_number}
@@ -470,7 +491,7 @@ export default function CreateSubscriptionWizardPage({ onClose, onCreated }) {
               <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
                 <h4 className="text-sm font-semibold text-slate-800 mb-3">Subscription Billing Alignment</h4>
                 <p className="text-sm text-slate-600 mb-3">The subscription will align its billing cycle with the contract's billing period.</p>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">First Billing Date</label>
                     <input type="date" value={wizardData.start_date}
@@ -511,7 +532,7 @@ export default function CreateSubscriptionWizardPage({ onClose, onCreated }) {
               <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
                 <h4 className="text-sm font-semibold text-slate-800 mb-3">Subscription Billing Alignment</h4>
                 <p className="text-sm text-slate-600 mb-3">The subscription billing cycle will be based on the selected plan's billing period.</p>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">First Billing Date</label>
                     <input type="date" value={wizardData.start_date}
@@ -588,7 +609,7 @@ export default function CreateSubscriptionWizardPage({ onClose, onCreated }) {
                   <button onClick={() => setWizardData((p) => ({ ...p, plan_id: "", plan_name: "", plan_unit_price: 0 }))}
                     className="text-xs text-blue-600 hover:text-blue-800">Change</button>
                 </div>
-                <div className="grid grid-cols-4 gap-3 text-sm">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
                   <div><span className="text-xs text-slate-500">Billing Period</span><p className="font-medium capitalize">{wizardData.plan_billing_period?.replace(/_/g, " ")}</p></div>
                   <div><span className="text-xs text-slate-500">Unit Price</span><p className="font-medium">{formatDisplayCurrency(wizardData.plan_unit_price, displayCurrency)}</p></div>
                   <div><span className="text-xs text-slate-500">Quantity</span>
@@ -602,7 +623,7 @@ export default function CreateSubscriptionWizardPage({ onClose, onCreated }) {
                       className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4 mt-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Discount %</label>
                     <input type="number" min="0" max="100" step="0.01" value={wizardData.discount_percentage}
@@ -627,8 +648,8 @@ export default function CreateSubscriptionWizardPage({ onClose, onCreated }) {
           <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
             <Eye size={20} className="text-brand-500" /> Review & Create Subscription
           </h3>
-          <div className="border border-slate-200 rounded-lg p-6 bg-white">
-            <div className="flex justify-between items-start mb-6">
+          <div className="border border-slate-200 rounded-lg p-4 sm:p-6 bg-white">
+            <div className="flex flex-wrap justify-between items-start gap-3 mb-6">
               <div>
                 <h2 className="text-2xl font-bold text-slate-800">SUBSCRIPTION PREVIEW</h2>
                 <p className="text-sm text-slate-500 mt-1">#{wizardData.subscription_number}</p>
@@ -674,34 +695,34 @@ export default function CreateSubscriptionWizardPage({ onClose, onCreated }) {
         </div>
       )}
 
-      <div className="flex justify-between mt-8 pt-6 border-t border-slate-100">
-        <div>
-          {step > 1 && (
-            <button onClick={handlePrev}
-              className="px-4 py-2 text-sm font-medium text-slate-700 border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors">Back</button>
-          )}
-        </div>
-        <div className="flex gap-3">
-          <button onClick={handleBack}
-            className="px-4 py-2 text-sm font-medium text-slate-700 border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors">Cancel</button>
+      {/* Step actions stay pinned at the bottom of the screen while the step scrolls.
+          On phones the top bar's back arrow is the way out (it asks before
+          discarding), so Cancel shows from sm up. */}
+      <StickyFooter contentClassName="mx-auto flex max-w-6xl items-center gap-2 sm:gap-3">
+        {step > 1 && (
+          <Button variant="secondary" icon={ArrowLeft} onClick={handlePrev} className="max-sm:min-h-11" aria-label="Back">
+            <span className="max-sm:sr-only">Back</span>
+          </Button>
+        )}
+        <div className="ml-auto flex items-center gap-2 sm:gap-3">
+          <Button variant="secondary" onClick={requestLeave} className="max-sm:hidden">Cancel</Button>
           {step < 4 ? (
-            <button onClick={handleNext}
+            <Button variant="primary" onClick={handleNext}
               disabled={
                 (step === 1 && (!creationMode || (creationMode === "contract" && !wizardData.contract_id) || (creationMode === "direct" && !wizardData.customer_id))) ||
                 (step === 3 && (!wizardData.plan_id || planLoading))
               }
-              className="px-6 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 disabled:opacity-50 transition-colors">
+              className="max-sm:min-h-11">
               Continue
-            </button>
+            </Button>
           ) : (
-            <button onClick={handleCreate} disabled={loading}
-              className="inline-flex items-center gap-2 px-6 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 disabled:opacity-50 transition-colors">
-              {loading ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle size={16} />}
+            <Button variant="primary" onClick={handleCreate} disabled={loading} loading={loading} icon={loading ? undefined : CheckCircle} className="max-sm:min-h-11">
               {loading ? "Creating..." : "Create Subscription"}
-            </button>
+            </Button>
           )}
         </div>
-      </div>
+      </StickyFooter>
+      {ConfirmationDialog}
     </div>
   );
 }

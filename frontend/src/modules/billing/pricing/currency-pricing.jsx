@@ -3,7 +3,7 @@ import {
   DollarSign, Search, Plus, RefreshCw, CheckCircle, Clock, X, Pencil,
 } from "lucide-react";
 import HRPage from "../../../components/HRPage";
-import { Button, Modal } from "../../../components/billing-ui";
+import { DataTable, Button, Modal } from "../../../components/billing-ui";
 import { currencyPricingApi, productApi } from "../../../service/billingService";
 import { loadGlobalBillingConfig } from "../../../service/billingConfigCache";
 import { formatDisplayCurrency } from "../../../utils/billing-helpers";
@@ -89,31 +89,31 @@ function CurrencyFormModal({ show, onClose, onSave, editItem, saving, productMap
       <div className="space-y-4">
         {formError && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg text-sm">{formError}</div>}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div><label className="block text-xs font-medium text-slate-500 mb-1">Product *</label>
-            <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.product_id} onChange={e => set("product_id", e.target.value)}>
+          <div><label htmlFor="cp-product" className="block text-xs font-medium text-slate-500 mb-1">Product *</label>
+            <select id="cp-product" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.product_id} onChange={e => set("product_id", e.target.value)}>
               <option value="">Select product...</option>
               {Object.entries(productMap).map(([id, name]) => (
                 <option key={id} value={id}>{name}</option>
               ))}
             </select>
           </div>
-          <div><label className="block text-xs font-medium text-slate-500 mb-1">Currency *</label>
-            <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.currency} onChange={e => set("currency", e.target.value)}>
+          <div><label htmlFor="cp-currency" className="block text-xs font-medium text-slate-500 mb-1">Currency *</label>
+            <select id="cp-currency" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.currency} onChange={e => set("currency", e.target.value)}>
               {CURRENCY_OPTIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
             </select>
           </div>
         </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div><label className="block text-xs font-medium text-slate-500 mb-1">Price *</label><input type="number" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.price} onChange={e => set("price", e.target.value)} /></div>
-          <div><label className="block text-xs font-medium text-slate-500 mb-1">Cost Price</label><input type="number" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.cost_price} onChange={e => set("cost_price", e.target.value)} /></div>
+          <div><label htmlFor="cp-price" className="block text-xs font-medium text-slate-500 mb-1">Price *</label><input id="cp-price" type="number" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.price} onChange={e => set("price", e.target.value)} /></div>
+          <div><label htmlFor="cp-cost-price" className="block text-xs font-medium text-slate-500 mb-1">Cost Price</label><input id="cp-cost-price" type="number" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.cost_price} onChange={e => set("cost_price", e.target.value)} /></div>
         </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div><label className="block text-xs font-medium text-slate-500 mb-1">Conversion Type</label>
-            <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.conversion_type} onChange={e => set("conversion_type", e.target.value)}>
+          <div><label htmlFor="cp-conversion-type" className="block text-xs font-medium text-slate-500 mb-1">Conversion Type</label>
+            <select id="cp-conversion-type" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.conversion_type} onChange={e => set("conversion_type", e.target.value)}>
               <option value="manual">Manual</option><option value="live">Live</option><option value="historical">Historical</option>
             </select>
           </div>
-          <div><label className="block text-xs font-medium text-slate-500 mb-1">Exchange Rate</label><input type="number" step="0.0001" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.exchange_rate} onChange={e => set("exchange_rate", e.target.value)} /></div>
+          <div><label htmlFor="cp-exchange-rate" className="block text-xs font-medium text-slate-500 mb-1">Exchange Rate</label><input id="cp-exchange-rate" type="number" step="0.0001" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.exchange_rate} onChange={e => set("exchange_rate", e.target.value)} /></div>
         </div>
         <div className="flex items-center gap-2">
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.is_active} onChange={e => set("is_active", e.target.checked)} className="rounded" /> Active</label>
@@ -193,10 +193,10 @@ export default function CurrencyPricingPage() {
     <HRPage title="Currency Pricing" icon={DollarSign}>
       <div className="space-y-4">
         <div className="flex flex-wrap gap-3 items-center justify-between">
-          <div className="flex gap-2 items-center">
-            <div className="relative">
+          <div className="flex w-full flex-wrap gap-2 items-center sm:w-auto">
+            <div className="relative w-full sm:w-auto">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-              <input className="pl-9 pr-3 py-2 border rounded-lg text-sm w-48" placeholder="Search..." aria-label="Search" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+              <input className="pl-9 pr-3 py-2 border rounded-lg text-sm w-full sm:w-48" placeholder="Search..." aria-label="Search" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
             </div>
             <select aria-label="Filter by currency" className="border rounded-lg px-3 py-2 text-sm" value={currencyFilter} onChange={e => setCurrencyFilter(e.target.value)}>
               <option value="">All Currencies</option>
@@ -210,31 +210,23 @@ export default function CurrencyPricingPage() {
         {error && <ErrorState message={error} onRetry={() => fetchData()} />}
         {loading ? <Spinner /> : !data.items?.length ? <EmptyState message="No currency pricing found" /> : (
           <div className="bg-white rounded-3xl border overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
-                <tr><th className="text-left px-4 py-3">Product</th><th className="text-left px-4 py-3">Currency</th><th className="text-right px-4 py-3">Price</th><th className="text-right px-4 py-3">Cost Price</th><th className="text-left px-4 py-3">Conversion</th><th className="text-right px-4 py-3">Rate</th><th className="text-center px-4 py-3">Active</th><th className="text-right px-4 py-3">Actions</th></tr>
-              </thead>
-              <tbody className="divide-y">
-                {data.items.map(item => (
-                  <tr key={item.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-3 text-sm">
-                      <div className="font-medium">{productMap[item.product_id] || `Product ${item.product_id}`}</div>
-                      <div className="text-xs text-slate-500">ID: {item.product_id}</div>
-                    </td>
-                    <td className="px-4 py-3 text-sm font-medium">{item.currency}</td>
-                    <td className="px-4 py-3 text-sm text-right">{formatDisplayCurrency(item.price, item.currency)}</td>
-                    <td className="px-4 py-3 text-sm text-right">{item.cost_price ? formatDisplayCurrency(item.cost_price, item.currency) : "—"}</td>
-                    <td className="px-4 py-3 text-sm capitalize">{item.conversion_type}</td>
-                    <td className="px-4 py-3 text-sm text-right">{item.exchange_rate ?? "—"}</td>
-                    <td className="px-4 py-3 text-center">{item.is_active ? <CheckCircle size={16} className="text-green-500 mx-auto" /> : <Clock size={16} className="text-slate-500 mx-auto" />}</td>
-                    <td className="px-4 py-3 text-right">
-                      <button onClick={() => { setEditItem(item); setShowForm(true); }} className="text-blue-600 hover:text-blue-800 text-sm mr-3"><Pencil size={14} className="inline" /> Edit</button>
-                      <button onClick={() => handleDeactivate(item.id)} className="text-red-500 hover:text-red-700 text-sm">Deactivate</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <DataTable
+              stickyHeader={false}
+              data={data.items}
+              rowKey={(item) => item.id}
+              columns={[
+                { key: "product", label: "Product", render: (item) => <span className="text-sm"><div className="font-medium">{productMap[item.product_id] || `Product ${item.product_id}`}</div>
+                      <div className="text-xs text-slate-500">ID: {item.product_id}</div></span> },
+                { key: "currency", label: "Currency", render: (item) => <span className="text-sm font-medium">{item.currency}</span> },
+                { key: "price", label: "Price", align: "right", render: (item) => <span className="text-sm">{formatDisplayCurrency(item.price, item.currency)}</span> },
+                { key: "cost_price", label: "Cost Price", align: "right", render: (item) => <span className="text-sm">{item.cost_price ? formatDisplayCurrency(item.cost_price, item.currency) : "—"}</span> },
+                { key: "conversion", label: "Conversion", render: (item) => <span className="text-sm capitalize">{item.conversion_type}</span> },
+                { key: "rate", label: "Rate", align: "right", render: (item) => <span className="text-sm">{item.exchange_rate ?? "—"}</span> },
+                { key: "active", label: "Active", align: "center", render: (item) => <>{item.is_active ? <CheckCircle size={16} className="text-green-500 mx-auto" /> : <Clock size={16} className="text-slate-500 mx-auto" />}</> },
+                { key: "actions", label: "Actions", align: "right", mobileRole: "actions", render: (item) => <><button onClick={() => { setEditItem(item); setShowForm(true); }} className="text-blue-600 hover:text-blue-800 text-sm mr-3"><Pencil size={14} className="inline" /> Edit</button>
+                      <button onClick={() => handleDeactivate(item.id)} className="text-red-500 hover:text-red-700 text-sm">Deactivate</button></> },
+              ]}
+            />
           </div>
         )}
 

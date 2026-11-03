@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { BarChart3, Download, RefreshCw, AlertCircle, FileText, DollarSign, Receipt, TrendingUp, Calendar, Percent, Users } from "lucide-react";
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { dashboardApi, invoiceApi, paymentApi, taxApi, subscriptionApi } from "../../../service/billingService";
-import { extractArray } from "../../../utils/billing-helpers";
+import { extractArray, formatDisplayDate } from "../../../utils/billing-helpers";
 import {
   DashboardHeader, useDateRange, DashboardStatCard, DASHBOARD_KPI_GRID,
   DashboardChartErrorBoundary as ChartErrorBoundary, DashboardEmptyPanel,
@@ -10,6 +10,7 @@ import {
 import { filterByDateRange } from "../../../utils/export-helpers";
 import { formatCurrency, formatCompactCurrency } from "../../../utils/locale";
 import { useCurrency } from "../utils/CurrencyContext";
+import { DataTable as SharedDataTable } from "../../../components/billing-ui";
 import { sumInBaseCurrency, convertToBaseCurrency } from "../../../utils/currency-conversion";
 
 const CHART_COLORS = ["var(--color-brand)", "#60A5FA", "#BFDBFE", "#f59e0b", "#10b981", "#ef4444", "#3b82f6", "#ec4899"];
@@ -44,36 +45,19 @@ function DataTable({ columns, data, maxRows = 10 }) {
     );
   }
   const sliced = data.slice(0, maxRows);
+  // The shared table: rows become cards on phones when there are more than
+  // four columns (invoices, payments); narrower reports stay a table.
   return (
-    <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead>
-            <tr className="bg-slate-50/80">
-              {columns.map((col) => (
-                <th key={col.key} scope="col" className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">{col.label}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {sliced.map((row, idx) => (
-              <tr key={row.id ?? idx} className="hover:bg-slate-50/60 transition-colors">
-                {columns.map((col) => (
-                  <td key={col.key} className="px-4 py-3 text-sm text-slate-700 whitespace-nowrap">
-                    {col.render ? col.render(row) : row[col.key] ?? "—"}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {data.length > maxRows && (
-        <div className="px-4 py-2 bg-slate-50/50 border-t border-slate-100 text-xs text-slate-500">
+    <SharedDataTable
+      columns={columns.map((col) => ({ ...col, render: (row) => (col.render ? col.render(row) : row[col.key] ?? "—") }))}
+      data={sliced}
+      stickyHeader={false}
+      footer={data.length > maxRows ? (
+        <div className="px-4 py-2 bg-slate-50/50 text-xs text-slate-500">
           Showing {maxRows} of {data.length} rows
         </div>
-      )}
-    </div>
+      ) : null}
+    />
   );
 }
 
@@ -228,7 +212,7 @@ export default function ReportsPage() {
       { key: "customer_name", label: "Customer", render: (r) => r.customer_name || r.customer?.name || r.customer_display_name || (r.customer_id ? `Customer #${r.customer_id}` : "Unassigned Customer") },
       { key: "total", label: "Amount", render: (r) => <span className="whitespace-nowrap font-medium text-slate-900">{formatCurrency(r.total || r.amount, baseCurrency)}</span> },
       { key: "status", label: "Status", render: (r) => <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 capitalize">{r.status || "—"}</span> },
-      { key: "created_at", label: "Date", render: (r) => r.created_at ? new Date(r.created_at).toLocaleDateString() : "—" },
+      { key: "created_at", label: "Date", render: (r) => r.created_at ? formatDisplayDate(r.created_at) : "—" },
     ];
 
     return (

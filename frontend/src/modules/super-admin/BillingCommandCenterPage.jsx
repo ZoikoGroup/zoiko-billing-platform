@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 
 import CommandCenterContextBar from "../../components/CommandCenterContextBar";
-import { Button, PageHeader, SectionCard } from "../../components/billing-ui";
+import { Button, DataTable, PageHeader, SectionCard } from "../../components/billing-ui";
 import { ErrorState } from "../../components/billing-shared";
 import { useCommandCenter } from "../../context/CommandCenterContext";
 import usePolling from "../../hooks/usePolling";
@@ -874,55 +874,34 @@ export default function BillingCommandCenterPage({ embedded = false } = {}) {
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
         {!r.risk ? <PulseBlock innerRef={riskDeferred.ref} className="h-64 lg:col-span-2" /> : <SectionCard variant="standard" accent="brand" className="lg:col-span-2">
           <h3 className="mb-3 text-xs font-bold text-slate-800">Collections Risk by Tenant</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[480px] text-left text-xs">
-              <thead>
-                <tr className="text-[10px] uppercase tracking-wider text-slate-400">
-                  <th scope="col" className="pb-2 pr-3 font-medium">Organization</th>
-                  <th scope="col" className="pb-2 pr-3 font-medium">Accounts at risk</th>
-                  <th scope="col" className="pb-2 pr-3 font-medium">High</th>
-                  <th scope="col" className="pb-2 pr-3 font-medium">Medium</th>
-                  <th scope="col" className="pb-2 text-right font-medium">Overdue by currency</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sourceErrors.risk ? (
-                  <tr>
-                    <td colSpan={5}>
-                      <PanelError message={sourceErrors.risk} onRetry={loadAll} />
-                    </td>
-                  </tr>
-                ) : rowsOf(risk).length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="py-6 text-center text-xs text-slate-500">
-                      <CheckCircle2 size={18} className="mx-auto mb-1 text-emerald-500" />
-                      No tenant carries an overdue balance right now.
-                    </td>
-                  </tr>
-                ) : (
-                  rowsOf(risk).map((row) => (
-                    <tr key={row.organization_id} className="border-t border-slate-100">
-                      <td className="max-w-[200px] truncate py-2.5 pr-3">
-                        <OrganizationLink organizationId={row.organization_id} name={row.organization_name} />
-                      </td>
-                      <td className="py-2.5 pr-3 font-semibold text-slate-800">
-                        <MaskedValue value={row.accounts_at_risk_count} label={row.accounts_at_risk_count_label} />
-                      </td>
-                      <td className="py-2.5 pr-3 font-medium text-red-600">
-                        <MaskedValue value={row.risk_high_count} label={row.risk_high_count_label} />
-                      </td>
-                      <td className="py-2.5 pr-3 font-medium text-orange-600">
-                        <MaskedValue value={row.risk_medium_count} label={row.risk_medium_count_label} />
-                      </td>
-                      <td className="py-2.5 text-right">
-                        <CurrencyTotals totals={row.total_overdue_by_currency} />
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+          {sourceErrors.risk ? (
+            <PanelError message={sourceErrors.risk} onRetry={loadAll} />
+          ) : (
+            <DataTable
+              dense
+              stickyHeader={false}
+              data={rowsOf(risk)}
+              rowKey={(row) => row.organization_id}
+              emptyIcon={CheckCircle2}
+              emptyTitle="No tenant carries an overdue balance right now."
+              emptyMessage=""
+              columns={[
+                { key: "organization", label: "Organization", render: (row) => (
+                  <span className="block max-w-[200px] truncate"><OrganizationLink organizationId={row.organization_id} name={row.organization_name} /></span>
+                ) },
+                { key: "accounts_at_risk", label: "Accounts at risk", render: (row) => (
+                  <span className="font-semibold text-slate-800"><MaskedValue value={row.accounts_at_risk_count} label={row.accounts_at_risk_count_label} /></span>
+                ) },
+                { key: "high", label: "High", render: (row) => (
+                  <span className="font-medium text-red-600"><MaskedValue value={row.risk_high_count} label={row.risk_high_count_label} /></span>
+                ) },
+                { key: "medium", label: "Medium", render: (row) => (
+                  <span className="font-medium text-orange-600"><MaskedValue value={row.risk_medium_count} label={row.risk_medium_count_label} /></span>
+                ) },
+                { key: "overdue", label: "Overdue by currency", align: "right", render: (row) => <CurrencyTotals totals={row.total_overdue_by_currency} /> },
+              ]}
+            />
+          )}
           <SupportAccessNote />
           <div className="mt-3">
             <PanelLink to={`${FINOPS_HUB}?section=payments-recovery`}>View recovery &amp; collections</PanelLink>

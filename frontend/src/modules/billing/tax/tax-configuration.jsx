@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Save, RefreshCw, AlertCircle, CheckCircle, Globe, Shield, Plus, X, Trash2 } from "lucide-react";
-import HRPage from "../../../components/HRPage";
+import { SettingsPageShell, SettingsSaveBar, useUnsavedChangesGuard } from "../../../components/billing-ui";
 import { taxApi, settingsApi } from "../../../service/billingService";
 import { extractArray } from "../../../utils/billing-helpers";
 import { ErrorState } from "../../../components/billing-shared";
@@ -43,6 +43,7 @@ export default function TaxConfigurationPage() {
   const latest = useRef({ jurisdictions, exemptions });
   latest.current = { jurisdictions, exemptions };
   const hasChanges = snapshot !== null && serializeConfig(jurisdictions, exemptions) !== snapshot;
+  useUnsavedChangesGuard(hasChanges, "You have unsaved settings. Leave this page and discard them?");
 
   const fetchData = useCallback(async () => {
     try {
@@ -146,24 +147,24 @@ export default function TaxConfigurationPage() {
 
   if (loading) {
     return (
-      <HRPage title="Tax Configuration" subtitle="Configure tax settings">
+      <SettingsPageShell title="Tax Configuration" description="Configure tax settings" icon={Globe} crumbs={[{ label: "Billing", href: "/billing" }, { label: "Tax", href: "/billing/tax" }, { label: "Configuration" }]}>
         <div className="flex items-center justify-center py-12">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600" />
         </div>
-      </HRPage>
+      </SettingsPageShell>
     );
   }
 
   if (loadFailed) {
     return (
-      <HRPage title="Tax Configuration" subtitle="Configure tax settings">
+      <SettingsPageShell title="Tax Configuration" description="Configure tax settings" icon={Globe} crumbs={[{ label: "Billing", href: "/billing" }, { label: "Tax", href: "/billing/tax" }, { label: "Configuration" }]}>
         <ErrorState title="Couldn't load tax configuration" message={error} onRetry={fetchData} />
-      </HRPage>
+      </SettingsPageShell>
     );
   }
 
   return (
-    <HRPage title="Tax Configuration" subtitle="Configure tax settings">
+    <SettingsPageShell title="Tax Configuration" description="Configure tax settings" icon={Globe} crumbs={[{ label: "Billing", href: "/billing" }, { label: "Tax", href: "/billing/tax" }, { label: "Configuration" }]}>
 
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between mb-6">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-1 min-w-0">
@@ -179,22 +180,6 @@ export default function TaxConfigurationPage() {
             <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Exemptions</p>
             <p className="text-2xl font-bold text-slate-900 mt-1">{exemptions.length}</p>
           </div>
-        </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          {saved && (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-emerald-700 bg-emerald-50 rounded-lg">
-              <CheckCircle className="h-4 w-4" /> Saved
-            </span>
-          )}
-          <button onClick={fetchData}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200">
-            <RefreshCw className="h-4 w-4" /> Refresh
-          </button>
-          <button onClick={handleSave} disabled={saving || loadFailed || !hasChanges}
-            className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50">
-            {saving ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> : <Save className="h-4 w-4" />}
-            Save Changes
-          </button>
         </div>
       </div>
 
@@ -229,7 +214,7 @@ export default function TaxConfigurationPage() {
               {TAX_RULE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
             <button onClick={addJurisdiction} disabled={!newJurisdiction.name}
-              className="flex items-center gap-1 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 disabled:opacity-50">
+              className="flex items-center gap-1 px-4 py-2 border border-brand-200 bg-white text-brand-700 rounded-lg text-sm font-medium hover:bg-brand-50 disabled:opacity-50 max-sm:min-h-11">
               <Plus size={16} /> Add
             </button>
           </div>
@@ -285,7 +270,7 @@ export default function TaxConfigurationPage() {
               ))}
             </select>
             <button onClick={addExemption} disabled={!newExemption.name}
-              className="flex items-center gap-1 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 disabled:opacity-50">
+              className="flex items-center gap-1 px-4 py-2 border border-brand-200 bg-white text-brand-700 rounded-lg text-sm font-medium hover:bg-brand-50 disabled:opacity-50 max-sm:min-h-11">
               <Plus size={16} /> Add
             </button>
           </div>
@@ -315,6 +300,17 @@ export default function TaxConfigurationPage() {
           )}
         </div>
       </div>
-    </HRPage>
+      <SettingsSaveBar hasChanges={hasChanges} saved={saved}>
+        <button onClick={fetchData}
+          className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200">
+          <RefreshCw className="h-4 w-4" /> Refresh
+        </button>
+        <button onClick={handleSave} disabled={saving || loadFailed || !hasChanges}
+          className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50">
+          {saving ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> : <Save className="h-4 w-4" />}
+          Save Changes
+        </button>
+      </SettingsSaveBar>
+    </SettingsPageShell>
   );
 }

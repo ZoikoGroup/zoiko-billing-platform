@@ -7,6 +7,7 @@ import { loadGlobalBillingConfig } from "../../../service/billingConfigCache";
 import { Spinner, ErrorState, EmptyState } from "../../../components/billing-shared";
 import { extractArray } from "../../../utils/billing-helpers";
 import { formatCurrency } from "../../../utils/currency";
+import { DataTable } from "../../../components/billing-ui";
 
 // The fields a tier actually has (PlanTierCreate / PlanTier): a quantity band
 // and its price. The form previously also asked for Name, Type and Priority --
@@ -337,7 +338,7 @@ export default function TierManagementPage() {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <button onClick={fetchTiers} disabled={refreshing || !selectedPlanId} aria-label="Refresh tiers"
-                className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50">
+                className="p-2.5 max-sm:p-3 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50">
                 <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
               </button>
               <button onClick={openAddModal} disabled={!selectedPlanId}
@@ -364,53 +365,30 @@ export default function TierManagementPage() {
             <EmptyState icon={Tag} title="No tiers yet" message={`Add pricing tiers to "${selectedPlanName}".`} />
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-100">
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Tier</th>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Charge</th>
-                  <th scope="col" className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Min Units</th>
-                  <th scope="col" className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Max Units</th>
-                  <th scope="col" className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Unit Price</th>
-                  {/* This column always showed flat_fee but was labelled "Priority". */}
-                  <th scope="col" className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Flat Fee</th>
-                  <th scope="col" className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {tiers.map((tier, idx) => (
-                  <tr key={tier.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-4 py-4">
-                      <div className="flex items-center gap-3">
+          <DataTable
+            stickyHeader={false}
+            data={tiers}
+            rowKey={(tier, idx) => tier.id}
+            columns={[
+              { key: "tier", label: "Tier", render: (tier, idx) => <><div className="flex items-center gap-3">
                         <div className="h-8 w-8 rounded-full bg-linear-to-br from-brand to-brand-hover text-white flex items-center justify-center text-xs font-bold" aria-hidden="true">
                           {idx + 1}
                         </div>
                         <span className="font-medium text-slate-800">{"Tier " + (idx + 1)}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-4">
-                      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium capitalize bg-slate-100 text-slate-700">
+                      </div></> },
+              { key: "charge", label: "Charge", render: (tier, idx) => <><span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium capitalize bg-slate-100 text-slate-700">
                         {parseFloat(tier.flat_fee) > 0 ? (parseFloat(tier.unit_price) > 0 ? "Hybrid" : "Flat Fee") : "Per Unit"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-4 text-right text-slate-600">{tier.from_quantity ?? "—"}</td>
-                    <td className="px-4 py-4 text-right text-slate-600">{tier.to_quantity ?? "No limit"}</td>
-                    <td className="px-4 py-4 text-right font-medium text-slate-800">
-                      {tier.unit_price != null ? formatCurrency(tier.unit_price, tier.currency || orgCurrency) : "—"}
-                    </td>
-                    <td className="px-4 py-4 text-right text-slate-600">{parseFloat(tier.flat_fee) > 0 ? formatCurrency(tier.flat_fee, tier.currency || orgCurrency) : "—"}</td>
-                    <td className="px-4 py-4 text-right">
-                      <button onClick={() => openRemove(tier, idx)} aria-label={`Remove tier ${idx + 1}`}
+                      </span></> },
+              { key: "min_units", label: "Min Units", align: "right", render: (tier, idx) => <span className="text-slate-600">{tier.from_quantity ?? "—"}</span> },
+              { key: "max_units", label: "Max Units", align: "right", render: (tier, idx) => <span className="text-slate-600">{tier.to_quantity ?? "No limit"}</span> },
+              { key: "unit_price", label: "Unit Price", align: "right", render: (tier, idx) => <span className="font-medium text-slate-800">{tier.unit_price != null ? formatCurrency(tier.unit_price, tier.currency || orgCurrency) : "—"}</span> },
+              { key: "flat_fee", label: "Flat Fee", align: "right", render: (tier, idx) => <span className="text-slate-600">{parseFloat(tier.flat_fee) > 0 ? formatCurrency(tier.flat_fee, tier.currency || orgCurrency) : "—"}</span> },
+              { key: "actions", label: "Actions", align: "right", mobileRole: "actions", render: (tier, idx) => <><button onClick={() => openRemove(tier, idx)} aria-label={`Remove tier ${idx + 1}`}
                         className="p-2 rounded-lg hover:bg-red-50 text-slate-500 hover:text-red-600 transition-colors" title="Remove">
                         <Trash2 size={16} />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                      </button></> },
+            ]}
+          />
         )}
       </div>
 

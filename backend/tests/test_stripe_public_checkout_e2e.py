@@ -258,3 +258,96 @@ class TestPlane1PublicInvoiceOnlinePaymentFlag:
         view = get_public_invoice("tok_pinv_51", db=db)
         assert view["online_payment_available"] is expected
         assert view["invoice_number"] == "PINV-0051"
+
+
+class TestPlatformInvoiceCheckoutEndpoints:
+    """Verifies public platform invoice lookup, token validation, 404 behavior,
+    and checkout session handling across the HTTP route layer."""
+
+    def test_lookup_valid_token(self, db):
+        from app.modules.commercial.commercial_billing_router import get_public_invoice
+        from datetime import date
+
+        org = Organization(id=20, organization_name="Tenant Twenty", organization_code="tenant-twenty")
+        db.add(org)
+        account = CommercialAccount(id=20, organization_id=org.id, status=CommercialAccountStatus.ACTIVE)
+        db.add(account)
+        db.add(PlatformInvoice(
+            id=60, commercial_account_id=account.id, invoice_number="PINV-0060",
+            status=PlatformInvoiceStatus.ISSUED, payment_status=PlatformInvoicePaymentStatus.NONE,
+            total_amount=Decimal("200.00"), balance_due=Decimal("200.00"), paid_amount=Decimal("0.00"),
+            currency="USD", issue_date=date.today(), due_date=date.today(), public_token="tok_valid_pinv_60",
+        ))
+        db.commit()
+
+        res = get_public_invoice("tok_valid_pinv_60", db=db)
+        assert res["invoice_number"] == "PINV-0060"
+        assert res["balance_due"] == "200.00"
+
+    def test_lookup_invalid_token_raises_404(self, db):
+        from fastapi import HTTPException
+        from app.modules.commercial.commercial_billing_router import get_public_invoice
+
+        with pytest.raises(HTTPException) as exc_info:
+            get_public_invoice("non_existent_token_xyz", db=db)
+        assert exc_info.value.status_code == 404
+        assert "Invoice not found or link expired" in str(exc_info.value.detail)
+
+    def test_checkout_invalid_token_raises_404(self, db):
+        from fastapi import HTTPException
+        from app.modules.commercial.platform_stripe_router import create_checkout_session
+
+        with pytest.raises(HTTPException) as exc_info:
+            create_checkout_session("non_existent_token_xyz", db=db)
+        assert exc_info.value.status_code == 404
+        assert "Invoice not found or link expired" in str(exc_info.value.detail)
+
+    def test_checkout_non_payable_invoice_raises_400(self, db):
+        from datetime import date
+        from fastapi import HTTPException
+        from app.modules.commercial.platform_stripe_router import create_checkout_session
+
+        org = Organization(id=21, organization_name="Tenant Twenty-One", organization_code="tenant-twenty-one")
+        db.add(org)
+        account = CommercialAccount(id=21, organization_id=org.id, status=CommercialAccountStatus.ACTIVE)
+        db.add(account)
+        db.add(PlatformInvoice(
+            id=61, commercial_account_id=account.id, invoice_number="PINV-0061",
+            status=PlatformInvoiceStatus.VOIDED, payment_status=PlatformInvoicePaymentStatus.NONE,
+            total_amount=Decimal("200.00"), balance_due=Decimal("0.00"), paid_amount=Decimal("0.00"),
+            currency="USD", issue_date=date.today(), due_date=date.today(), public_token="tok_voided_61",
+        ))
+        db.commit()
+
+        with pytest.raises(HTTPException) as exc_info:
+            create_checkout_session("tok_voided_61", db=db)
+        assert exc_info.value.status_code == 400
+        assert "cannot be paid" in str(exc_info.value.detail).lower()
+
+    @patch("stripe.Customer.create")
+    @patch("stripe.checkout.Session.create")
+    def test_checkout_session_success(self, mock_session_create, mock_cust_create, db):
+        from datetime import date
+        from app.modules.commercial.platform_stripe_router import create_checkout_session
+
+        org = Organization(id=22, organization_name="Tenant Twenty-Two", organization_code="tenant-twenty-two")
+        db.add(org)
+        account = CommercialAccount(id=22, organization_id=org.id, status=CommercialAccountStatus.ACTIVE)
+        db.add(account)
+        db.add(PlatformInvoice(
+            id=62, commercial_account_id=account.id, invoice_number="PINV-0062",
+            status=PlatformInvoiceStatus.ISSUED, payment_status=PlatformInvoicePaymentStatus.NONE,
+            total_amount=Decimal("300.00"), balance_due=Decimal("300.00"), paid_amount=Decimal("0.00"),
+            currency="USD", issue_date=date.today(), due_date=date.today(), public_token="tok_payable_62",
+        ))
+        db.commit()
+
+        mock_cust_create.return_value = MagicMock(id="cus_test_22")
+        mock_session_create.return_value = MagicMock(
+            id="cs_test_62",
+            url="https://checkout.stripe.com/pay/cs_test_62",
+        )
+
+        res = create_checkout_session("tok_payable_62", db=db)
+        assert res["session_id"] == "cs_test_62"
+        assert res["checkout_url"] == "https://checkout.stripe.com/pay/cs_test_62"

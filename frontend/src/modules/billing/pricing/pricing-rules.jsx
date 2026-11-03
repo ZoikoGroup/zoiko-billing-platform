@@ -3,10 +3,10 @@ import {
   ListFilter, Search, Plus, RefreshCw, X, Pencil,
 } from "lucide-react";
 import HRPage from "../../../components/HRPage";
-import { Button, Modal } from "../../../components/billing-ui";
+import { DataTable, Button, Modal } from "../../../components/billing-ui";
 import { pricingRuleApi } from "../../../service/billingService";
 import { formatDisplayDate } from "../../../utils/billing-helpers";
-import { Spinner, EmptyState, ErrorState } from "../../../components/billing-shared";
+import { Spinner, EmptyState, ErrorState, StatusBadge as SharedStatusBadge } from "../../../components/billing-shared";
 import useLatestRequest from "../utils/useLatestRequest";
 
 const RULE_TYPE_OPTIONS = [
@@ -43,8 +43,7 @@ function todayIsoDate() {
 }
 
 function StatusBadge({ status }) {
-  const colors = { draft: "bg-slate-100 text-slate-600", active: "bg-green-100 text-green-700", inactive: "bg-slate-100 text-slate-700", expired: "bg-red-100 text-red-600", scheduled: "bg-blue-100 text-blue-600" };
-  return <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${colors[status] || "bg-slate-100 text-slate-700"}`}>{status || "unknown"}</span>;
+  return <SharedStatusBadge status={status} />;
 }
 
 const EMPTY_FORM = {
@@ -323,10 +322,10 @@ export default function PricingRulesPage() {
     <HRPage title="Pricing Rules" icon={ListFilter}>
       <div className="space-y-4">
         <div className="flex flex-wrap gap-3 items-center justify-between">
-          <div className="flex flex-wrap gap-2 items-center">
-            <div className="relative">
+          <div className="flex w-full flex-wrap gap-2 items-center sm:w-auto">
+            <div className="relative w-full sm:w-auto">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-              <input aria-label="Search rules" className="pl-9 pr-8 py-2 border rounded-lg text-sm w-48" placeholder="Search rules..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+              <input aria-label="Search rules" className="pl-9 pr-8 py-2 border rounded-lg text-sm w-full sm:w-48" placeholder="Search rules..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
               {searchTerm && <button onClick={() => setSearchTerm("")} aria-label="Clear search" className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700"><X size={14} /></button>}
             </div>
             <select aria-label="Rule type" className="border rounded-lg px-3 py-2 text-sm" value={ruleTypeFilter} onChange={e => setRuleTypeFilter(e.target.value)}>
@@ -362,32 +361,26 @@ export default function PricingRulesPage() {
             : <EmptyState title="No pricing rules yet" message="Create your first pricing rule to get started." />
         ) : (
           <div className="bg-white rounded-3xl border overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
-                <tr><th className="text-left px-4 py-3">Name / Code</th><th className="text-left px-4 py-3">Type</th><th className="text-left px-4 py-3">Scope</th><th className="text-center px-4 py-3">Priority</th><th className="text-left px-4 py-3">Status</th><th className="text-left px-4 py-3">Effective</th><th className="text-right px-4 py-3">Actions</th></tr>
-              </thead>
-              <tbody className="divide-y">
-                {data.items.map(item => (
-                  <tr key={item.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-3"><div className="font-medium text-sm">{item.name}</div><div className="text-xs text-slate-500">{item.code}</div></td>
-                    <td className="px-4 py-3 text-sm capitalize">{item.rule_type?.replace("_", " ")}</td>
-                    <td className="px-4 py-3 text-sm capitalize">{item.scope}</td>
-                    <td className="px-4 py-3 text-center text-sm">{item.priority}</td>
-                    <td className="px-4 py-3"><StatusBadge status={item.status} /></td>
-                    <td className="px-4 py-3 text-sm">{formatDisplayDate(item.effective_from)}{item.effective_to ? ` — ${formatDisplayDate(item.effective_to)}` : ""}</td>
-                    <td className="px-4 py-3 text-right">
-                      <button onClick={() => setViewItem(item)} className="text-brand-600 hover:text-brand-700 text-sm mr-3">View</button>
+            <DataTable
+              stickyHeader={false}
+              data={data.items}
+              rowKey={(item) => item.id}
+              columns={[
+                { key: "name_code", label: "Name / Code", render: (item) => <><div className="font-medium text-sm">{item.name}</div><div className="text-xs text-slate-500">{item.code}</div></> },
+                { key: "type", label: "Type", render: (item) => <span className="text-sm capitalize">{item.rule_type?.replace("_", " ")}</span> },
+                { key: "scope", label: "Scope", render: (item) => <span className="text-sm capitalize">{item.scope}</span> },
+                { key: "priority", label: "Priority", align: "center", render: (item) => <span className="text-sm">{item.priority}</span> },
+                { key: "status", label: "Status", render: (item) => <><StatusBadge status={item.status} /></> },
+                { key: "effective", label: "Effective", render: (item) => <span className="text-sm">{formatDisplayDate(item.effective_from)}{item.effective_to ? ` — ${formatDisplayDate(item.effective_to)}` : ""}</span> },
+                { key: "actions", label: "Actions", align: "right", mobileRole: "actions", render: (item) => <><button onClick={() => setViewItem(item)} className="text-brand-600 hover:text-brand-700 text-sm mr-3">View</button>
                       <button onClick={() => { setEditRule(item); setShowForm(true); }} className="text-blue-600 hover:text-blue-800 text-sm mr-3"><Pencil size={14} className="inline" /> Edit</button>
                       {item.is_active ? (
                         <button onClick={async () => { try { await pricingRuleApi.deactivate(item.id); fetchData(); } catch (e) { setError(e.message); } }} className="text-red-500 hover:text-red-700 text-sm">Deactivate</button>
                       ) : (
                         <button onClick={async () => { try { await pricingRuleApi.activate(item.id); fetchData(); } catch (e) { setError(e.message); } }} className="text-green-600 hover:text-green-800 text-sm">Activate</button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      )}</> },
+              ]}
+            />
           </div>
         )}
 

@@ -106,6 +106,26 @@ def get_ai_context(
     legal_entity_id = None
     billing_plane = BillingPlane.TENANT_BILLING
 
+    # For Super Admin users without an organization_id, attach to the platform
+    # commercial organization and context so conversations satisfy DB foreign keys.
+    if is_super_admin and not organization_id:
+        platform_org = (
+            db.query(Organization)
+            .filter(Organization.organization_code == "ZOIKO_PLATFORM")
+            .first()
+        )
+        if platform_org is None:
+            platform_org = Organization(
+                organization_name="Zoiko Platform",
+                organization_code="ZOIKO_PLATFORM",
+                is_active=True,
+            )
+            db.add(platform_org)
+            db.flush()
+        organization_id = platform_org.id
+        tenant_name = platform_org.organization_name
+        billing_plane = BillingPlane.ZOIKO_COMMERCIAL
+
     if organization_id:
         org = db.query(Organization).filter(Organization.id == organization_id).first()
         if org is None:

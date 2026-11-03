@@ -316,7 +316,7 @@ export default function CreditNotesPage() {
   };
 
   const StatusBadge = ({ status }) => (
-    <SharedStatusBadge status={status} options={STATUS_OPTIONS} />
+    <SharedStatusBadge status={status} />
   );
 
   const actionBtn = "rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 disabled:opacity-40 disabled:cursor-not-allowed";
@@ -426,21 +426,21 @@ export default function CreditNotesPage() {
         <div className="bg-white border border-slate-200 rounded-3xl shadow-[0_4px_20px_rgba(0,0,0,0.02)] overflow-hidden">
           <div className="p-6 border-b border-slate-100">
             <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center gap-3 flex-1">
+              <div className="flex flex-wrap items-center gap-3 flex-1 max-sm:basis-full">
                 <SearchInput
                   value={search}
                   onChange={setSearch}
                   debounceMs={0}
                   placeholder="Search credit notes..."
-                  className="flex-1 max-w-md"
+                  className="flex-1 max-w-md max-sm:basis-full max-sm:max-w-none"
                   aria-label="Search credit notes"
                 />
                 <button onClick={() => setShowFilters(!showFilters)}
-                  className={`p-2.5 rounded-xl border transition-colors ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}
+                  className={`p-2.5 max-sm:p-3 rounded-xl border transition-colors ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}
                   aria-label="Toggle filters">
                   <Filter size={18} />
                 </button>
-                <button onClick={handleRefresh} disabled={refreshing} className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50" aria-label="Refresh">
+                <button onClick={handleRefresh} disabled={refreshing} className="p-2.5 max-sm:p-3 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50" aria-label="Refresh">
                   <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
                 </button>
               </div>
@@ -493,7 +493,7 @@ export default function CreditNotesPage() {
               emptyMessage={hasActiveFilters ? "Try adjusting your search or filters" : "No credit notes yet"}
               emptyIcon={Receipt}
               emptyAction={!hasActiveFilters ? (
-                <Button variant="primary" icon={Plus} onClick={openCreateModal}>
+                <Button variant="secondary" icon={Plus} onClick={openCreateModal}>
                   Create your first credit note
                 </Button>
               ) : undefined}

@@ -865,7 +865,7 @@ class InvoiceRepository(BaseRepository[Invoice]):
                 "changed_by": h.changed_by,
                 "reason": h.reason,
                 "created_at": h.created_at.isoformat() if h.created_at else None,
-                "action": f"Status changed from {h.from_status or 'new'} to {h.to_status}",
+                "action": f"Status changed from {getattr(h.from_status, 'value', h.from_status) or 'new'} to {getattr(h.to_status, 'value', h.to_status)}",
             }
             for h in history
         ]

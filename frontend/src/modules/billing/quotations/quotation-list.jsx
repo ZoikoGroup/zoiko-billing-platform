@@ -13,6 +13,7 @@ import { useBillingDateRange } from "../utils/DateRangeContext";
 import { useListUrlFilters } from "../utils/useListUrlFilters";
 import ActiveUrlFilterChips from "../utils/ActiveUrlFilterChips";
 import useLatestRequest from "../utils/useLatestRequest";
+import useMediaQuery, { BELOW_SM } from "../../../hooks/useMediaQuery";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -60,7 +61,7 @@ export function pipelineCard(summary, fallbackCurrency) {
 const STATUS_ICONS = { accepted: CheckCircle, rejected: XCircle, converted: RefreshCw, draft: Clock, sent: Send, cancelled: Ban, expired: Clock };
 
 function StatusBadge({ status }) {
-  return <SharedStatusBadge status={status} options={STATUS_OPTIONS} icon={STATUS_ICONS[status] || Clock} />;
+  return <SharedStatusBadge status={status} icon={STATUS_ICONS[status] || Clock} />;
 }
 
 export default function QuotationListPage() {
@@ -99,6 +100,7 @@ export default function QuotationListPage() {
 
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [selectAll, setSelectAll] = useState(false);
+  const isPhone = useMediaQuery(BELOW_SM);
   const [bulkLoading, setBulkLoading] = useState(false);
   const { confirm, ConfirmationDialog } = useConfirmationDialog();
 
@@ -563,8 +565,8 @@ export default function QuotationListPage() {
         <div className="bg-white border border-slate-200 rounded-3xl shadow-[0_4px_20px_rgba(0,0,0,0.02)] overflow-hidden">
           <div className="p-6 border-b border-slate-100">
             <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center gap-3 flex-1">
-                <div className="relative flex-1 max-w-md">
+              <div className="flex flex-wrap items-center gap-3 flex-1 max-sm:basis-full">
+                <div className="relative flex-1 max-w-md max-sm:basis-full max-sm:max-w-none">
                   <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                   <input type="text" placeholder="Search quotations..." value={search}
                     onChange={(e) => setSearch(e.target.value)}
@@ -573,12 +575,12 @@ export default function QuotationListPage() {
                   {search && <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600" aria-label="Clear search"><X size={16} /></button>}
                 </div>
                 <button onClick={() => setShowFilters(!showFilters)}
-                  className={`p-2.5 rounded-xl border transition-colors ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}
+                  className={`p-2.5 max-sm:p-3 rounded-xl border transition-colors ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}
                   aria-label="Toggle filters" aria-expanded={showFilters}>
                   <Filter size={18} />
                 </button>
                 <button onClick={() => { setRefreshing(true); fetchQuotes(); fetchSummary(); }} disabled={refreshing}
-                  className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50" aria-label="Refresh quotations">
+                  className="p-2.5 max-sm:p-3 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50" aria-label="Refresh quotations">
                   <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
                 </button>
                 {selectedIds.size > 0 && (
@@ -602,8 +604,8 @@ export default function QuotationListPage() {
                   className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors">
                   <BarChart3 size={16} /> Dashboard
                 </button>
-                <button onClick={handleExportJSON} className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50" title="Export JSON" aria-label="Export quotations as JSON"><Download size={18} /></button>
-                <button onClick={handleExportCSV} className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50" title="Export CSV" aria-label="Export quotations as CSV"><FileText size={18} /></button>
+                <button onClick={handleExportJSON} className="p-2.5 max-sm:p-3 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50" title="Export JSON" aria-label="Export quotations as JSON"><Download size={18} /></button>
+                <button onClick={handleExportCSV} className="p-2.5 max-sm:p-3 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50" title="Export CSV" aria-label="Export quotations as CSV"><FileText size={18} /></button>
                 <button onClick={() => navigate("/billing/quotations/create")}
                   className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-brand to-brand-hover text-white rounded-xl text-sm font-medium hover:shadow-lg">
                   <Plus size={18} /> New Quotation
@@ -638,6 +640,78 @@ export default function QuotationListPage() {
             )}
           </div>
 
+          {/* Phones: one card per quotation instead of an 8-column table
+              swiped sideways. Same selection, open and sort handlers. */}
+          {isPhone ? (
+            <div>
+              <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-2">
+                <label className="flex min-h-11 items-center gap-2 text-sm text-slate-600">
+                  <input type="checkbox" checked={selectAll} onChange={handleSelectAll}
+                    className="h-5 w-5 rounded border-slate-300 text-brand-600 focus:ring-brand/30" aria-label="Select all quotations" />
+                  Select all
+                </label>
+                <label className="flex items-center gap-2 text-sm text-slate-500">
+                  <span>Sort</span>
+                  <select
+                    value={`${sortField}:${sortDir}`}
+                    onChange={(e) => { const [field, dir] = e.target.value.split(":"); setSortField(field); setSortDir(dir); setCurrentPage(1); }}
+                    className="min-h-11 rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-700"
+                    aria-label="Sort by"
+                  >
+                    {![["created_at", "desc"], ["created_at", "asc"], ["amount", "desc"], ["amount", "asc"]].some(([f, d]) => f === sortField && d === sortDir) && (
+                      <option value={`${sortField}:${sortDir}`}>Default</option>
+                    )}
+                    <option value="created_at:desc">Newest first</option>
+                    <option value="created_at:asc">Oldest first</option>
+                    <option value="amount:desc">Amount high–low</option>
+                    <option value="amount:asc">Amount low–high</option>
+                  </select>
+                </label>
+              </div>
+              {quotes.length === 0 ? (
+                <div className="px-4 py-16 text-center">
+                  <EmptyState
+                    icon={FileSignature}
+                    title="No quotations found"
+                    message={search || statusFilter || dateRange.date_from ? "Try adjusting your search or filters" : "Create your first quotation to get started"}
+                  />
+                </div>
+              ) : (
+                <ul className="divide-y divide-slate-100">
+                  {quotes.map((q) => (
+                    <li key={q.id} className="px-4 py-3">
+                      <div className="flex items-start gap-3">
+                        <label className="-ml-3 flex h-11 w-11 shrink-0 items-center justify-center"><input type="checkbox" checked={selectedIds.has(q.id)} onChange={() => handleSelectOne(q.id)}
+                          className="h-5 w-5 rounded border-slate-300 text-brand-600 focus:ring-brand/30" aria-label={`Select quotation ${q.quote_number || q.id}`} /></label>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start justify-between gap-2">
+                            <button onClick={() => navigate(`/billing/quotations/${q.id}`)} className="flex min-h-11 min-w-0 items-center gap-2 text-left font-medium text-slate-800 hover:text-brand-600 transition-colors">
+                              <FileSignature size={14} className="shrink-0 text-slate-500" />
+                              <span className="truncate">{q.quote_number || `#${q.id}`}</span>
+                              {q.quote_version > 1 && <span className="text-xs text-slate-500">v{q.quote_version}</span>}
+                            </button>
+                            <div className="shrink-0 pt-2.5"><StatusBadge status={q.status} /></div>
+                          </div>
+                          <p className="truncate text-sm text-slate-600">{q.customer_name || q.customer?.name || `${singular} #${q.customer_id}`}</p>
+                          <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                            <div><dt className="text-slate-500">Amount</dt><dd className="font-medium text-slate-800 text-sm">{formatDisplayCurrency(q.total_amount || q.total || 0, q.currency)}</dd></div>
+                            <div><dt className="text-slate-500">Valid Until</dt><dd className="text-slate-600">{formatDisplayDate(q.valid_until)}</dd></div>
+                            <div><dt className="text-slate-500">Created</dt><dd className="text-slate-600">{formatDisplayDate(q.created_at)}</dd></div>
+                          </dl>
+                          <div className="mt-1 flex justify-end">
+                            <button onClick={() => navigate(`/billing/quotations/${q.id}`)}
+                              className="inline-flex h-11 w-11 items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500 hover:text-brand-600 transition-colors" title="View" aria-label={`View quotation ${q.quote_number || q.id}`}>
+                              <Eye size={16} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -702,6 +776,7 @@ export default function QuotationListPage() {
               </tbody>
             </table>
           </div>
+          )}
 
           <Pagination page={safePage} totalPages={totalPages} onPageChange={setCurrentPage}>
             {total} total quotation(s)

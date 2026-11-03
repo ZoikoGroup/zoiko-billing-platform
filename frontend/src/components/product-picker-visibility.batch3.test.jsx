@@ -70,6 +70,7 @@ describe("H. Assistant launcher never floats over page content", () => {
     // controls) into the TopBar at every width.
     expect(src).toMatch(/onAssistantClick=\{\(\) => setAssistantOpen\(true\)\}/);
     expect(src).not.toMatch(/aria-label="Open AI Billing Assistant"/);
-    expect(src).toMatch(/min-w-0 max-w-full overflow-x-hidden px-4 pt-6 pb-24/);
+    // (overflow-x-clip where supported, so page sticky bars can pin to <main>.)
+    expect(src).toMatch(/min-w-0 max-w-full overflow-x-hidden supports-\[overflow:clip\]:overflow-x-clip px-4 pt-6 pb-24/);
   });
 });

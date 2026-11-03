@@ -10,7 +10,7 @@ import { formatDisplayDate } from "./billing-helpers";
 // `new Date("2026-01-01")` -> UTC midnight -> Dec 31 in the Americas. The fix
 // is in the shared helper, so every date-only value it formats is corrected.
 
-const local = (y, m, d) => new Date(y, m - 1, d).toLocaleDateString();
+const local = (y, m, d) => new Date(y, m - 1, d).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 
 describe("formatDisplayDate — date-only strings keep their calendar day (UTC-5)", () => {
   it("runs in a timezone west of UTC", () => {
@@ -27,13 +27,13 @@ describe("formatDisplayDate — date-only strings keep their calendar day (UTC-5
   });
 
   it("would have shown the previous day with the old UTC parse (guards the regression)", () => {
-    expect(new Date("2026-01-01").toLocaleDateString()).toBe(local(2025, 12, 31));
+    expect(new Date("2026-01-01").toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })).toBe(local(2025, 12, 31));
     expect(formatDisplayDate("2026-01-01")).not.toBe(local(2025, 12, 31));
   });
 
   it("leaves full timestamps as instants", () => {
     const iso = "2026-01-01T03:00:00Z"; // 22:00 on Dec 31 in New York
-    expect(formatDisplayDate(iso)).toBe(new Date(iso).toLocaleDateString());
+    expect(formatDisplayDate(iso)).toBe(new Date(iso).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }));
     expect(formatDisplayDate(iso)).toBe(local(2025, 12, 31));
   });
 

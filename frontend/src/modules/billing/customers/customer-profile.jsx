@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate } from 'react-router-dom';
 import HRPage from '../../../components/HRPage';
-import { Button, Modal } from '../../../components/billing-ui';
+import { Button, DataTable, Modal, StickyFooter, useUnsavedChangesGuard } from '../../../components/billing-ui';
 import { customerApi, invoiceApi, paymentApi, contractApi, subscriptionApi, creditNoteApi, quoteApi } from '../../../service/billingService';
 import { loadGlobalBillingConfig } from '../../../service/billingConfigCache';
 import { ArrowLeft, Mail, Phone, Building2, User, CreditCard,
@@ -14,7 +14,7 @@ import { getCurrencySelectOptions, getCountrySelectOptions, getCurrencyForCountr
 import { getCustomerTaxFields } from '../utils/countryIntelligence';
 import { useCurrency } from '../utils/CurrencyContext';
 import { useTerminology } from '../utils/TerminologyContext';
-import { Spinner, ErrorState, EmptyState } from '../../../components/billing-shared';
+import { Spinner, ErrorState, EmptyState, StatusBadge as SharedStatusBadge } from '../../../components/billing-shared';
 
 
 
@@ -104,22 +104,7 @@ const TABS = [
 
 
 function StatusBadge({ status }) {
-  const styles = {
-    active: 'bg-emerald-100 text-emerald-700',
-    inactive: 'bg-slate-100 text-slate-600',
-    suspended: 'bg-amber-100 text-amber-700',
-    pending: 'bg-blue-100 text-blue-700',
-  };
-  return (
-    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${styles[status] || 'bg-slate-100 text-slate-600'}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${
-        status === 'active' ? 'bg-emerald-500' :
-        status === 'suspended' ? 'bg-amber-500' :
-        status === 'inactive' ? 'bg-slate-400' : 'bg-blue-500'
-      }`} />
-      {status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Unknown'}
-    </span>
-  );
+  return <SharedStatusBadge status={status} />;
 }
 
 function InvoiceStatusBadge({ status }) {
@@ -263,6 +248,14 @@ export default function CustomerProfilePage() {
   const [pmForm, setPmForm] = useState({ type: 'card', last_four: '', expiry_date: '', cardholder_name: '', is_default: false });
   const [showPmForm, setShowPmForm] = useState(false);
   const [editingPmId, setEditingPmId] = useState(null);
+  // While the details are being edited, leaving with changes asks first;
+  // the form is compared with what it held when editing started.
+  const [editBaseline, setEditBaseline] = useState(null);
+  useEffect(() => {
+    setEditBaseline(editing ? JSON.stringify(editForm) : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing]);
+  useUnsavedChangesGuard(editing && editBaseline !== null && JSON.stringify(editForm) !== editBaseline, "You have unsaved changes to this customer. Leave and discard them?");
   const [pmSaving, setPmSaving] = useState(false);
   const [pmFormError, setPmFormError] = useState(null);
 
@@ -946,19 +939,19 @@ export default function CustomerProfilePage() {
         </div>
       )}
 
-      <div className="bg-white rounded-3xl border border-slate-200 p-6 mb-6">
+      <div className="bg-white rounded-3xl border border-slate-200 p-4 sm:p-6 mb-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div className="h-14 w-14 rounded-full bg-brand-100 flex items-center justify-center">
+          <div className="flex min-w-0 items-center gap-4">
+            <div className="h-14 w-14 shrink-0 rounded-full bg-brand-100 flex items-center justify-center">
               <User className="h-7 w-7 text-brand-600" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-xl font-bold text-slate-900">{customer?.display_name || customer?.company_name}</h2>
                 <StatusBadge status={customer?.status} />
               </div>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-sm text-slate-500">
-                {customer?.email && <span className="flex items-center gap-1"><Mail className="h-3.5 w-3.5" /> {customer.email}</span>}
+                {customer?.email && <span className="flex min-w-0 items-center gap-1 break-all"><Mail className="h-3.5 w-3.5 shrink-0" /> {customer.email}</span>}
                 {customer?.phone && <span className="flex items-center gap-1"><Phone className="h-3.5 w-3.5" /> {customer.phone}</span>}
                 {customer?.company_name && <span className="flex items-center gap-1"><Building2 className="h-3.5 w-3.5" /> {customer.company_name}</span>}
               </div>
@@ -1032,15 +1025,15 @@ export default function CustomerProfilePage() {
             <FileText className="h-4 w-4" /> Create Invoice
           </button>
           <button onClick={() => navigate(`/billing/quotations?create=1&customer_id=${id}`)}
-            className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 shadow-sm transition-all hover:shadow-md">
+            className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
             <FileText className="h-4 w-4" /> Create Quotation
           </button>
           <button onClick={() => navigate(`/billing/payments?create=1&customer_id=${id}`)}
-            className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 shadow-sm transition-all hover:shadow-md">
+            className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
             <CreditCard className="h-4 w-4" /> Record Payment
           </button>
           <button onClick={() => setActiveTab('billing-overview')} title="Choose one of this customer's invoices to send"
-            className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-amber-600 rounded-lg hover:bg-amber-700 shadow-sm transition-all hover:shadow-md">
+            className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-amber-700 rounded-lg hover:bg-amber-800 shadow-sm transition-all hover:shadow-md">
             <Mail className="h-4 w-4" /> Send Invoice
           </button>
           <div className="w-px h-6 bg-brand-200 mx-1 hidden sm:block" />
@@ -1263,52 +1256,7 @@ export default function CustomerProfilePage() {
             <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
               <h3 className="text-lg font-semibold text-slate-900">{singular} Details</h3>
               <div className="flex items-center gap-2">
-                {editing ? (
-                  <>
-                    <button onClick={() => { setEditing(false); setEditForm({
-                      display_name: customer?.display_name || customer?.company_name || '',
-                      company_name: customer?.company_name || '',
-                      legal_name: customer?.legal_name || '',
-                      first_name: customer?.first_name || '',
-                      last_name: customer?.last_name || '',
-                      email: customer?.email || '',
-                      alternate_email: customer?.alternate_email || '',
-                      phone: customer?.phone || '',
-                      mobile: customer?.mobile || '',
-                      website: customer?.website || '',
-                      designation: customer?.designation || '',
-                      industry: customer?.industry || '',
-                      employee_count: customer?.employee_count || '',
-                      customer_type: customer?.customer_type || 'business',
-                      billing_address: customer?.billing_address || '',
-                      shipping_address: customer?.shipping_address || '',
-                      billing_country: customer?.billing_country || '',
-                      shipping_country: customer?.shipping_country || '',
-                      shipping_same_as_billing: false,
-                      gst_number: customer?.gst_number || '',
-                      vat_number: customer?.vat_number || '',
-                      pan: customer?.pan || '',
-                      tin: customer?.tin || '',
-                      tax_id: customer?.tax_id || '',
-                      tax_id_type: customer?.tax_id_type || '',
-                      tax_category: customer?.tax_category || '',
-                      currency: customer?.currency || '',
-                      payment_terms: customer?.payment_terms || 'net_30',
-                      credit_limit: customer?.credit_limit != null ? customer.credit_limit : '',
-                      credit_days: customer?.credit_days != null ? customer.credit_days : 30,
-                      price_list: customer?.price_list || '',
-                      tags: customer?.tags || [],
-                      notes: customer?.notes || '',
-                    }); }}
-                      className="px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
-                      Cancel
-                    </button>
-                    <button onClick={handleSave} disabled={saving}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors">
-                      {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />} Save Changes
-                    </button>
-                  </>
-                ) : (
+                {!editing && (
                   <button onClick={() => setEditing(true)}
                     className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-brand-600 bg-brand-50 rounded-lg hover:bg-brand-100 transition-colors">
                     <Pencil className="h-4 w-4" /> Edit
@@ -1954,26 +1902,17 @@ export default function CustomerProfilePage() {
             ) : payments.length === 0 ? (
               <EmptyState icon={FileText} title="No payments" message="This customer has no payments yet." />
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-100">
-                      <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Payment</th>
-                      <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Date</th>
-                      <th className="text-right py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Amount</th>
-                      <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Method</th>
-                      <th className="text-center py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {payments.map((p) => (
-                      <tr key={p.id || p._id} onClick={() => navigate(`/billing/payments/${p.id}`)} className="border-b border-slate-50 hover:bg-brand-50/60 cursor-pointer">
-                        <td className="py-3 px-3 font-medium text-slate-900">{p.payment_number || p.transaction_id || p.id}</td>
-                        <td className="py-3 px-3 text-slate-500">{formatDisplayDate(p.payment_date || p.date || p.created_at)}</td>
-                        <td className="py-3 px-3 text-right font-medium text-slate-900">{formatDisplayCurrency(p.amount || p.total_amount, baseCurrency)}</td>
-                        <td className="py-3 px-3 text-slate-500">{p.payment_method || p.method || p.type || '—'}</td>
-                        <td className="py-3 px-3 text-center">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+              <DataTable
+                stickyHeader={false}
+                data={payments}
+                rowKey={(p) => p.id || p._id}
+                onRowClick={(p) => navigate(`/billing/payments/${p.id}`)}
+                columns={[
+                  { key: "payment", label: "Payment", render: (p) => <span className="font-medium text-slate-900">{p.payment_number || p.transaction_id || p.id}</span> },
+                  { key: "date", label: "Date", render: (p) => <span className="text-slate-500">{formatDisplayDate(p.payment_date || p.date || p.created_at)}</span> },
+                  { key: "amount", label: "Amount", align: "right", render: (p) => <span className="font-medium text-slate-900">{formatDisplayCurrency(p.amount || p.total_amount, baseCurrency)}</span> },
+                  { key: "method", label: "Method", render: (p) => <span className="text-slate-500">{p.payment_method || p.method || p.type || '—'}</span> },
+                  { key: "status", label: "Status", align: "center", render: (p) => <><span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                             p.status === 'cleared' ? 'bg-emerald-100 text-emerald-700' :
                             p.status === 'pending' ? 'bg-amber-100 text-amber-700' :
                             p.status === 'processing' ? 'bg-blue-100 text-blue-700' :
@@ -1982,13 +1921,9 @@ export default function CustomerProfilePage() {
                             p.status === 'refunded' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'
                           }`}>
                             {p.status ? p.status.charAt(0).toUpperCase() + p.status.slice(1) : 'Unknown'}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                          </span></> },
+                ]}
+              />
             )}
           </div>
 
@@ -2004,30 +1939,19 @@ export default function CustomerProfilePage() {
             ) : creditNotes.length === 0 ? (
               <EmptyState icon={FileText} title="No credit notes" message="This customer has no credit notes." />
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-100">
-                      <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Credit Note</th>
-                      <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Date</th>
-                      <th className="text-right py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Amount</th>
-                      <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Reason</th>
-                      <th className="text-center py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {creditNotes.map((cn) => (
-                      <tr key={cn.id || cn._id} onClick={() => navigate(`/billing/credit-notes/${cn.id}`)} className="border-b border-slate-50 hover:bg-brand-50/60 cursor-pointer">
-                        <td className="py-3 px-3 font-medium text-slate-900">{cn.credit_note_number || cn.number || cn.id}</td>
-                        <td className="py-3 px-3 text-slate-500">{formatDisplayDate(cn.issue_date || cn.date || cn.created_at)}</td>
-                        <td className="py-3 px-3 text-right font-medium text-slate-900">{formatDisplayCurrency(cn.total || cn.amount || cn.total_amount, baseCurrency)}</td>
-                        <td className="py-3 px-3 text-slate-500">{cn.reason || cn.description || '—'}</td>
-                        <td className="py-3 px-3 text-center"><InvoiceStatusBadge status={cn.status} /></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <DataTable
+                stickyHeader={false}
+                data={creditNotes}
+                rowKey={(cn) => cn.id || cn._id}
+                onRowClick={(cn) => navigate(`/billing/credit-notes/${cn.id}`)}
+                columns={[
+                  { key: "credit_note", label: "Credit Note", render: (cn) => <span className="font-medium text-slate-900">{cn.credit_note_number || cn.number || cn.id}</span> },
+                  { key: "date", label: "Date", render: (cn) => <span className="text-slate-500">{formatDisplayDate(cn.issue_date || cn.date || cn.created_at)}</span> },
+                  { key: "amount", label: "Amount", align: "right", render: (cn) => <span className="font-medium text-slate-900">{formatDisplayCurrency(cn.total || cn.amount || cn.total_amount, baseCurrency)}</span> },
+                  { key: "reason", label: "Reason", render: (cn) => <span className="text-slate-500">{cn.reason || cn.description || '—'}</span> },
+                  { key: "status", label: "Status", align: "center", render: (cn) => <><InvoiceStatusBadge status={cn.status} /></> },
+                ]}
+              />
             )}
           </div>
         </div>
@@ -2045,30 +1969,19 @@ export default function CustomerProfilePage() {
           ) : contracts.length === 0 ? (
             <EmptyState icon={FileText} title="No contracts" message="This customer has no contracts." />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-100">
-                    <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Contract</th>
-                    <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Start Date</th>
-                    <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">End Date</th>
-                    <th className="text-right py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Value</th>
-                    <th className="text-center py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {contracts.map((c) => (
-                    <tr key={c.id || c._id} onClick={() => navigate(`/billing/contracts/${c.id}`)} className="border-b border-slate-50 hover:bg-brand-50/60 cursor-pointer">
-                      <td className="py-3 px-3 font-medium text-slate-900">{c.contract_number || c.name || c.id}</td>
-                      <td className="py-3 px-3 text-slate-500">{formatDisplayDate(c.start_date || c.startDate)}</td>
-                      <td className="py-3 px-3 text-slate-500">{formatDisplayDate(c.end_date || c.endDate)}</td>
-                      <td className="py-3 px-3 text-right font-medium text-slate-900">{formatDisplayCurrency(c.value || c.total_value || c.contract_value, baseCurrency)}</td>
-                      <td className="py-3 px-3 text-center"><StatusBadge status={c.status} /></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <DataTable
+              stickyHeader={false}
+              data={contracts}
+              rowKey={(c) => c.id || c._id}
+              onRowClick={(c) => navigate(`/billing/contracts/${c.id}`)}
+              columns={[
+                { key: "contract", label: "Contract", render: (c) => <span className="font-medium text-slate-900">{c.contract_number || c.name || c.id}</span> },
+                { key: "start_date", label: "Start Date", render: (c) => <span className="text-slate-500">{formatDisplayDate(c.start_date || c.startDate)}</span> },
+                { key: "end_date", label: "End Date", render: (c) => <span className="text-slate-500">{formatDisplayDate(c.end_date || c.endDate)}</span> },
+                { key: "value", label: "Value", align: "right", render: (c) => <span className="font-medium text-slate-900">{formatDisplayCurrency(c.value || c.total_value || c.contract_value, baseCurrency)}</span> },
+                { key: "status", label: "Status", align: "center", render: (c) => <><StatusBadge status={c.status} /></> },
+              ]}
+            />
           )}
         </div>
       )}
@@ -2085,32 +1998,20 @@ export default function CustomerProfilePage() {
           ) : subscriptions.length === 0 ? (
             <EmptyState icon={FileText} title="No subscriptions" message="This customer has no subscriptions." />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-100">
-                    <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Subscription</th>
-                    <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Plan</th>
-                    <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Start</th>
-                    <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Next Billing</th>
-                    <th className="text-right py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Amount</th>
-                    <th className="text-center py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {subscriptions.map((sub) => (
-                    <tr key={sub.id || sub._id} onClick={() => navigate(`/billing/subscriptions/${sub.id}`)} className="border-b border-slate-50 hover:bg-brand-50/60 cursor-pointer">
-                      <td className="py-3 px-3 font-medium text-slate-900">{sub.subscription_number || sub.name || sub.id}</td>
-                      <td className="py-3 px-3 text-slate-500">{sub.plan_name || sub.plan?.name || '—'}</td>
-                      <td className="py-3 px-3 text-slate-500">{formatDisplayDate(sub.start_date || sub.startDate)}</td>
-                      <td className="py-3 px-3 text-slate-500">{formatDisplayDate(sub.next_billing_date || sub.nextBillingDate)}</td>
-                      <td className="py-3 px-3 text-right font-medium text-slate-900">{formatDisplayCurrency(sub.amount || sub.price || sub.recurring_amount, baseCurrency)}</td>
-                      <td className="py-3 px-3 text-center"><StatusBadge status={sub.status} /></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <DataTable
+              stickyHeader={false}
+              data={subscriptions}
+              rowKey={(sub) => sub.id || sub._id}
+              onRowClick={(sub) => navigate(`/billing/subscriptions/${sub.id}`)}
+              columns={[
+                { key: "subscription", label: "Subscription", render: (sub) => <span className="font-medium text-slate-900">{sub.subscription_number || sub.name || sub.id}</span> },
+                { key: "plan", label: "Plan", render: (sub) => <span className="text-slate-500">{sub.plan_name || sub.plan?.name || '—'}</span> },
+                { key: "start", label: "Start", render: (sub) => <span className="text-slate-500">{formatDisplayDate(sub.start_date || sub.startDate)}</span> },
+                { key: "next_billing", label: "Next Billing", render: (sub) => <span className="text-slate-500">{formatDisplayDate(sub.next_billing_date || sub.nextBillingDate)}</span> },
+                { key: "amount", label: "Amount", align: "right", render: (sub) => <span className="font-medium text-slate-900">{formatDisplayCurrency(sub.amount || sub.price || sub.recurring_amount, baseCurrency)}</span> },
+                { key: "status", label: "Status", align: "center", render: (sub) => <><StatusBadge status={sub.status} /></> },
+              ]}
+            />
           )}
         </div>
       )}
@@ -2125,30 +2026,18 @@ export default function CustomerProfilePage() {
           ) : creditNotes.length === 0 ? (
             <EmptyState icon={FileText} title="No credit notes" message="This customer has no credit notes." />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-100">
-                    <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Credit Note</th>
-                    <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Date</th>
-                    <th className="text-right py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Amount</th>
-                    <th className="text-left py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Reason</th>
-                    <th className="text-center py-3 px-3 font-medium text-slate-500 text-xs uppercase tracking-wider">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {creditNotes.map((cn) => (
-                    <tr key={cn.id || cn._id} className="border-b border-slate-50 hover:bg-slate-50">
-                      <td className="py-3 px-3 font-medium text-slate-900">{cn.credit_note_number || cn.number || cn.id}</td>
-                      <td className="py-3 px-3 text-slate-500">{formatDisplayDate(cn.issue_date || cn.date || cn.created_at)}</td>
-                      <td className="py-3 px-3 text-right font-medium text-slate-900">{formatDisplayCurrency(cn.total || cn.amount || cn.total_amount, baseCurrency)}</td>
-                      <td className="py-3 px-3 text-slate-500">{cn.reason || cn.description || '—'}</td>
-                      <td className="py-3 px-3 text-center"><InvoiceStatusBadge status={cn.status} /></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <DataTable
+              stickyHeader={false}
+              data={creditNotes}
+              rowKey={(cn) => cn.id || cn._id}
+              columns={[
+                { key: "credit_note", label: "Credit Note", render: (cn) => <span className="font-medium text-slate-900">{cn.credit_note_number || cn.number || cn.id}</span> },
+                { key: "date", label: "Date", render: (cn) => <span className="text-slate-500">{formatDisplayDate(cn.issue_date || cn.date || cn.created_at)}</span> },
+                { key: "amount", label: "Amount", align: "right", render: (cn) => <span className="font-medium text-slate-900">{formatDisplayCurrency(cn.total || cn.amount || cn.total_amount, baseCurrency)}</span> },
+                { key: "reason", label: "Reason", render: (cn) => <span className="text-slate-500">{cn.reason || cn.description || '—'}</span> },
+                { key: "status", label: "Status", align: "center", render: (cn) => <><InvoiceStatusBadge status={cn.status} /></> },
+              ]}
+            />
           )}
         </div>
       )}
@@ -2492,6 +2381,55 @@ export default function CustomerProfilePage() {
             </div>
           )}
         </div>
+      )}
+      {/* While editing, Cancel / Save Changes stay pinned at the bottom of the
+          screen so they're reachable from every field of the long form. */}
+      {editing && (
+        <StickyFooter contentClassName="mx-auto flex max-w-6xl items-center justify-end gap-2 sm:gap-3 max-sm:[&>*]:min-h-11 max-sm:[&>*]:flex-1">
+          <button onClick={() => { setEditing(false); setEditForm({
+            display_name: customer?.display_name || customer?.company_name || '',
+            company_name: customer?.company_name || '',
+            legal_name: customer?.legal_name || '',
+            first_name: customer?.first_name || '',
+            last_name: customer?.last_name || '',
+            email: customer?.email || '',
+            alternate_email: customer?.alternate_email || '',
+            phone: customer?.phone || '',
+            mobile: customer?.mobile || '',
+            website: customer?.website || '',
+            designation: customer?.designation || '',
+            industry: customer?.industry || '',
+            employee_count: customer?.employee_count || '',
+            customer_type: customer?.customer_type || 'business',
+            billing_address: customer?.billing_address || '',
+            shipping_address: customer?.shipping_address || '',
+            billing_country: customer?.billing_country || '',
+            shipping_country: customer?.shipping_country || '',
+            shipping_same_as_billing: false,
+            gst_number: customer?.gst_number || '',
+            vat_number: customer?.vat_number || '',
+            pan: customer?.pan || '',
+            tin: customer?.tin || '',
+            tax_id: customer?.tax_id || '',
+            tax_id_type: customer?.tax_id_type || '',
+            tax_category: customer?.tax_category || '',
+            currency: customer?.currency || '',
+            payment_terms: customer?.payment_terms || 'net_30',
+            credit_limit: customer?.credit_limit != null ? customer.credit_limit : '',
+            credit_days: customer?.credit_days != null ? customer.credit_days : 30,
+            price_list: customer?.price_list || '',
+            tags: customer?.tags || [],
+            notes: customer?.notes || '',
+          }); }}
+            className="px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
+            Cancel
+          </button>
+          <button onClick={handleSave} disabled={saving}
+            className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors">
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />} Save Changes
+          </button>
+
+        </StickyFooter>
       )}
     </HRPage>
   );

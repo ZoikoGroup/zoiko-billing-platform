@@ -5,7 +5,7 @@ import {
   Plus, AlertCircle, CheckCircle, Clock, Edit, Trash2,
 } from "lucide-react";
 import HRPage from "../../../components/HRPage";
-import { Button, Modal } from "../../../components/billing-ui";
+import { DataTable, Button, Modal } from "../../../components/billing-ui";
 import { productApi, settingsApi } from "../../../service/billingService";
 import { formatDisplayCurrency, extractArray } from "../../../utils/billing-helpers";
 import { Pagination } from "../../../components/billing-shared";
@@ -236,8 +236,8 @@ export default function RetainersPage() {
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <div className="flex items-center gap-3 flex-1">
-<div className="relative flex-1 max-w-md">
+        <div className="flex flex-wrap items-center gap-3 flex-1 max-sm:basis-full">
+<div className="relative flex-1 max-w-md max-sm:basis-full max-sm:max-w-none">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
               <input type="text" placeholder="Search retainers..." value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -246,13 +246,13 @@ export default function RetainersPage() {
               {search && <button onClick={() => setSearch("")} aria-label="Clear search" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600"><X size={16} /></button>}
             </div>
           <button onClick={() => setShowFilters(!showFilters)} aria-label="Toggle filters" aria-expanded={showFilters}
-            className={`p-2.5 rounded-xl border transition-colors ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}><Filter size={18} /></button>
-          <button onClick={handleRefresh} disabled={refreshing} aria-label="Refresh" className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50">
+            className={`p-2.5 max-sm:p-3 rounded-xl border transition-colors ${showFilters ? "bg-brand-50 border-brand-200 text-brand-600" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}><Filter size={18} /></button>
+          <button onClick={handleRefresh} disabled={refreshing} aria-label="Refresh" className="p-2.5 max-sm:p-3 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50">
             <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
           </button>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={handleExportJSON} className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50" title="Export JSON" aria-label="Export JSON"><Download size={18} /></button>
+          <button onClick={handleExportJSON} className="p-2.5 max-sm:p-3 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50" title="Export JSON" aria-label="Export JSON"><Download size={18} /></button>
           <button onClick={openCreateModal} className="inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium text-white bg-brand-600 rounded-xl hover:bg-brand-700 transition-colors">
             <Plus size={16} /> New Retainer
           </button>
@@ -279,55 +279,29 @@ export default function RetainersPage() {
       )}
 
       <div className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-<thead>
-               <tr className="bg-slate-50 border-b border-slate-100">
-                 <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Name</th>
-                 <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">SKU</th>
-                 <th scope="col" className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Unit Price</th>
-                 <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Billing Period</th>
-                 <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
-                 <th scope="col" className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
-               </tr>
-             </thead>
-            <tbody className="divide-y divide-slate-50">
-              {retainers.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-4 py-16 text-center">
-                    <div className="flex flex-col items-center">
-                      <Wallet size={40} className="text-slate-300 mb-3" />
-                      <p className="text-slate-500 font-medium">No retainer products found</p>
-                      <p className="text-slate-500 text-sm mt-1">{search || statusFilter ? "Try adjusting your search or filters" : "Create your first retainer product"}</p>
-                    </div>
-                  </td>
-                </tr>
-              ) : retainers.map((r) => (
-                <tr key={r.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-4 py-4">
-                    <p className="font-medium text-slate-800">{r.name}</p>
-                    {r.description && <p className="text-xs text-slate-500 mt-0.5 truncate max-w-[200px]">{r.description}</p>}
-                  </td>
-                  <td className="px-4 py-4 text-slate-500">{retainerSku(r) || "—"}</td>
-                  <td className="px-4 py-4 text-right font-medium text-slate-800">{formatDisplayCurrency(retainerPrice(r), r.currency)}</td>
-                  <td className="px-4 py-4 capitalize text-slate-600">{retainerPeriod(r).replace(/_/g, " ") || "—"}</td>
-                  <td className="px-4 py-4">
-                    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${r.status === "active" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
+        <DataTable
+          stickyHeader={false}
+          data={retainers}
+          rowKey={(r) => r.id}
+          emptyIcon={Wallet}
+          emptyTitle="No retainer products found"
+          emptyMessage={search || statusFilter ? "Try adjusting your search or filters" : "Create your first retainer product"}
+          columns={[
+            { key: "name", label: "Name", render: (r) => <><p className="font-medium text-slate-800">{r.name}</p>
+                    {r.description && <p className="text-xs text-slate-500 mt-0.5 truncate max-w-[200px]">{r.description}</p>}</> },
+            { key: "sku", label: "SKU", render: (r) => <span className="text-slate-500">{retainerSku(r) || "—"}</span> },
+            { key: "unit_price", label: "Unit Price", align: "right", render: (r) => <span className="font-medium text-slate-800">{formatDisplayCurrency(retainerPrice(r), r.currency)}</span> },
+            { key: "billing_period", label: "Billing Period", render: (r) => <span className="capitalize text-slate-600">{retainerPeriod(r).replace(/_/g, " ") || "—"}</span> },
+            { key: "status", label: "Status", render: (r) => <><span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${r.status === "active" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
                       {r.status === "active" ? <CheckCircle size={12} /> : <Clock size={12} />}
                       {r.status || "unknown"}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4 text-right">
-                    <div className="inline-flex items-center gap-1">
+                    </span></> },
+            { key: "actions", label: "Actions", align: "right", mobileRole: "actions", render: (r) => <><div className="inline-flex items-center gap-1">
                       <button onClick={() => openEditModal(r)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-blue-600 transition-colors" aria-label="Edit retainer"><Edit size={15} /></button>
                       <button onClick={() => openDeleteModal(r)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-red-600 transition-colors" aria-label="Delete retainer"><Trash2 size={15} /></button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                    </div></> },
+          ]}
+        />
         <Pagination page={safePage} totalPages={totalPages} onPageChange={setCurrentPage}>
           {total} total retainer(s)
         </Pagination>

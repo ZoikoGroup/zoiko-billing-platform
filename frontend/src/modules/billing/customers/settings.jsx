@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, Children, cloneElement, isValidElement, useId } from "react";
 import { Save, RefreshCw, AlertCircle, CheckCircle, Users, Hash, Bell, FileText, CreditCard } from "lucide-react";
-import HRPage from "../../../components/HRPage";
+import { SettingsPageShell, SettingsSaveBar, useUnsavedChangesGuard } from "../../../components/billing-ui";
 import { settingsApi, invalidateConfigCache } from "../../../service/billingService";
 import { invalidateGlobalBillingConfig } from "../../../service/billingConfigCache";
 import { ErrorState } from "../../../components/billing-shared";
@@ -143,6 +143,7 @@ export default function CustomerSettingsPage() {
   const [original, setOriginal] = useState(DEFAULTS);
 
   const hasChanges = Object.keys(form).some((key) => form[key] !== original[key]);
+  useUnsavedChangesGuard(hasChanges, "You have unsaved settings. Leave this page and discard them?");
   const [confirmRefresh, setConfirmRefresh] = useState(false);
 
   // Refresh replaces the form with the saved values, so unsaved edits must
@@ -208,11 +209,11 @@ export default function CustomerSettingsPage() {
 
   if (loading) {
     return (
-      <HRPage title="Customer Settings" subtitle="Customer configuration and preferences">
+      <SettingsPageShell title="Customer Settings" description="Customer configuration and preferences" icon={Users} crumbs={[{ label: "Billing", href: "/billing" }, { label: "Customers", href: "/billing/customers" }, { label: "Settings" }]}>
         <div className="flex items-center justify-center py-12">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600" />
         </div>
-      </HRPage>
+      </SettingsPageShell>
     );
   }
 
@@ -220,31 +221,14 @@ export default function CustomerSettingsPage() {
   // real payment terms / credit limit / notification settings with them.
   if (loadFailed) {
     return (
-      <HRPage title="Customer Settings" subtitle="Customer configuration and preferences">
+      <SettingsPageShell title="Customer Settings" description="Customer configuration and preferences" icon={Users} crumbs={[{ label: "Billing", href: "/billing" }, { label: "Customers", href: "/billing/customers" }, { label: "Settings" }]}>
         <ErrorState title="Couldn't load customer settings" message={error} onRetry={fetchSettings} />
-      </HRPage>
+      </SettingsPageShell>
     );
   }
 
   return (
-    <HRPage title="Customer Settings" subtitle="Customer configuration and preferences">
-
-      <div className="flex flex-wrap items-center justify-end gap-2 mb-6">
-          {saved && (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-emerald-700 bg-emerald-50 rounded-lg">
-              <CheckCircle className="h-4 w-4" /> Saved
-            </span>
-          )}
-          <button onClick={handleRefresh}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
-            <RefreshCw className="h-4 w-4" /> Refresh
-          </button>
-          <button onClick={handleSave} disabled={!hasChanges || saving || Boolean(prefixProblem)}
-            className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors">
-            {saving ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> : <Save className="h-4 w-4" />}
-            Save Changes
-          </button>
-      </div>
+    <SettingsPageShell title="Customer Settings" description="Customer configuration and preferences" icon={Users} crumbs={[{ label: "Billing", href: "/billing" }, { label: "Customers", href: "/billing/customers" }, { label: "Settings" }]}>
 
       {confirmRefresh && (
         <ConfirmDialog
@@ -337,6 +321,17 @@ export default function CustomerSettingsPage() {
           </select>
         </SettingsField>
       </div>
-    </HRPage>
+      <SettingsSaveBar hasChanges={hasChanges} saved={saved}>
+        <button onClick={handleRefresh}
+          className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
+          <RefreshCw className="h-4 w-4" /> Refresh
+        </button>
+        <button onClick={handleSave} disabled={!hasChanges || saving || Boolean(prefixProblem)}
+          className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors">
+          {saving ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> : <Save className="h-4 w-4" />}
+          Save Changes
+        </button>
+      </SettingsSaveBar>
+    </SettingsPageShell>
   );
 }

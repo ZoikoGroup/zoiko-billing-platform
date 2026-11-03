@@ -3,10 +3,10 @@ import {
   DollarSign, Search, Plus, RefreshCw, CheckCircle, X, Pencil, Layers,
 } from "lucide-react";
 import HRPage from "../../../components/HRPage";
-import { Button, Modal } from "../../../components/billing-ui";
+import { DataTable, Button, Modal } from "../../../components/billing-ui";
 import { taxPricingApi } from "../../../service/billingService";
 import { formatDisplayDate, extractArray } from "../../../utils/billing-helpers";
-import { Spinner, EmptyState, ErrorState } from "../../../components/billing-shared";
+import { Spinner, EmptyState, ErrorState, StatusBadge as SharedStatusBadge } from "../../../components/billing-shared";
 import useLatestRequest from "../utils/useLatestRequest";
 
 const TAX_TYPE_OPTIONS = [
@@ -30,9 +30,7 @@ function todayIsoDate() {
 }
 
 function StatusBadge({ is_active }) {
-  return is_active
-    ? <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">Active</span>
-    : <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-700">Inactive</span>;
+  return <SharedStatusBadge status={is_active ? "active" : "inactive"} />;
 }
 
 const EMPTY_FORM = {
@@ -121,31 +119,31 @@ function TaxFormModal({ show, onClose, onSave, editItem, saving }) {
       <div className="space-y-4">
         {formError && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg text-sm">{formError}</div>}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div><label className="block text-xs font-medium text-slate-500 mb-1">Name *</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.name} onChange={e => set("name", e.target.value)} /></div>
-          <div><label className="block text-xs font-medium text-slate-500 mb-1">Code *</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.code} onChange={e => set("code", e.target.value)} placeholder="e.g. GST-18" /></div>
+          <div><label htmlFor="tp-name" className="block text-xs font-medium text-slate-500 mb-1">Name *</label><input id="tp-name" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.name} onChange={e => set("name", e.target.value)} /></div>
+          <div><label htmlFor="tp-code" className="block text-xs font-medium text-slate-500 mb-1">Code *</label><input id="tp-code" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.code} onChange={e => set("code", e.target.value)} placeholder="e.g. GST-18" /></div>
         </div>
-<div><label className="block text-xs font-medium text-slate-500 mb-1">Description</label><textarea className="w-full border rounded-lg px-3 py-2 text-sm" rows={2} value={form.description} onChange={e => set("description", e.target.value)} /></div>
+<div><label htmlFor="tp-description" className="block text-xs font-medium text-slate-500 mb-1">Description</label><textarea id="tp-description" className="w-full border rounded-lg px-3 py-2 text-sm" rows={2} value={form.description} onChange={e => set("description", e.target.value)} /></div>
          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-           <div><label className="block text-xs font-medium text-slate-500 mb-1">Tax Type *</label>
-            <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.tax_type} onChange={e => set("tax_type", e.target.value)}>
+           <div><label htmlFor="tp-tax-type" className="block text-xs font-medium text-slate-500 mb-1">Tax Type *</label>
+            <select id="tp-tax-type" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.tax_type} onChange={e => set("tax_type", e.target.value)}>
               {TAX_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </div>
-          <div><label className="block text-xs font-medium text-slate-500 mb-1">Rate (%) *</label><input type="number" step="0.01" min="0" max="100" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.rate} onChange={e => set("rate", e.target.value)} /></div>
-          <div><label className="block text-xs font-medium text-slate-500 mb-1">Pricing Type</label>
-            <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.pricing_type} onChange={e => set("pricing_type", e.target.value)}>
+          <div><label htmlFor="tp-rate" className="block text-xs font-medium text-slate-500 mb-1">Rate (%) *</label><input id="tp-rate" type="number" step="0.01" min="0" max="100" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.rate} onChange={e => set("rate", e.target.value)} /></div>
+          <div><label htmlFor="tp-pricing-type" className="block text-xs font-medium text-slate-500 mb-1">Pricing Type</label>
+            <select id="tp-pricing-type" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.pricing_type} onChange={e => set("pricing_type", e.target.value)}>
               {PRICING_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </div>
 </div>
          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-           <div><label className="block text-xs font-medium text-slate-500 mb-1">Country</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.country} onChange={e => set("country", e.target.value)} placeholder="e.g. US" /></div>
-          <div><label className="block text-xs font-medium text-slate-500 mb-1">Region</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.region} onChange={e => set("region", e.target.value)} /></div>
-          <div><label className="block text-xs font-medium text-slate-500 mb-1">State</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.state} onChange={e => set("state", e.target.value)} /></div>
+           <div><label htmlFor="tp-country" className="block text-xs font-medium text-slate-500 mb-1">Country</label><input id="tp-country" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.country} onChange={e => set("country", e.target.value)} placeholder="e.g. US" /></div>
+          <div><label htmlFor="tp-region" className="block text-xs font-medium text-slate-500 mb-1">Region</label><input id="tp-region" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.region} onChange={e => set("region", e.target.value)} /></div>
+          <div><label htmlFor="tp-state" className="block text-xs font-medium text-slate-500 mb-1">State</label><input id="tp-state" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.state} onChange={e => set("state", e.target.value)} /></div>
 </div>
          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-           <div><label className="block text-xs font-medium text-slate-500 mb-1">Effective From *</label><input type="date" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.effective_from} onChange={e => set("effective_from", e.target.value)} /></div>
-          <div><label className="block text-xs font-medium text-slate-500 mb-1">Effective To</label><input type="date" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.effective_to} onChange={e => set("effective_to", e.target.value)} /></div>
+           <div><label htmlFor="tp-effective-from" className="block text-xs font-medium text-slate-500 mb-1">Effective From *</label><input id="tp-effective-from" type="date" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.effective_from} onChange={e => set("effective_from", e.target.value)} /></div>
+          <div><label htmlFor="tp-effective-to" className="block text-xs font-medium text-slate-500 mb-1">Effective To</label><input id="tp-effective-to" type="date" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.effective_to} onChange={e => set("effective_to", e.target.value)} /></div>
         </div>
         <div className="flex items-center gap-6">
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.is_active} onChange={e => set("is_active", e.target.checked)} className="rounded" /> Active</label>
@@ -308,10 +306,10 @@ function TaxGroupsModal({ show, onClose, taxPricingApi, allTaxItems, onError }) 
             <h3 className="text-sm font-semibold">{editGroup ? "Edit Tax Group" : "Create Tax Group"}</h3>
             {formError && <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-xs">{formError}</div>}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div><label className="block text-xs font-medium text-slate-500 mb-1">Name *</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={groupForm.name} onChange={e => setGroupForm(p => ({ ...p, name: e.target.value }))} /></div>
-              <div><label className="block text-xs font-medium text-slate-500 mb-1">Code *</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={groupForm.code} onChange={e => setGroupForm(p => ({ ...p, code: e.target.value }))} /></div>
-              <div className="sm:col-span-2"><label className="block text-xs font-medium text-slate-500 mb-1">Description</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={groupForm.description} onChange={e => setGroupForm(p => ({ ...p, description: e.target.value }))} /></div>
-              <div><label className="block text-xs font-medium text-slate-500 mb-1">Country</label><input className="w-full border rounded-lg px-3 py-2 text-sm" value={groupForm.country} onChange={e => setGroupForm(p => ({ ...p, country: e.target.value }))} placeholder="e.g. US" /></div>
+              <div><label htmlFor="tp-name-2" className="block text-xs font-medium text-slate-500 mb-1">Name *</label><input id="tp-name-2" className="w-full border rounded-lg px-3 py-2 text-sm" value={groupForm.name} onChange={e => setGroupForm(p => ({ ...p, name: e.target.value }))} /></div>
+              <div><label htmlFor="tp-code-2" className="block text-xs font-medium text-slate-500 mb-1">Code *</label><input id="tp-code-2" className="w-full border rounded-lg px-3 py-2 text-sm" value={groupForm.code} onChange={e => setGroupForm(p => ({ ...p, code: e.target.value }))} /></div>
+              <div className="sm:col-span-2"><label htmlFor="tp-description-2" className="block text-xs font-medium text-slate-500 mb-1">Description</label><input id="tp-description-2" className="w-full border rounded-lg px-3 py-2 text-sm" value={groupForm.description} onChange={e => setGroupForm(p => ({ ...p, description: e.target.value }))} /></div>
+              <div><label htmlFor="tp-country-2" className="block text-xs font-medium text-slate-500 mb-1">Country</label><input id="tp-country-2" className="w-full border rounded-lg px-3 py-2 text-sm" value={groupForm.country} onChange={e => setGroupForm(p => ({ ...p, country: e.target.value }))} placeholder="e.g. US" /></div>
               <div className="flex items-center gap-4 pt-5">
                 <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={groupForm.is_default} onChange={e => setGroupForm(p => ({ ...p, is_default: e.target.checked }))} className="rounded" /> Default</label>
                 <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={groupForm.is_active} onChange={e => setGroupForm(p => ({ ...p, is_active: e.target.checked }))} className="rounded" /> Active</label>
@@ -326,27 +324,21 @@ function TaxGroupsModal({ show, onClose, taxPricingApi, allTaxItems, onError }) 
 
         {loading ? <Spinner /> : !groups.length ? <EmptyState message="No tax groups found" /> : (
           <div className="bg-white rounded-3xl border overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
-                <tr><th className="text-left px-4 py-3">Name</th><th className="text-left px-4 py-3">Code</th><th className="text-left px-4 py-3">Country</th><th className="text-center px-4 py-3">Default</th><th className="text-center px-4 py-3">Active</th><th className="text-right px-4 py-3">Actions</th></tr>
-              </thead>
-              <tbody className="divide-y">
-                {groups.map(g => (
-                  <tr key={g.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-3 text-sm font-medium">{g.name}</td>
-                    <td className="px-4 py-3 text-sm">{g.code}</td>
-                    <td className="px-4 py-3 text-sm">{g.country || "—"}</td>
-                    <td className="px-4 py-3 text-center">{g.is_default ? <CheckCircle size={16} className="text-green-500 mx-auto" /> : "—"}</td>
-                    <td className="px-4 py-3 text-center">{g.is_active ? <CheckCircle size={16} className="text-green-500 mx-auto" /> : "—"}</td>
-                    <td className="px-4 py-3 text-right space-x-2">
-                      <button onClick={() => fetchMembers(g)} className="text-brand-600 hover:text-brand-700 text-xs">Members</button>
+            <DataTable
+              stickyHeader={false}
+              data={groups}
+              rowKey={(g) => g.id}
+              columns={[
+                { key: "name", label: "Name", render: (g) => <span className="text-sm font-medium">{g.name}</span> },
+                { key: "code", label: "Code", render: (g) => <span className="text-sm">{g.code}</span> },
+                { key: "country", label: "Country", render: (g) => <span className="text-sm">{g.country || "—"}</span> },
+                { key: "default", label: "Default", align: "center", render: (g) => <>{g.is_default ? <CheckCircle size={16} className="text-green-500 mx-auto" /> : "—"}</> },
+                { key: "active", label: "Active", align: "center", render: (g) => <>{g.is_active ? <CheckCircle size={16} className="text-green-500 mx-auto" /> : "—"}</> },
+                { key: "actions", label: "Actions", align: "right", mobileRole: "actions", render: (g) => <span className="space-x-2"><button onClick={() => fetchMembers(g)} className="text-brand-600 hover:text-brand-700 text-xs">Members</button>
                       <button onClick={() => { setEditGroup(g); setGroupForm({ name: g.name, code: g.code, description: g.description || "", country: g.country || "", is_default: g.is_default ?? false, is_active: g.is_active ?? true }); setShowCreateEdit(true); }} className="text-blue-600 hover:text-blue-800 text-xs"><Pencil size={12} className="inline" /> Edit</button>
-                      <button onClick={() => handleDeleteGroup(g.id)} className="text-red-500 hover:text-red-700 text-xs">Delete</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      <button onClick={() => handleDeleteGroup(g.id)} className="text-red-500 hover:text-red-700 text-xs">Delete</button></span> },
+              ]}
+            />
           </div>
         )}
       </Modal>
@@ -368,8 +360,8 @@ function TaxGroupsModal({ show, onClose, taxPricingApi, allTaxItems, onError }) 
           <div className="space-y-4">
             <div className="flex gap-2 items-end">
               <div className="flex-1">
-                <label className="block text-xs font-medium text-slate-500 mb-1">Add Tax Pricing to Group</label>
-                <select className="w-full border rounded-lg px-3 py-2 text-sm" value={addMemberTaxId} onChange={e => setAddMemberTaxId(e.target.value)}>
+                <label htmlFor="tp-add-tax-pricing-to-group" className="block text-xs font-medium text-slate-500 mb-1">Add Tax Pricing to Group</label>
+                <select id="tp-add-tax-pricing-to-group" className="w-full border rounded-lg px-3 py-2 text-sm" value={addMemberTaxId} onChange={e => setAddMemberTaxId(e.target.value)}>
                   <option value="">Select a tax pricing...</option>
                   {allTaxItems.filter(t => !usedTaxIds.has(t.id)).map(t => (
                     <option key={t.id} value={t.id}>{t.name} ({t.code}) - {t.rate}%</option>
@@ -464,16 +456,16 @@ export default function TaxPricingPage() {
     <HRPage title="Tax Pricing" icon={DollarSign}>
       <div className="space-y-4">
         <div className="flex flex-wrap gap-3 items-center justify-between">
-          <div className="flex gap-2 items-center">
-            <div className="relative">
+          <div className="flex w-full flex-wrap gap-2 items-center sm:w-auto">
+            <div className="relative w-full sm:w-auto">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-              <input className="pl-9 pr-3 py-2 border rounded-lg text-sm w-48" placeholder="Search tax pricing..." aria-label="Search tax pricing" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+              <input className="pl-9 pr-3 py-2 border rounded-lg text-sm w-full sm:w-48" placeholder="Search tax pricing..." aria-label="Search tax pricing" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
             </div>
             <select className="border rounded-lg px-3 py-2 text-sm" value={taxTypeFilter} onChange={e => setTaxTypeFilter(e.target.value)}>
               <option value="">All Types</option>
               {TAX_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
-            <input className="border rounded-lg px-3 py-2 text-sm w-32" placeholder="Country" value={countryFilter} onChange={e => setCountryFilter(e.target.value)} />
+            <input className="border rounded-lg px-3 py-2 text-sm min-w-0 flex-1 sm:w-32 sm:flex-none" placeholder="Country" value={countryFilter} onChange={e => setCountryFilter(e.target.value)} />
             <button onClick={() => fetchData()} className="p-2 border rounded-lg hover:bg-slate-50" aria-label="Refresh" title="Refresh"><RefreshCw size={16} /></button>
           </div>
           <div className="flex gap-2">
@@ -485,29 +477,23 @@ export default function TaxPricingPage() {
         {error && <ErrorState message={error} onRetry={() => fetchData()} />}
         {loading ? <Spinner /> : !data.items?.length ? <EmptyState message="No tax pricing found" /> : (
           <div className="bg-white rounded-3xl border overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
-                <tr><th className="text-left px-4 py-3">Name / Code</th><th className="text-left px-4 py-3">Type</th><th className="text-right px-4 py-3">Rate</th><th className="text-left px-4 py-3">Jurisdiction</th><th className="text-left px-4 py-3">Pricing</th><th className="text-left px-4 py-3">Effective</th><th className="text-center px-4 py-3">Default</th><th className="text-right px-4 py-3">Actions</th></tr>
-              </thead>
-              <tbody className="divide-y">
-                {data.items.map(item => (
-                  <tr key={item.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-3"><div className="font-medium text-sm">{item.name}</div><div className="text-xs text-slate-500">{item.code}</div></td>
-                    <td className="px-4 py-3 text-sm capitalize">{item.tax_type}</td>
-                    <td className="px-4 py-3 text-sm text-right">{item.rate}%</td>
-                    <td className="px-4 py-3 text-sm">{item.country || "—"}{item.region ? ` / ${item.region}` : ""}</td>
-                    <td className="px-4 py-3 text-sm capitalize">{item.pricing_type}</td>
-                    <td className="px-4 py-3 text-sm">{formatDisplayDate(item.effective_from)}{item.effective_to ? ` — ${formatDisplayDate(item.effective_to)}` : ""}</td>
-                    <td className="px-4 py-3 text-center">{item.is_default ? <CheckCircle size={16} className="text-green-500 mx-auto" /> : "—"}</td>
-                    <td className="px-4 py-3 text-right">
-                      <button onClick={() => setViewItem(item)} className="text-brand-600 hover:text-brand-700 text-sm mr-3">View</button>
+            <DataTable
+              stickyHeader={false}
+              data={data.items}
+              rowKey={(item) => item.id}
+              columns={[
+                { key: "name_code", label: "Name / Code", render: (item) => <><div className="font-medium text-sm">{item.name}</div><div className="text-xs text-slate-500">{item.code}</div></> },
+                { key: "type", label: "Type", render: (item) => <span className="text-sm capitalize">{item.tax_type}</span> },
+                { key: "rate", label: "Rate", align: "right", render: (item) => <span className="text-sm">{item.rate}%</span> },
+                { key: "jurisdiction", label: "Jurisdiction", render: (item) => <span className="text-sm">{item.country || "—"}{item.region ? ` / ${item.region}` : ""}</span> },
+                { key: "pricing", label: "Pricing", render: (item) => <span className="text-sm capitalize">{item.pricing_type}</span> },
+                { key: "effective", label: "Effective", render: (item) => <span className="text-sm">{formatDisplayDate(item.effective_from)}{item.effective_to ? ` — ${formatDisplayDate(item.effective_to)}` : ""}</span> },
+                { key: "default", label: "Default", align: "center", render: (item) => <>{item.is_default ? <CheckCircle size={16} className="text-green-500 mx-auto" /> : "—"}</> },
+                { key: "actions", label: "Actions", align: "right", mobileRole: "actions", render: (item) => <><button onClick={() => setViewItem(item)} className="text-brand-600 hover:text-brand-700 text-sm mr-3">View</button>
                       <button onClick={() => { setEditItem(item); setShowForm(true); }} className="text-blue-600 hover:text-blue-800 text-sm mr-3"><Pencil size={14} className="inline" /> Edit</button>
-                      <button onClick={async () => { try { await taxPricingApi.deactivate(item.id); fetchData(); } catch (e) { setError(e.message); } }} className="text-red-500 hover:text-red-700 text-sm">Deactivate</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      <button onClick={async () => { try { await taxPricingApi.deactivate(item.id); fetchData(); } catch (e) { setError(e.message); } }} className="text-red-500 hover:text-red-700 text-sm">Deactivate</button></> },
+              ]}
+            />
           </div>
         )}
 

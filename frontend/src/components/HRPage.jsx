@@ -17,9 +17,10 @@ export default function HRPage({ title, subtitle, children, actions }) {
           </div>
         </div>
       </header>
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      {/* A div, not <main>: the app shell already provides the page's one main landmark. */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {children}
-      </main>
+      </div>
     </div>
   );
 }
