@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import HRPage from "../../../components/HRPage";
 import { stripeConnectApi } from "../../../service/billingService";
+import { formatDisplayDateTime } from "../../../utils/billing-helpers";
 
 // Mirrors backend IntegrationConnectionStatus (app/modules/billing/models.py)
 // — normalized Zoiko-level status derived from Stripe's own account fields.
@@ -58,12 +59,7 @@ function BoolChip({ value }) {
 }
 
 function fmtDateTime(iso) {
-  if (!iso) return null;
-  try {
-    return new Date(iso).toLocaleString();
-  } catch {
-    return iso;
-  }
+  return iso ? formatDisplayDateTime(iso) : null;
 }
 
 const CALLBACK_PATH = "/billing/payments/stripe-connect/callback";

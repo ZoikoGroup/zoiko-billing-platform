@@ -5,6 +5,7 @@ import { apiFetch } from "../api/client";
 import { PageHeader, DataTable, SearchInput, Modal, Field, Button } from "../components/billing-ui";
 import { ErrorState, SuccessMessage, Pagination } from "../components/billing-shared";
 import { formatTrialRemaining, TrialProgressBar } from "../modules/super-admin/constants";
+import { formatDisplayDateTime } from "../utils/billing-helpers";
 
 // This page is scoped to Organization Admins only — one tenant-facing
 // administrator role per organization. Billing/finance/auditor roles are
@@ -57,9 +58,8 @@ function relativeTime(value) {
 const PAGE_SIZE = 25;
 
 function formatDateTimeSafe(value) {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date.toLocaleString();
+  const text = formatDisplayDateTime(value);
+  return text === "—" ? null : text;
 }
 
 /** Shared shell for reason-mandated user mutations (Phase 3B). */

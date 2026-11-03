@@ -29,6 +29,7 @@ import {
   Shield,
   Filter,
 } from "lucide-react";
+import { formatRelativeTime } from "../../utils/billing-helpers";
 
 const INK = "#0F172A";
 const INK_SOFT = "#374151";
@@ -78,18 +79,7 @@ function StatusPill({ active, verified }) {
 }
 
 function formatLastActive(iso) {
-  if (!iso) return "Never";
-  const d = new Date(iso);
-  const now = new Date();
-  const diffMs = now - d;
-  const diffMins = Math.floor(diffMs / 60000);
-  if (diffMins < 1) return "Just now";
-  if (diffMins < 60) return `${diffMins}m ago`;
-  const diffHrs = Math.floor(diffMins / 60);
-  if (diffHrs < 24) return `${diffHrs}h ago`;
-  const diffDays = Math.floor(diffHrs / 24);
-  if (diffDays < 7) return `${diffDays}d ago`;
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return iso ? formatRelativeTime(iso) : "Never";
 }
 
 function initials(first, last) {
