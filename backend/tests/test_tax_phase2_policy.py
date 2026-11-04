@@ -775,3 +775,26 @@ def test_backfill_keeps_raw_values_and_only_unambiguous_countries(w):
         (" gb 123 456 ", "GB123456", "tax_id", "VAT Registration Number", VerificationStatus.UNVERIFIED)]
     assert uk.billing_country == "United Kingdom" and uk.tax_id == " gb 123 456 "   # legacy fields untouched
     assert db.get(Quotation, quote.id).seller_entity_id == w["entity"].id
+
+
+def test_purge_never_walks_into_platform_reference_tables(w):
+    """Regression: the purge BFS followed users -> registry SET NULL edges and
+    UNIONed tax_source_artifacts' text key with integer keys, which Postgres
+    rejects (CI caught it; SQLite does not type-check UNIONs)."""
+    from app.database import Base
+    from app.modules.super_admin.organization_purge_service import OrganizationPurgeService
+    from app.modules.tax import policy_models, registry_models
+
+    for module, declared in ((registry_models, registry_models.REGISTRY_TABLES),
+                             (policy_models, policy_models.POLICY_TABLES)):
+        defined = {obj.__tablename__ for obj in vars(module).values()
+                   if isinstance(obj, type) and issubclass(obj, Base) and obj is not Base
+                   and obj.__module__ == module.__name__}
+        assert defined == set(declared), module.__name__
+
+    publish_availability(w)
+    approve(w, propose(w))
+    collected = OrganizationPurgeService(w["db"])._collect(w["org"].id)
+    platform = set(registry_models.REGISTRY_TABLES) | set(policy_models.POLICY_TABLES)
+    assert not platform & set(collected)
+    assert {"entity_tax_activations", "entity_tax_registrations"} <= set(collected)

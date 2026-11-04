@@ -138,6 +138,9 @@ class TaxCode(Base):
     __table_args__ = (UniqueConstraint("code_set_version_id", "code", name="uq_tax_codes_set_code"),)
 
 
+#: Platform policy tables (§12.1): never tenant data, never purged with a tenant.
+POLICY_TABLES = ("tax_market_availability_versions", "tax_code_set_versions", "tax_codes")
+
 # Content columns frozen once a version leaves the editable states.
 AVAILABILITY_CONTENT_FIELDS = ("jurisdiction_id", "tax_type_id", "transaction_class", "mode",
                                "tenant_config_permitted", "gates", "notes", "created_by_user_id", "created_at")
