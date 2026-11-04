@@ -39,6 +39,10 @@ export const PLATFORM_ROLE_LABELS = {
   reliability_operator: "Reliability Operator",
   auditor: "Auditor",
   finance_readonly: "Finance (Read-Only)",
+  // ZB-TAX-ARCH-001 Phase 1: tax reference registry maker / checker. Never
+  // implied by platform_administrator on the backend.
+  tax_reviewer: "Tax Reviewer",
+  tax_publisher: "Tax Publisher",
 };
 
 const RELIABILITY_READ_ROLES = ["reliability_operator", "security_operator", "auditor", "support_operator"];

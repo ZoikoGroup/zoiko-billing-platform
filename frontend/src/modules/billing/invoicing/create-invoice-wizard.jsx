@@ -1375,7 +1375,7 @@ export default function CreateInvoiceWizard({ onClose, onCreated }) {
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">Tax %</label>
-                    <input type="number" min="0" max="100" step="0.01" value={item.tax_percentage}
+                    <input type="number" min="0" max="100" step="0.000001" value={item.tax_percentage}
                       onChange={(e) => updateLineItem(idx, "tax_percentage", e.target.value)}
                       aria-label={`Tax for item ${idx + 1}`}
                       className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />

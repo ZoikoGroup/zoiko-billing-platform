@@ -606,7 +606,7 @@ export default function ContractEditPage() {
                       </label>
                       <label className="block">
                         <span className="block text-xs text-slate-500 mb-1">Tax %</span>
-                        <input type="number" value={item.tax_percentage} onChange={(e) => updateLineItem(item.id, "tax_percentage", e.target.value)} className={`${inputClass} text-right`} min="0" max="100" step="0.01" />
+                        <input type="number" value={item.tax_percentage} onChange={(e) => updateLineItem(item.id, "tax_percentage", e.target.value)} className={`${inputClass} text-right`} min="0" max="100" step="0.000001" />
                       </label>
                     </div>
                     <div className="mt-2 flex items-center justify-between text-sm">
@@ -679,7 +679,7 @@ export default function ContractEditPage() {
                           <input type="number" value={item.discount_percentage} onChange={(e) => updateLineItem(item.id, "discount_percentage", e.target.value)} className="w-full px-2 py-1 border border-slate-200 rounded text-sm text-right focus:outline-none focus:ring-1 focus:ring-brand/30" min="0" max="100" step="0.01" />
                         </td>
                         <td className="py-2 px-3">
-                          <input type="number" value={item.tax_percentage} onChange={(e) => updateLineItem(item.id, "tax_percentage", e.target.value)} className="w-full px-2 py-1 border border-slate-200 rounded text-sm text-right focus:outline-none focus:ring-1 focus:ring-brand/30" min="0" max="100" step="0.01" />
+                          <input type="number" value={item.tax_percentage} onChange={(e) => updateLineItem(item.id, "tax_percentage", e.target.value)} className="w-full px-2 py-1 border border-slate-200 rounded text-sm text-right focus:outline-none focus:ring-1 focus:ring-brand/30" min="0" max="100" step="0.000001" />
                         </td>
                         <td className="py-2 px-3 text-right font-medium">{formatDisplayCurrency(lineTotal, form.currency)}</td>
                         <td className="py-2 px-1">

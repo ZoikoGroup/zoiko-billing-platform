@@ -129,13 +129,26 @@ _CAPABILITY_ROLE_MAP: dict[str, set[PlatformRole]] = {
     # platform_role.manage) — activating a trial program is a commercial
     # policy decision, not a day-to-day operational task.
     "commercial_evaluation_program.write": set(),
+    # ── Global Tax Reference Registry (ZB-TAX-ARCH-001 Phase 1) ─────────────
+    # Maker (TAX_REVIEWER) and checker/publisher (TAX_PUBLISHER) are distinct
+    # roles, and all three are EXPLICIT_ONLY: a PLATFORM_ADMINISTRATOR does not
+    # implicitly hold them, so registry publication is never open to every
+    # super admin (§10.1, §14.1 two-person review).
+    "tax_registry.read": {PlatformRole.TAX_REVIEWER, PlatformRole.TAX_PUBLISHER},
+    "tax_registry.write": {PlatformRole.TAX_REVIEWER},
+    "tax_registry.approve": {PlatformRole.TAX_PUBLISHER},
 }
 
 CAPABILITIES = set(_CAPABILITY_ROLE_MAP.keys())
 
 # Capabilities the implicit PLATFORM_ADMINISTRATOR grant does NOT cover: they
 # are held only by the roles listed for them in _CAPABILITY_ROLE_MAP.
-EXPLICIT_ONLY_CAPABILITIES: frozenset[str] = frozenset({"tenant_support.break_glass"})
+EXPLICIT_ONLY_CAPABILITIES: frozenset[str] = frozenset({
+    "tenant_support.break_glass",
+    "tax_registry.read",
+    "tax_registry.write",
+    "tax_registry.approve",
+})
 
 
 def _effective_platform_role(user) -> PlatformRole | None:

@@ -48,6 +48,7 @@ QUOTE_ALLOWED_FIELDS = {
     "customer_id", "quote_number", "valid_until",
     "discount_percentage", "currency", "notes",
     "terms", "status", "quote_version", "subject",
+    "seller_entity_id",
 }
 ITEM_ALLOWED_FIELDS = {
     "quotation_id", "line_number", "description", "quantity",
@@ -134,6 +135,13 @@ class QuoteService:
         # silently falls through to the Quotation.currency column's own USD
         # default when the client omits it.
         data["currency"] = data.get("currency") or customer.currency or self.config_service.get_default_currency(organization_id)
+        # Issuing seller entity (ZB-TAX-ARCH-001 Phase 2), resolved exactly as
+        # for invoices: the tenant's own active entity, or its default.
+        from app.modules.tax.legal_entity_service import LegalEntityService
+
+        data["seller_entity_id"] = LegalEntityService(self.db).resolve_issuing_entity(
+            organization_id, data.get("seller_entity_id"),
+        ).id
         quote = self.repo.create(
             organization_id,
             customer_id=customer_id, quote_number=quote_number,
@@ -147,6 +155,12 @@ class QuoteService:
         quote = self.repo.get_by_id(quote_id, organization_id)
         if quote.status != QuoteStatus.DRAFT:
             raise BadRequestException("Only draft quotes can be edited")
+        if "seller_entity_id" in data:
+            from app.modules.tax.legal_entity_service import LegalEntityService
+
+            data["seller_entity_id"] = LegalEntityService(self.db).resolve_issuing_entity(
+                organization_id, data["seller_entity_id"],
+            ).id
         updated = self.repo.update(quote_id, organization_id, **data)
         self.audit.log(organization_id, updated_by, BillingAuditAction.UPDATE, "Quotation", quote_id)
         return updated
@@ -954,6 +968,7 @@ class QuoteService:
             due_date=due_date,
             discount_percentage=quote.discount_percentage,
             currency=quote.currency, quotation_id=quote_id,
+            seller_entity_id=quote.seller_entity_id,
         )
         for item in quote.items:
             inv_service.add_item(

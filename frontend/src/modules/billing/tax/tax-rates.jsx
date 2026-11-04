@@ -13,7 +13,7 @@ import {
   PageSkeleton, ErrorState, DashboardHeader, DashboardStatCard, DASHBOARD_KPI_GRID,
   StatusBadge, Pagination, useConfirmationDialog, exportDashboardToCsv, exportDashboardToJson,
 } from "../../../components/billing-shared";
-import { countCoveredJurisdictions } from "./tax-helpers";
+import { countCoveredJurisdictions, formatTaxRate } from "./tax-helpers";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -400,7 +400,7 @@ export default function TaxRatesPage() {
                         <p className="font-medium text-slate-800">{rate.name || "Unnamed"}</p>
                       </div>
                     </div></> },
-            { key: "rate", label: "Rate", sortable: true, render: (rate) => <><span className="font-semibold text-slate-800">{parseFloat(rate.rate || 0).toFixed(2)}%</span></> },
+            { key: "rate", label: "Rate", sortable: true, render: (rate) => <><span className="font-semibold text-slate-800">{formatTaxRate(rate.rate)}%</span></> },
             { key: "tax_type", label: "Type", sortable: true, render: (rate) => <><StatusBadge status={rate.tax_type} options={TAX_TYPE_BADGE_OPTIONS} fallbackColor="bg-slate-100 text-slate-600" /></> },
             { key: "currency", label: "Currency", render: (rate) => <span className="text-sm text-slate-600">{rate.currency_code ? (
                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-brand-100 text-brand-700">
@@ -474,7 +474,7 @@ export default function TaxRatesPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Rate (%) *</label>
-                <input type="number" step="0.01" min="0" max="100" value={formData.rate} onChange={(e) => setFormData((p) => ({ ...p, rate: e.target.value }))}
+                <input type="number" step="0.000001" min="0" max="100" value={formData.rate} onChange={(e) => setFormData((p) => ({ ...p, rate: e.target.value }))}
                   className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
               </div>
               <div>

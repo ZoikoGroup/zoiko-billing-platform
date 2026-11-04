@@ -2241,6 +2241,11 @@ class InvoiceCreate(BaseModel):
     invoice_type: InvoiceType = InvoiceType.STANDARD
     issue_date: date
     due_date: date
+    # ZB-TAX-ARCH-001 Phase 0. Omitted -> the organization's default seller
+    # legal entity; tax_date omitted -> set from issue_date at issuance under
+    # the legacy manual regime.
+    seller_entity_id: Optional[int] = None
+    tax_date: Optional[date] = None
     discount_percentage: Decimal = Decimal("0")
     discount_amount: Decimal = Decimal("0")
     shipping_amount: Decimal = Field(default=Decimal("0"), ge=0, le=MAX_MONEY_AMOUNT)
@@ -2287,6 +2292,8 @@ class InvoiceCreate(BaseModel):
 
 class InvoiceUpdate(BaseModel):
     due_date: Optional[date] = None
+    seller_entity_id: Optional[int] = None
+    tax_date: Optional[date] = None
     discount_percentage: Optional[Decimal] = None
     discount_amount: Optional[Decimal] = None
     shipping_amount: Optional[Decimal] = Field(default=None, ge=0, le=MAX_MONEY_AMOUNT)
@@ -2303,11 +2310,13 @@ class InvoiceResponse(BaseModel):
     subscription_id: Optional[int]
     quotation_id: Optional[int]
     contract_id: Optional[int]
+    seller_entity_id: Optional[int] = None
     invoice_number: str
     invoice_type: InvoiceType
     status: InvoiceStatus
     issue_date: date
     due_date: date
+    tax_date: Optional[date] = None
     subtotal: Decimal
     discount_percentage: Decimal
     discount_amount: Decimal

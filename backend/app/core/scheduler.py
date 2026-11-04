@@ -280,6 +280,12 @@ def get_job_definitions() -> list[tuple[str, int, str, str]]:
             "Support Access Expiry Sweep",
         ),
         (
+            "app.modules.tax.tasks:run_tax_review_sweep_job",
+            settings.TAX_REVIEW_SWEEP_INTERVAL_MINUTES,
+            "tax_review_sweep_job",
+            "Tax Evidence Expiry Review (ZB-TAX-ARCH-001 T14)",
+        ),
+        (
             "app.modules.super_admin.tasks.security_detection:run_security_detection_job",
             5,
             "security_detection_job",

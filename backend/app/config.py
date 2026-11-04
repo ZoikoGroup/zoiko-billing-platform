@@ -131,6 +131,11 @@ class Settings(BaseSettings):
     # kept so the control can be restored by setting this to true (and
     # restoring the UI) — see step_up_required().
     MFA_STEP_UP_ENABLED: bool = False
+    # ZB-TAX-ARCH-001 Phase 1: approving or publishing a tax reference rate
+    # always requires a fresh MFA factor, independent of the platform-wide
+    # MFA_STEP_UP_ENABLED retirement above (the dev-only MFA_STEP_UP_BYPASS
+    # still applies). Turning this off is a deliberate, reviewable decision.
+    TAX_REGISTRY_STEP_UP_REQUIRED: bool = True
 
     @model_validator(mode="after")
     def _guard_mfa_bypass(self):
@@ -357,6 +362,10 @@ class Settings(BaseSettings):
     INVOICE_REMINDER_LEAD_DAYS: int = 3
     ENABLE_INVOICE_PRE_DUE_REMINDER: bool = True
     INVOICE_REMINDER_INTERVAL_MINUTES: int = 1440  # daily sweep
+    # ZB-TAX-ARCH-001 T14: flag expiring/expired registrations, exemption
+    # certificates and tax-ID verifications for tenant review.
+    TAX_REVIEW_SWEEP_INTERVAL_MINUTES: int = 1440
+    TAX_REVIEW_EXPIRY_WINDOW_DAYS: int = 30
 
     # ── ZB-COM-003: Trial-ending-soon warning (Prompt 4) ─────────────────
     # Days before trial_ends_at to fire the proactive warning email.

@@ -661,7 +661,7 @@ export default function ProductListPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Tax Rate (%)</label>
-                <input type="number" step="0.01" min="0" value={data.tax_percentage || ""}
+                <input type="number" step="0.000001" min="0" value={data.tax_percentage || ""}
                   onChange={(e) => setData((p) => ({ ...p, tax_percentage: e.target.value }))}
                   className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
               </div>

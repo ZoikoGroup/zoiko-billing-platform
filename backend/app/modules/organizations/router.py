@@ -693,6 +693,10 @@ def create_organization(
     # carries no registrant plan selection, so it always falls back to the
     # approved is_default plan (a safe no-op if none exists). Flush-only.
     CommercialSubscriptionService(db).provision_default_subscription(account.id)
+    # ZB-TAX-ARCH-001 Phase 0: default issuing seller legal entity, same
+    # transaction (provisioning only; grants no read access to tenant data).
+    from app.modules.tax.legal_entity_service import LegalEntityService
+    LegalEntityService(db).ensure_default_entity(org.id, created_by=current_user.id)
     db.flush()
 
     from app.modules.super_admin.audit_service import PlatformAuditService

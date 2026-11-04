@@ -40,7 +40,7 @@ from dataclasses import dataclass, field
 from typing import Dict, Iterable, Set, Tuple
 
 from sqlalchemy import delete as sa_delete
-from sqlalchemy import literal, select, tuple_, union_all
+from sqlalchemy import literal, select, text, tuple_, union_all
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -115,6 +115,7 @@ class OrganizationPurgeService:
         }
 
         pending = self._collect(org_id)
+        self._enable_tax_erasure()
         per_table = self._delete_all(pending)
         rows_deleted = sum(per_table.values())
 
@@ -155,6 +156,30 @@ class OrganizationPurgeService:
             per_table=per_table,
         )
 
+    @staticmethod
+    def _platform_tables() -> Set[str]:
+        """Platform-level reference tables that are never tenant data
+        (ZB-TAX-ARCH-001 §12.1). Their only links to tenant rows are SET NULL
+        user references, so the BFS must not walk into them: a tenant purge
+        never deletes platform reference data (and tax_source_artifacts is
+        keyed by a text hash, which Postgres cannot UNION with integer keys)."""
+        from app.modules.tax.policy_models import POLICY_TABLES
+        from app.modules.tax.registry_models import REGISTRY_TABLES
+
+        return set(REGISTRY_TABLES) | set(POLICY_TABLES)
+
+    def _enable_tax_erasure(self) -> None:
+        """Retained tax evidence (ZB-TAX-ARCH-001 Phase 2) refuses deletion
+        except inside this purge. On Postgres the guard triggers read a
+        transaction-scoped flag (SET LOCAL ends with this transaction); the
+        ORM guard reads session.info. Statutory retention vs. erasure is an
+        open legal question — see backend/docs/TAX_PHASE2.md."""
+        from app.modules.tax.models import ERASURE_FLAG
+
+        self.db.info[ERASURE_FLAG] = True
+        if self.db.get_bind().dialect.name == "postgresql":
+            self.db.execute(text(f"SET LOCAL {ERASURE_FLAG} = 'on'"))
+
     # ── collection ──────────────────────────────────────────────────────────
 
     def _collect(self, org_id: int) -> Dict[str, Set[_Pk]]:
@@ -164,7 +189,10 @@ class OrganizationPurgeService:
 
         # parent table -> [(child table, child fk column, parent referenced column, ondelete)]
         children: Dict[str, list] = {}
+        platform_tables = self._platform_tables()
         for child_name, child in tables.items():
+            if child_name in platform_tables:
+                continue
             for fk in child.foreign_keys:
                 parent_name = fk.column.table.name
                 children.setdefault(parent_name, []).append(

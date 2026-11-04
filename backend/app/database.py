@@ -448,6 +448,31 @@ CRITICAL_COLUMNS: list[tuple[str, str, str, str]] = [
         "add_platform_audit_log_columns.py",
         "PlatformAuditService.log writes actor_role on every platform audit entry",
     ),
+    (
+        "invoices", "seller_entity_id",
+        "alembic/versions/a7c4e1b9d3f0_tax_phase0_seller_entities_precision.py",
+        "ZB-TAX-ARCH-001: InvoiceService assigns the issuing seller legal entity on create/finalize",
+    ),
+    (
+        "invoices", "tax_date",
+        "alembic/versions/a7c4e1b9d3f0_tax_phase0_seller_entities_precision.py",
+        "ZB-TAX-ARCH-001: InvoiceService stamps the tax point date at issuance",
+    ),
+    (
+        "quotations", "seller_entity_id",
+        "alembic/versions/c5e2d8a4b7f1_tax_phase2_policy_activation_context.py",
+        "ZB-TAX-ARCH-001 Phase 2: QuoteService assigns the issuing seller legal entity on create",
+    ),
+    (
+        "quotations", "tax_context_status",
+        "alembic/versions/c5e2d8a4b7f1_tax_phase2_policy_activation_context.py",
+        "ZB-TAX-ARCH-001 Phase 2: classification approvals mark open quotes STALE",
+    ),
+    (
+        "quotations", "tax_classification_version",
+        "alembic/versions/c5e2d8a4b7f1_tax_phase2_policy_activation_context.py",
+        "ZB-TAX-ARCH-001 Phase 2: Quotation model column (classification version a quote was built on)",
+    ),
 ]
 
 
@@ -563,6 +588,9 @@ import app.modules.organizations.models  # noqa: F401,E402
 import app.modules.super_admin.models  # noqa: F401,E402
 import app.modules.commercial.models  # noqa: F401,E402
 import app.modules.billing.models  # noqa: F401,E402
+import app.modules.tax.models  # noqa: F401,E402 — ZB-TAX-ARCH-001 tenant tax domain
+import app.modules.tax.registry_models  # noqa: F401,E402 — ZB-TAX-ARCH-001 global reference registry (non-tenant)
+import app.modules.tax.policy_models  # noqa: F401,E402 — ZB-TAX-ARCH-001 market availability + tax codes (non-tenant)
 import app.modules.chatbot.models  # noqa: F401,E402 — 28-table AI assistant schema
 import app.modules.notifications.models  # noqa: F401,E402 — ZB-* email pipeline foundation
 import app.services.email_foundation.models  # noqa: F401,E402 — Email System Foundation Infrastructure

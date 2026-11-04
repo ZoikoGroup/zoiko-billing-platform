@@ -656,6 +656,11 @@ def register_enterprise(
     from app.modules.billing.services.tax_service import TaxService
     TaxService(db).seed_starter_tax_rates(org.id, org.currency, created_by=admin.id, commit=False, country_code=org.country)
 
+    # ZB-TAX-ARCH-001 Phase 0: every tenant gets its default issuing seller
+    # legal entity from the registration profile, in the same transaction.
+    from app.modules.tax.legal_entity_service import LegalEntityService
+    LegalEntityService(db).ensure_default_entity(org.id, created_by=admin.id)
+
     db.commit()
     db.refresh(admin)
     db.refresh(org)

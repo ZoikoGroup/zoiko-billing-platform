@@ -33,6 +33,12 @@ from sqlalchemy.sql import func
 from app.database import Base
 
 from app.core.db_types import CaseInsensitiveEnum
+from app.modules.tax.enums import TaxContextStatus
+
+# ZB-TAX-ARCH-001 §07: rates are decimal fixed-point, never floats, and must
+# hold real-world precision (e.g. New York City 8.875%). Numeric(5, 2) could
+# not; 9 digits / 6 decimal places covers 0.000000–100.000000.
+TAX_RATE_NUMERIC = Numeric(9, 6)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -711,7 +717,7 @@ class Product(Base):
     currency          = Column(String(3), default="USD")
     default_price     = Column(Numeric(14, 2), default=0)
     cost_price        = Column(Numeric(14, 2), default=0)
-    tax_percentage    = Column(Numeric(5, 2), default=0)
+    tax_percentage    = Column(TAX_RATE_NUMERIC, default=0)
     tax_inclusive     = Column(Boolean, default=False)
     is_subscribable   = Column(Boolean, default=False)
     is_usage_billable = Column(Boolean, default=False)
@@ -1126,7 +1132,7 @@ class TaxPricing(Base):
     state                   = Column(String(100), nullable=True)
     city                    = Column(String(100), nullable=True)
     postal_code             = Column(String(20), nullable=True)
-    rate                    = Column(Numeric(5, 2), nullable=False)
+    rate                    = Column(TAX_RATE_NUMERIC, nullable=False)
     pricing_type            = Column(CaseInsensitiveEnum(TaxPricingType), default=TaxPricingType.EXCLUSIVE, nullable=False)
     applies_to_products     = Column(Boolean, default=True)
     applies_to_services     = Column(Boolean, default=True)
@@ -1280,7 +1286,7 @@ class ContractItem(Base):
     unit_price          = Column(Numeric(16, 4), nullable=False)
     discount_percentage = Column(Numeric(5, 2), default=0)
     discount_amount     = Column(Numeric(14, 2), default=0)
-    tax_percentage      = Column(Numeric(5, 2), default=0)
+    tax_percentage      = Column(TAX_RATE_NUMERIC, default=0)
     tax_amount          = Column(Numeric(14, 2), default=0)
     total_amount        = Column(Numeric(14, 2), nullable=False)
     is_tax_inclusive    = Column(Boolean, default=False)
@@ -1364,6 +1370,11 @@ class Quotation(Base):
     updated_by                = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at                = Column(DateTime(timezone=True), server_default=func.now(), index=True)
     updated_at                = Column(DateTime(timezone=True), onupdate=func.now())
+    # ZB-TAX-ARCH-001 Phase 2: issuing entity (assigned like invoices) and
+    # whether the tax facts this quote was built on are still current.
+    seller_entity_id          = Column(Integer, ForeignKey("seller_legal_entities.id", ondelete="RESTRICT"), nullable=True, index=True)
+    tax_context_status        = Column(CaseInsensitiveEnum(TaxContextStatus), nullable=True)
+    tax_classification_version = Column(Integer, nullable=True)
 
     customer                  = relationship("BillingCustomer", back_populates="quotations")
     items                     = relationship("QuotationItem", back_populates="quotation")
@@ -1394,7 +1405,7 @@ class QuotationItem(Base):
     unit_price          = Column(Numeric(16, 4), nullable=False)
     discount_percentage = Column(Numeric(5, 2), default=0)
     discount_amount     = Column(Numeric(14, 2), default=0)
-    tax_percentage      = Column(Numeric(5, 2), default=0)
+    tax_percentage      = Column(TAX_RATE_NUMERIC, default=0)
     tax_amount          = Column(Numeric(14, 2), default=0)
     total_amount        = Column(Numeric(14, 2), nullable=False)
     is_tax_inclusive    = Column(Boolean, default=False)
@@ -1493,7 +1504,7 @@ class Subscription(Base):
     setup_fee           = Column(Numeric(14, 2), default=0)
     discount_percentage = Column(Numeric(5, 2), default=0)
     discount_amount     = Column(Numeric(14, 2), default=0)
-    tax_percentage      = Column(Numeric(5, 2), default=0)
+    tax_percentage      = Column(TAX_RATE_NUMERIC, default=0)
     start_date          = Column(Date, nullable=False, index=True)
     current_term_start  = Column(Date, nullable=False)
     current_term_end    = Column(Date, nullable=False, index=True)
@@ -1588,11 +1599,22 @@ class Invoice(Base):
     subscription_id     = Column(Integer, ForeignKey("subscriptions.id", ondelete="SET NULL"), nullable=True)
     quotation_id        = Column(Integer, ForeignKey("quotations.id", ondelete="SET NULL"), nullable=True)
     contract_id         = Column(Integer, ForeignKey("contracts.id", ondelete="SET NULL"), nullable=True)
+    # ZB-TAX-ARCH-001 §02/§07: the issuing seller legal entity. Tax
+    # registrations and obligations belong to this entity, not the tenant.
+    # Nullable only for rows created before Phase 0; the migration backfills
+    # every existing invoice to its organization's default entity, and new
+    # invoices are always assigned one (InvoiceService).
+    seller_entity_id    = Column(Integer, ForeignKey("seller_legal_entities.id", ondelete="RESTRICT"), nullable=True, index=True)
     invoice_number      = Column(String(50), nullable=False)
     invoice_type        = Column(CaseInsensitiveEnum(InvoiceType), default=InvoiceType.STANDARD, nullable=False, index=True)
     status              = Column(CaseInsensitiveEnum(InvoiceStatus), default=InvoiceStatus.DRAFT, nullable=False, index=True)
     issue_date          = Column(Date, nullable=False, index=True)
     due_date            = Column(Date, nullable=False, index=True)
+    # §08.1 step 2: the legal tax point date, in the seller's jurisdiction-
+    # local calendar. Distinct from issue_date (time-of-supply rules can
+    # differ). Under the LEGACY_MANUAL regime it is set from issue_date at
+    # finalization; the GOVERNED regime (Phase 3) requires it explicitly.
+    tax_date            = Column(Date, nullable=True, index=True)
     subtotal            = Column(Numeric(14, 2), default=0)
     discount_percentage = Column(Numeric(5, 2), default=0)
     discount_amount     = Column(Numeric(14, 2), default=0)
@@ -1629,6 +1651,7 @@ class Invoice(Base):
     updated_at          = Column(DateTime(timezone=True), onupdate=func.now())
 
     customer            = relationship("BillingCustomer", back_populates="invoices", foreign_keys=[customer_id])
+    seller_entity       = relationship("SellerLegalEntity", foreign_keys=[seller_entity_id])
     subscription        = relationship("Subscription", foreign_keys=[subscription_id])
     quotation           = relationship("Quotation", foreign_keys=[quotation_id])
     contract            = relationship("Contract", foreign_keys=[contract_id])
@@ -1764,7 +1787,7 @@ class InvoiceItem(Base):
     unit_price          = Column(Numeric(16, 4), nullable=False)
     discount_percentage = Column(Numeric(5, 2), default=0)
     discount_amount     = Column(Numeric(14, 2), default=0)
-    tax_percentage      = Column(Numeric(5, 2), default=0)
+    tax_percentage      = Column(TAX_RATE_NUMERIC, default=0)
     tax_amount          = Column(Numeric(14, 2), default=0)
     total               = Column(Numeric(14, 2), nullable=False)
     is_tax_inclusive    = Column(Boolean, default=False)
@@ -2427,7 +2450,7 @@ class TaxRate(Base):
     name            = Column(String(255), nullable=False)
     code            = Column(String(50), nullable=False)
     jurisdiction    = Column(String(255), nullable=False)
-    rate            = Column(Numeric(5, 2), nullable=False)
+    rate            = Column(TAX_RATE_NUMERIC, nullable=False)
     tax_type        = Column(CaseInsensitiveEnum(TaxType), nullable=False)
     is_compound     = Column(Boolean, default=False)
     is_recoverable  = Column(Boolean, default=True)
@@ -2469,7 +2492,7 @@ class Tax(Base):
     tax_rate_id     = Column(Integer, ForeignKey("tax_rates.id", ondelete="SET NULL"), nullable=True)
     taxable_amount  = Column(Numeric(14, 2), nullable=False)
     tax_amount      = Column(Numeric(14, 2), nullable=False)
-    tax_percentage  = Column(Numeric(5, 2), nullable=False)
+    tax_percentage  = Column(TAX_RATE_NUMERIC, nullable=False)
     jurisdiction    = Column(String(255), nullable=True)
     tax_type        = Column(CaseInsensitiveEnum(TaxType), nullable=True)
     is_reverse_charge = Column(Boolean, default=False)
