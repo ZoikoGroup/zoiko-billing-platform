@@ -46,6 +46,7 @@ vi.mock("react-router-dom", async (importOriginal) => {
 });
 
 import CreditNoteDetailPage from "./credit-note-detail";
+import { AuthProvider } from "../../../context/AuthContext";
 
 function baseCreditNote(overrides = {}) {
   return {
@@ -72,7 +73,9 @@ function baseCreditNote(overrides = {}) {
 function renderPage() {
   return render(
     <MemoryRouter>
-      <CreditNoteDetailPage />
+      <AuthProvider>
+        <CreditNoteDetailPage />
+      </AuthProvider>
     </MemoryRouter>
   );
 }
@@ -90,13 +93,22 @@ async function loadPage(overrides = {}) {
   return cn;
 }
 
+// Approve is gated to finance_approver/super_admin (maker-checker); AuthProvider
+// only trusts the stored user once an access token is also present.
+function signInAs(role) {
+  localStorage.setItem("zoiko_billing_access", "test-token");
+  localStorage.setItem("zoiko_billing_user", JSON.stringify({ role }));
+}
+
 beforeEach(() => {
   cleanup();
   vi.clearAllMocks();
+  localStorage.clear();
 });
 
 describe("CreditNoteDetailPage — happy path", () => {
   it("approving a draft credit note fires creditNoteApi.approve exactly once with its id (single click, no confirm gate)", async () => {
+    signInAs("finance_approver");
     await loadPage({ status: "draft" });
 
     const approveBtn = await screen.findByRole("button", { name: "Approve" });
@@ -104,6 +116,15 @@ describe("CreditNoteDetailPage — happy path", () => {
 
     await waitFor(() => expect(mockApprove).toHaveBeenCalledTimes(1));
     expect(mockApprove).toHaveBeenCalledWith(77);
+  });
+
+  it("an org admin sees why they cannot approve instead of an Approve button that 403s", async () => {
+    signInAs("org_admin");
+    await loadPage({ status: "draft" });
+
+    expect(screen.getByText(/Approval requires a Finance Approver/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+    expect(mockApprove).not.toHaveBeenCalled();
   });
 
   it("issuing an approved credit note fires creditNoteApi.issue exactly once with its id", async () => {

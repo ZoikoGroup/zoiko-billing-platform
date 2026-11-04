@@ -687,7 +687,7 @@ export default function QuotationCreateWizardPage({ onClose, onCreated }) {
         fetchProducts={(params) => productApi.list(params)}
         fetchProductById={(id) => productApi.get(id)}
         fetchCategories={(params) => productApi.listCategories(params)}
-        formatPrice={(p) => formatDisplayCurrency(p.default_price || 0, form.currency)}
+        formatPrice={(p) => formatDisplayCurrency(p.default_price ?? null, form.currency)}
         multiSelect={true}
         selectedProducts={selectedProducts}
         invoiceCurrency={form.currency}
@@ -699,7 +699,7 @@ export default function QuotationCreateWizardPage({ onClose, onCreated }) {
         fetchProducts={(params) => productApi.list(params)}
         fetchCategories={(params) => productApi.listCategories(params)}
         onAddSelected={handleBulkPickerAdd}
-        formatPrice={(p) => formatDisplayCurrency(p.default_price || 0, form.currency)}
+        formatPrice={(p) => formatDisplayCurrency(p.default_price ?? null, form.currency)}
         invoiceCurrency={form.currency}
       />
       {addingProducts && (

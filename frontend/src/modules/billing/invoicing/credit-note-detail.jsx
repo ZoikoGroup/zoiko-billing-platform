@@ -7,6 +7,7 @@ import {
 import { creditNoteApi } from "../../../service/billingService";
 import { formatDisplayCurrency, formatDisplayDate } from "../../../utils/billing-helpers";
 import { useTerminology } from "../utils/TerminologyContext";
+import { useAuth } from "../../../context/AuthContext";
 import { StatusBadge } from "../../../components/billing-shared";
 import { PageHeader, Button, Modal, ActivityTimeline, CommunicationHistory } from "../../../components/billing-ui";
 
@@ -94,8 +95,17 @@ async function buildCreditNotePdf(cn, orgSettings = {}) {
   return pdfMake.createPdf(docDefinition);
 }
 
+// Approval is restricted to Finance Approver (or Super Admin) by design --
+// maker-checker separation of duties, enforced by the backend's
+// get_current_finance_approver dependency (same roles as refund approval).
+// This only decides between the button and an explanation; it is never the
+// authorization decision itself.
+const CAN_APPROVE_CREDIT_NOTE_ROLES = ["finance_approver", "super_admin"];
+
 export default function CreditNoteDetailPage() {
   const { singular, getLabel } = useTerminology();
+  const { role } = useAuth();
+  const canApprove = CAN_APPROVE_CREDIT_NOTE_ROLES.includes(role);
   const { id } = useParams();
   const navigate = useNavigate();
 
@@ -363,9 +373,13 @@ export default function CreditNoteDetailPage() {
             <div className="mt-4 grid grid-cols-2 gap-2">
               <Button size="sm" variant="secondary" icon={Printer} onClick={() => window.print()} className="w-full">Print</Button>
               <Button size="sm" variant="secondary" icon={Download} onClick={handleDownloadPdf} className="w-full">Download</Button>
-              {isDraft && (
+              {isDraft && (canApprove ? (
                 <Button size="sm" variant="secondary" icon={CheckCircle} loading={actionLoading === "approve"} onClick={() => handleAction("approve", () => creditNoteApi.approve(cn.id))} className="col-span-2 w-full">Approve</Button>
-              )}
+              ) : (
+                <div className="col-span-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800" title="Only a Finance Approver can approve this credit note. This separation of duties cannot be bypassed from your role.">
+                  <span className="font-medium">Approval requires a Finance Approver.</span> Ask your Finance Approver to review this credit note — your role ({role || "unknown"}) cannot approve it.
+                </div>
+              ))}
               {isApproved && (
                 <Button size="sm" variant="primary" icon={Send} loading={actionLoading === "issue"} onClick={() => handleAction("issue", () => creditNoteApi.issue(cn.id))} className="col-span-2 w-full">Issue</Button>
               )}

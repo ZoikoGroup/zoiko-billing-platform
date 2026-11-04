@@ -43,6 +43,8 @@ const CUSTOMER_TYPES = [
 
 const PAYMENT_TERMS = [
   { value: "due_on_receipt", label: "Due on Receipt" },
+  { value: "net_7", label: "Net 7" },
+  { value: "net_10", label: "Net 10" },
   { value: "net_15", label: "Net 15" },
   { value: "net_30", label: "Net 30" },
   { value: "net_45", label: "Net 45" },

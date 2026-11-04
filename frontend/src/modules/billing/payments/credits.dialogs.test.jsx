@@ -21,6 +21,7 @@ vi.mock("../../../service/billingService", () => ({
 }));
 
 import CreditsPage from "./credits";
+import { AuthProvider } from "../../../context/AuthContext";
 
 async function loadPage() {
   mockList.mockResolvedValue({
@@ -29,7 +30,9 @@ async function loadPage() {
   });
   render(
     <MemoryRouter>
-      <CreditsPage />
+      <AuthProvider>
+        <CreditsPage />
+      </AuthProvider>
     </MemoryRouter>
   );
   await screen.findByText("CN-0031");

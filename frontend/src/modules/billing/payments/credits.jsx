@@ -10,6 +10,7 @@ import useLatestRequest from "../utils/useLatestRequest";
 import { sumInBaseCurrency } from "../../../utils/currency-conversion";
 import { useCurrency } from "../utils/CurrencyContext";
 import { ErrorState } from "../../../components/billing-shared";
+import { useAuth } from "../../../context/AuthContext";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -51,8 +52,15 @@ function getStatusStyle(status) {
   return map[status] || "bg-slate-100 text-slate-600";
 }
 
+// Credit-note approval is Finance Approver (or Super Admin) only -- maker-
+// checker, enforced by the backend's get_current_finance_approver. Other
+// roles are not offered an Approve button that would only 403.
+const CAN_APPROVE_CREDIT_NOTE_ROLES = ["finance_approver", "super_admin"];
+
 export default function CreditsPage() {
   const navigate = useNavigate();
+  const { role } = useAuth();
+  const canApprove = CAN_APPROVE_CREDIT_NOTE_ROLES.includes(role);
   const { baseCurrency } = useCurrency();
 
   const [credits, setCredits] = useState([]);
@@ -279,7 +287,7 @@ export default function CreditsPage() {
                           className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-brand-600 bg-brand-50 rounded-lg hover:bg-brand-100">
                           <FileText className="h-3.5 w-3.5" /> View
                         </button>
-                        {c.status === "draft" && (
+                        {c.status === "draft" && canApprove && (
                           <button onClick={() => handleApprove(c.id)} disabled={!!actionLoading}
                             className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-indigo-700 bg-indigo-50 rounded-lg hover:bg-indigo-100 disabled:opacity-50">
                             {actionLoading === `approve-${c.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle className="h-3 w-3" />} Approve

@@ -34,6 +34,8 @@ const STATUS_ICONS = { active: CheckCircle, suspended: AlertCircle, inactive: Cl
 const PAYMENT_TERMS_OPTIONS = [
   { value: "", label: "All Terms" },
   { value: "due_on_receipt", label: "Due on Receipt" },
+  { value: "net_7", label: "Net 7" },
+  { value: "net_10", label: "Net 10" },
   { value: "net_15", label: "Net 15" },
   { value: "net_30", label: "Net 30" },
   { value: "net_45", label: "Net 45" },
@@ -45,7 +47,7 @@ const PAYMENT_TERMS_OPTIONS = [
 const TAX_ID_FIELDS = ["gst_number", "vat_number", "pan", "tin", "tax_id"];
 
 const PAYMENT_TERMS_CREDIT_DAYS = {
-  due_on_receipt: 0, net_15: 15, net_30: 30, net_45: 45, net_60: 60, net_90: 90,
+  due_on_receipt: 0, net_7: 7, net_10: 10, net_15: 15, net_30: 30, net_45: 45, net_60: 60, net_90: 90,
 };
 
 const CUSTOMER_TYPES = [

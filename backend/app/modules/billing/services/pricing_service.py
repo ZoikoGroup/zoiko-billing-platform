@@ -77,6 +77,14 @@ class PricingService:
         product_id = data.get("product_id")
         if product_id:
             self.product_repo.get_by_id(product_id, organization_id)
+            # uq_pricing_plans_product_period would reject this anyway, but
+            # its 409 names the raw constraint; say what actually clashes.
+            if data.get("billing_period") and data.get("effective_from") and self.db.query(PricingPlan.id).filter(
+                PricingPlan.product_id == product_id,
+                PricingPlan.billing_period == data["billing_period"],
+                PricingPlan.effective_from == data["effective_from"],
+            ).first():
+                raise AlreadyExistsException("Pricing plan", "product, billing period and start date")
         plan = self.repo.create(organization_id, **data)
         self.audit.log(organization_id, created_by, BillingAuditAction.CREATE, "PricingPlan", plan.id, new_values=data)
         return plan
@@ -146,6 +154,19 @@ class PricingService:
         plan = self.repo.get_by_id(pricing_plan_id, organization_id)
         if plan.pricing_model not in (PricingModel.TIERED, PricingModel.VOLUME, PricingModel.GRADUATED):
             raise BadRequestException("Tiers can only be added to tiered, volume, or graduated pricing plans")
+        # A quantity must fall in exactly one tier, or the price resolved for
+        # it depends on which overlapping tier the resolver happens to hit.
+        # to_quantity None is open-ended.
+        new_from = data.get("from_quantity")
+        new_to = data.get("to_quantity")
+        if new_from is not None:
+            for existing in self.tier_repo.list_by_plan(organization_id, pricing_plan_id):
+                ex_to = existing.to_quantity
+                if (ex_to is None or new_from <= ex_to) and (new_to is None or existing.from_quantity <= new_to):
+                    raise BadRequestException(
+                        f"Tier {new_from}-{new_to if new_to is not None else '∞'} overlaps the existing tier "
+                        f"{existing.from_quantity}-{ex_to if ex_to is not None else '∞'}."
+                    )
         tier = self.tier_repo.create(organization_id, pricing_plan_id=pricing_plan_id, **data)
         self.audit.log(organization_id, created_by, BillingAuditAction.CREATE, "PlanTier", tier.id, new_values=data)
         return tier
@@ -466,6 +487,13 @@ DISCOUNT_ALLOWED = {
 }
 
 
+def _require_valid_percentage(value_type, discount_value) -> None:
+    """A percentage discount above 100% was accepted (QA saved a 150% coupon),
+    which would push a line below zero. Fixed-amount discounts are unbounded."""
+    if value_type == "percentage" and discount_value is not None and Decimal(str(discount_value)) > 100:
+        raise BadRequestException("A percentage discount cannot be more than 100%.")
+
+
 class DiscountService:
     def __init__(self, db: Session):
         self.db = db
@@ -477,6 +505,7 @@ class DiscountService:
 
     def create(self, organization_id: int, created_by: int, **data: Any) -> Discount:
         data = filter_allowed(data, DISCOUNT_ALLOWED)
+        _require_valid_percentage(data.get("value_type") or "percentage", data.get("discount_value"))
         if data.get("code"):
             existing = self.repo.get_by_code(organization_id, data["code"])
             if existing:
@@ -502,6 +531,7 @@ class DiscountService:
     def update(self, pk: int, organization_id: int, updated_by: int, **data: Any) -> Discount:
         data = filter_allowed(data, DISCOUNT_ALLOWED)
         current = self.repo.get_by_id(pk, organization_id)
+        _require_valid_percentage(data.get("value_type", current.value_type), data.get("discount_value", current.discount_value))
         if data.get("code") and data["code"] != current.code:
             existing = self.repo.get_by_code(organization_id, data["code"])
             if existing:

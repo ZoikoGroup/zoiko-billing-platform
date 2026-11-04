@@ -29,6 +29,7 @@ from cachetools import TTLCache
 from sqlalchemy.orm import Session
 
 from app.modules.billing.models import BillingAuditAction, BillingCustomer
+from app.modules.billing.schemas import CUSTOMER_PAYMENT_TERMS
 from app.modules.billing.repositories.customer import CustomerRepository
 from app.modules.billing.services.audit_service import BillingAuditService
 from app.modules.billing.services.base import filter_allowed
@@ -152,9 +153,8 @@ MAX_IMPORT_ROWS = 20_000
 
 VALID_CUSTOMER_TYPES = {"business", "individual", "non_profit", "government"}
 VALID_STATUSES = {"active", "inactive", "suspended", "closed"}
-VALID_PAYMENT_TERMS = {
-    "due_on_receipt", "net_15", "net_30", "net_45", "net_60", "net_90",
-}
+# Same set the customer API accepts (the org PaymentTerm enum).
+VALID_PAYMENT_TERMS = set(CUSTOMER_PAYMENT_TERMS)
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
