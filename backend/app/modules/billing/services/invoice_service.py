@@ -124,6 +124,20 @@ class InvoiceService:
 
         return LegalEntityService(self.db)
 
+    def _is_governed(self, inv: Invoice) -> bool:
+        """GOVERNED seller entities issue only through the tax gate
+        (ZB-TAX-ARCH-001 Phase 3a); everyone else keeps the legacy path."""
+        from app.modules.tax.issuance_gate import is_governed
+
+        return is_governed(self.db, inv)
+
+    def _governed_gate(self):
+        if getattr(self, "governed_gate", None) is None:
+            from app.modules.tax.issuance_gate import GovernedIssuanceGate
+
+            self.governed_gate = GovernedIssuanceGate(self.db)
+        return self.governed_gate
+
     def _stamp_issue_tax_context(self, inv: Invoice, organization_id: int) -> None:
         """Fix the tax context an invoice is issued under, at the moment it
         leaves DRAFT (ZB-TAX-ARCH-001 Phase 0).
@@ -155,7 +169,17 @@ class InvoiceService:
         informational audit trail, not a gate.
         """
         try:
+            from app.modules.billing.models import Tax
             from app.modules.billing.services.tax_service import TaxService
+
+            # Idempotent: re-sending an already-issued invoice used to add a
+            # second set of rows every time (ZB-TAX-ARCH-001 Phase 3a fix (b)).
+            # Existing duplicates are reported, never deleted, here.
+            already = self.db.query(Tax.id).filter(
+                Tax.organization_id == organization_id, Tax.invoice_id == invoice_id, Tax.is_active.is_(True),
+            ).first()
+            if already is not None:
+                return
 
             items = self.item_repo.list_by_invoice(organization_id, invoice_id)
             if not items:
@@ -414,28 +438,6 @@ class InvoiceService:
         if "currency" not in data or not data["currency"]:
             data["currency"] = customer.currency or self.config_service.get_default_currency(organization_id)
 
-        # Optional server-side tax resolution
-        resolve_tax = data.pop("resolve_tax", False)
-        items_data = data.get("items")
-        if resolve_tax and items_data:
-            taxable_amount = Decimal("0")
-            for item in items_data:
-                qty = Decimal(str(item.get("quantity", 1)))
-                price = Decimal(str(item.get("unit_price", 0)))
-                taxable_amount += qty * price
-
-            resolved_taxes = self.tax_service.calculate_taxes(
-                organization_id, taxable_amount,
-                jurisdiction=data.get("jurisdiction"),
-                tax_type_filter=data.get("tax_type_filter"),
-                currency_code=data.get("currency"),
-            )
-
-            if resolved_taxes:
-                total_tax_pct = sum(Decimal(str(t.get("tax_percentage", 0))) for t in resolved_taxes)
-                for item in items_data:
-                    item["tax_percentage"] = float(total_tax_pct)
-
         auto_numbering = not invoice_number or invoice_number.strip().lower() in ("auto", "auto-generated", "")
 
         if auto_numbering:
@@ -645,7 +647,10 @@ class InvoiceService:
         if owned is None:
             raise BadRequestException("Invalid product.")
 
-    def add_item(self, invoice_id: int, organization_id: int, **data: Any) -> InvoiceItem:
+    def add_item(self, invoice_id: int, organization_id: int, keep_quoted_price: bool = False, **data: Any) -> InvoiceItem:
+        """keep_quoted_price: the line's unit price is already agreed (quote ->
+        invoice for a GOVERNED entity, ZB-TAX-ARCH-001 Phase 3a fix (d)) and
+        must not be re-resolved against today's price list."""
         data = filter_allowed(data, ITEM_ALLOWED_FIELDS)
         self._validate_tax_rate_ownership(organization_id, data.get("tax_rate_id"))
         inv = self.repo.get_by_id(invoice_id, organization_id)
@@ -659,7 +664,7 @@ class InvoiceService:
         elif any(item.line_number == data["line_number"] for item in existing_items):
             raise BadRequestException(f"Line number {data['line_number']} already exists on this invoice")
         product_id = data.get("product_id")
-        if product_id is not None:
+        if product_id is not None and not keep_quoted_price:
             price_source = (data.get("price_source") or "").lower()
             if price_source == PriceSource.NEGOTIATED.value:
                 product = (
@@ -863,6 +868,20 @@ class InvoiceService:
         self._validate_status_transition(inv.status, InvoiceStatus.SENT)
         self._require_line_items(invoice_id, organization_id)
         old_status = inv.status.value
+        if self._is_governed(inv):
+            # Tax comes from the committed governed quote, never from the
+            # client-sent percentages the legacy recalculation would use.
+            gate = self._governed_gate()
+            quote = gate.prepare(inv)
+            gate.apply(inv, quote)
+            inv.status = InvoiceStatus.SENT
+            inv.sent_at = datetime.utcnow()
+            gate.commit(inv, quote, updated_by)
+            self._record_status_history(organization_id, invoice_id, old_status, InvoiceStatus.SENT, updated_by)
+            self.audit.log(organization_id, updated_by, BillingAuditAction.SEND, "Invoice", invoice_id,
+                           new_values={"tax_quote_id": quote.id})
+            safe_commit_and_refresh(self.db, inv)
+            return inv
         self.recalculate_invoice(invoice_id, organization_id)
         self._stamp_issue_tax_context(inv, organization_id)
         inv.status = InvoiceStatus.SENT
@@ -908,6 +927,16 @@ class InvoiceService:
 
         inv = self.repo.get_by_id(invoice_id, organization_id)
 
+        if inv.status == InvoiceStatus.DRAFT:
+            # Emailing a draft issues it, so it obeys the same "pause invoice
+            # finalization" breaker as finalize_invoice (Phase 0 finding 1).
+            from app.modules.super_admin.kill_switch_service import TENANT_INVOICE_FINALIZATION
+
+            try:
+                BillingKillSwitchService(self.db).require_enabled(TENANT_INVOICE_FINALIZATION)
+            except BillingBlockedError as exc:
+                raise BadRequestException(str(exc))
+
         if inv.status not in (InvoiceStatus.DRAFT, InvoiceStatus.SENT):
             raise BadRequestException(f"Cannot send invoice in '{inv.status.value}' status. Only draft or sent invoices can be emailed.")
 
@@ -920,7 +949,12 @@ class InvoiceService:
             )
 
         self._require_line_items(invoice_id, organization_id)
-        if inv.status == InvoiceStatus.DRAFT:
+        governed_quote = None
+        if inv.status == InvoiceStatus.DRAFT and self._is_governed(inv):
+            gate = self._governed_gate()
+            governed_quote = gate.prepare(inv)
+            gate.apply(inv, governed_quote)          # rolled back with everything else if delivery fails
+        elif inv.status == InvoiceStatus.DRAFT:
             self.recalculate_invoice(invoice_id, organization_id)
             inv = self.repo.get_by_id(invoice_id, organization_id)
             # Rolled back together with the status change if delivery fails.
@@ -1010,14 +1044,18 @@ class InvoiceService:
             raise BadRequestException("Failed to send the invoice email. Invoice was not marked as sent.")
 
         # Both PDF generation and email delivery succeeded — only now is the
-        # invoice actually transitioned to SENT and committed.
+        # invoice actually transitioned to SENT and committed (with the
+        # governed tax quote, when there is one, in the same transaction).
         inv.status = InvoiceStatus.SENT
         inv.sent_at = datetime.utcnow()
+        if governed_quote is not None:
+            self._governed_gate().commit(inv, governed_quote, sent_by)
         self.db.commit()
         self.db.refresh(inv)
 
         self._record_status_history(organization_id, invoice_id, old_status, InvoiceStatus.SENT.value, sent_by, "Sent via email")
-        self._record_invoice_tax_snapshots(invoice_id, organization_id, sent_by)
+        if inv.tax_quote_id is None:
+            self._record_invoice_tax_snapshots(invoice_id, organization_id, sent_by)
         self.audit.log(
             organization_id, sent_by, BillingAuditAction.SEND, "Invoice", invoice_id,
             new_values={"email_sent_to": email, "email_delivered": True},

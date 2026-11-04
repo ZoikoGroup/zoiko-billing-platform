@@ -167,6 +167,15 @@ def jurisdiction_local_today(jurisdiction: TaxJurisdiction) -> Optional[date]:
     return datetime.now(ZoneInfo(jurisdiction.timezone)).date()
 
 
+def legal_date_at(instant: datetime, timezone_name: str) -> date:
+    """The jurisdiction-local legal date of a UTC instant (T03/T17): valid_from
+    / valid_to and tax dates are dates in the jurisdiction's own calendar, so
+    23:30 in Toronto on 31 December is still 31 December there."""
+    if instant.tzinfo is None:
+        instant = instant.replace(tzinfo=timezone.utc)
+    return instant.astimezone(ZoneInfo(timezone_name)).date()
+
+
 def _user_display_name(user) -> Optional[str]:
     if user is None:
         return None

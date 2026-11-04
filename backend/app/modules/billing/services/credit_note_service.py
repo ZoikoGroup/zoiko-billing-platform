@@ -130,11 +130,21 @@ class CreditNoteService:
         self, organization_id: int, created_by: int,
         customer_id: int, credit_note_number: str,
         credit_note_type: str, total_amount: Decimal,
-        issue_date: date, **data: Any,
+        issue_date: date, _governed_snapshot: bool = False, **data: Any,
     ) -> CreditNote:
         from app.modules.billing.services.settings_service import BillingConfigurationService
 
         data = filter_allowed(data, CREDIT_NOTE_ALLOWED_FIELDS)
+        # A governed invoice's tax is an immutable snapshot: its credit notes
+        # are built from that snapshot (GovernedCreditService), never from
+        # client-entered amounts (ZB-TAX-ARCH-001 Phase 3a, T15).
+        if data.get("invoice_id") and not _governed_snapshot:
+            linked = self.invoice_service.get_invoice(data["invoice_id"], organization_id)
+            if linked is not None and getattr(linked, "tax_quote_id", None) is not None:
+                raise BadRequestException(
+                    "This invoice's tax was determined by the governed tax engine. Create its credit note with "
+                    "POST /api/v1/tax/invoices/{id}/credit-notes so tax is reversed from the original snapshot."
+                )
 
         # Resolve currency from invoice if linked
         if not data.get("currency") and data.get("invoice_id"):
@@ -191,6 +201,12 @@ class CreditNoteService:
         if cn.status != CreditNoteStatus.DRAFT:
             raise BadRequestException("Only draft credit notes can be edited")
 
+        money_fields = ("subtotal", "discount_amount", "tax_amount", "total_amount", "remaining_amount",
+                        "invoice_id", "currency", "exchange_rate")
+        if any(k in data for k in money_fields) and self._is_governed_credit(cn_id, organization_id):
+            raise BadRequestException("Amounts of a governed credit note come from the invoice's tax snapshot and "
+                                      "cannot be edited; void it and create a new one.")
+
         if any(k in data for k in ("subtotal", "discount_amount", "tax_amount", "total_amount")):
             subtotal = data.get("subtotal", cn.subtotal)
             discount_amount = data.get("discount_amount", cn.discount_amount or 0)
@@ -221,7 +237,19 @@ class CreditNoteService:
             status=status, credit_note_type=credit_note_type,
         )
 
+    def _is_governed_credit(self, cn_id: int, organization_id: int) -> bool:
+        from app.modules.tax.quote_models import CreditNoteTaxLine
+
+        return self.db.query(CreditNoteTaxLine.id).filter(
+            CreditNoteTaxLine.organization_id == organization_id, CreditNoteTaxLine.credit_note_id == cn_id,
+        ).first() is not None
+
     def bulk_delete_credit_notes(self, organization_id: int, ids: List[int], updated_by: int) -> int:
+        governed = [cn_id for cn_id in ids if self._is_governed_credit(cn_id, organization_id)]
+        if governed:
+            raise BadRequestException(
+                f"Credit notes {sorted(governed)} reverse a governed tax snapshot and are retained; void them instead."
+            )
         count = self.repo.bulk_delete(ids, organization_id)
         self.audit.log(organization_id, updated_by, BillingAuditAction.DELETE, "CreditNote", None, new_values={"deleted_ids": ids})
         return count

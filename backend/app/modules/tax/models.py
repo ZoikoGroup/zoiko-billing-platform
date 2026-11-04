@@ -498,3 +498,14 @@ def _guard_tenant_tax_records(session, flush_context, instances):
             raise TaxRecordFrozenError(
                 f"{table.name} {obj.id}: {', '.join(sorted(changed))} cannot change; record a new version instead."
             )
+
+
+def register_tenant_record_guard(table, fields, frozen_statuses: str = "*") -> None:
+    """Put another tenant tax table under the same retention guard: the ORM
+    guard above plus the Postgres trigger (on create_all) — key fields frozen,
+    deletes only inside the erasure purge. Migrations install the trigger
+    explicitly (frozen copy)."""
+    _GUARD_SPEC[table] = (set(fields), None if frozen_statuses == "*" else set(frozen_statuses.split(",")))
+    event.listen(table, "after_create", DDL(PG_TENANT_GUARD_FUNCTION).execute_if(dialect="postgresql"))
+    event.listen(table, "after_create",
+                 DDL(pg_tenant_trigger_sql(table.name, tuple(fields), frozen_statuses)).execute_if(dialect="postgresql"))

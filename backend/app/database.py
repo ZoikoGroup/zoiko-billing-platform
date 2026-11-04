@@ -473,6 +473,11 @@ CRITICAL_COLUMNS: list[tuple[str, str, str, str]] = [
         "alembic/versions/c5e2d8a4b7f1_tax_phase2_policy_activation_context.py",
         "ZB-TAX-ARCH-001 Phase 2: Quotation model column (classification version a quote was built on)",
     ),
+    (
+        "invoices", "tax_quote_id",
+        "alembic/versions/d7a3f9c2e8b6_tax_phase3a_governed_quotes.py",
+        "ZB-TAX-ARCH-001 Phase 3a: the governed issuance gate links the committed tax quote",
+    ),
 ]
 
 
@@ -591,6 +596,7 @@ import app.modules.billing.models  # noqa: F401,E402
 import app.modules.tax.models  # noqa: F401,E402 — ZB-TAX-ARCH-001 tenant tax domain
 import app.modules.tax.registry_models  # noqa: F401,E402 — ZB-TAX-ARCH-001 global reference registry (non-tenant)
 import app.modules.tax.policy_models  # noqa: F401,E402 — ZB-TAX-ARCH-001 market availability + tax codes (non-tenant)
+import app.modules.tax.quote_models  # noqa: F401,E402 — ZB-TAX-ARCH-001 governed quotes / snapshots (tenant)
 import app.modules.chatbot.models  # noqa: F401,E402 — 28-table AI assistant schema
 import app.modules.notifications.models  # noqa: F401,E402 — ZB-* email pipeline foundation
 import app.services.email_foundation.models  # noqa: F401,E402 — Email System Foundation Infrastructure

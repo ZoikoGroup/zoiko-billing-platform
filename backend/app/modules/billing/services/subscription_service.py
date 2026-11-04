@@ -754,8 +754,13 @@ class SubscriptionService:
             )
             return {"skipped": True, "reason": "Invoice already exists for this billing period"}
 
+        # Issuing seller entity set at creation (ZB-TAX-ARCH-001 Phase 3a), so
+        # a governed tax quote can be computed for this draft before issue.
+        from app.modules.tax.legal_entity_service import LegalEntityService
+
         invoice = Invoice(
             organization_id=organization_id,
+            seller_entity_id=LegalEntityService(self.db).resolve_issuing_entity(organization_id).id,
             customer_id=sub.customer_id,
             subscription_id=sub.id,
             contract_id=getattr(sub, 'contract_id', None),

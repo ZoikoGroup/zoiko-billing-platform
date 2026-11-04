@@ -138,13 +138,42 @@ class TaxCode(Base):
     __table_args__ = (UniqueConstraint("code_set_version_id", "code", name="uq_tax_codes_set_code"),)
 
 
+class TaxRulePackVersion(_PolicyApprovalMixin, Base):
+    """Registry of native rule-pack versions (Phase 3a: table only; packs and
+    their approval routes arrive in 3b). A pack's logic is code registered in
+    app.modules.tax.engines.RULE_PACKS; this row records which code version
+    is approved for which markets. The engine resolver uses a pack only when
+    BOTH exist and the row is ACTIVE. Test-only packs never appear here."""
+    __tablename__ = "tax_rule_pack_versions"
+
+    id                 = Column(Integer, primary_key=True, index=True)
+    code               = Column(String(60), nullable=False)
+    version            = Column(String(30), nullable=False)
+    markets            = Column(JSON, nullable=False)       # [{"jurisdiction_code": .., "tax_type": ..}]
+    rounding_rule      = Column(String(20), nullable=False)
+    golden_test_report = Column(JSON, nullable=True)
+    notes              = Column(Text, nullable=True)
+    status             = Column(CaseInsensitiveEnum(PlatformVersionStatus), nullable=False, index=True,
+                                default=PlatformVersionStatus.PENDING_REVIEW,
+                                server_default=PlatformVersionStatus.PENDING_REVIEW.name)
+    predecessor_id     = Column(Integer, ForeignKey("tax_rule_pack_versions.id", ondelete="RESTRICT"), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("code", "version", name="uq_tax_rule_pack_versions_code_version"),
+        Index("uq_tax_rule_pack_one_active", "code", unique=True,
+              sqlite_where=text("status = 'ACTIVE'"), postgresql_where=text("status = 'ACTIVE'")),
+    )
+
+
 #: Platform policy tables (§12.1): never tenant data, never purged with a tenant.
-POLICY_TABLES = ("tax_market_availability_versions", "tax_code_set_versions", "tax_codes")
+POLICY_TABLES = ("tax_market_availability_versions", "tax_code_set_versions", "tax_codes", "tax_rule_pack_versions")
 
 # Content columns frozen once a version leaves the editable states.
 AVAILABILITY_CONTENT_FIELDS = ("jurisdiction_id", "tax_type_id", "transaction_class", "mode",
                                "tenant_config_permitted", "gates", "notes", "created_by_user_id", "created_at")
 CODE_SET_CONTENT_FIELDS = ("code", "version", "notes", "created_by_user_id", "created_at")
+RULE_PACK_CONTENT_FIELDS = ("code", "version", "markets", "rounding_rule", "golden_test_report", "notes",
+                            "created_by_user_id", "created_at")
 
 
 # ── Postgres-only DDL (frozen copy in migration c5e2d8a4b7f1) ────────────
@@ -194,6 +223,7 @@ def _version_guard_sql(table: str, content_fields: tuple) -> list:
 
 PG_AVAILABILITY_GUARDS = _version_guard_sql("tax_market_availability_versions", AVAILABILITY_CONTENT_FIELDS)
 PG_CODE_SET_GUARDS = _version_guard_sql("tax_code_set_versions", CODE_SET_CONTENT_FIELDS)
+PG_RULE_PACK_GUARDS = _version_guard_sql("tax_rule_pack_versions", RULE_PACK_CONTENT_FIELDS)
 PG_TAX_CODE_GUARDS = [
     """
     CREATE OR REPLACE FUNCTION tax_codes_guard() RETURNS trigger AS $$
@@ -238,3 +268,4 @@ def _attach(table, statements):
 _attach(TaxMarketAvailabilityVersion.__table__, PG_AVAILABILITY_GUARDS)
 _attach(TaxCodeSetVersion.__table__, PG_CODE_SET_GUARDS)
 _attach(TaxCode.__table__, PG_TAX_CODE_GUARDS)
+_attach(TaxRulePackVersion.__table__, PG_RULE_PACK_GUARDS)
