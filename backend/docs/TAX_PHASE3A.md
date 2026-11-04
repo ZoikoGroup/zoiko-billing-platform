@@ -269,18 +269,38 @@ the above, and keeps the Phase 2 `tax_tenant_record_guard` function.
    - `RESTRICT` from the invoice;
    - the rule-pack registry guard.
 
-**CI result:** _pending_.
+**CI result:** passed on `83e1dba` (2026-11-04). `backend-tests` and
+`frontend-tests` both passed, on push and on pull request (PR #130). The tax
+step ran the Phase 1, 2 and 3a Postgres modules with no failures.
+
+Two fixes were needed on the way:
+
+- **Classification approval under autoflush.** The first 3a push failed 4
+  Postgres tests with `TaxRecordFrozenError` on
+  `product_tax_classifications`. `ClassificationService.decide` set
+  `status = APPROVED`, then ran a query before setting the approver. The
+  Postgres test session autoflushes, so the status was flushed alone, and the
+  retention guard then refused the approver fields. `decide` now records the
+  whole decision in one flush before marking quotes stale. Production
+  sessions have `autoflush=False`, so the app was not affected.
+  Regression test: `test_classification_decision_survives_autoflush`.
+- **Flaky frontend Esc test (not tax).**
+  `quotation-list.dialogs.test.jsx` "closes on Esc" failed on one CI runner.
+  The shared `Modal` attached its Esc listener in a passive effect, so the
+  dialog could be on screen before Esc worked. The listener is now attached
+  in a layout effect. Regression test in `Modal.stack.test.jsx`.
 
 ## Test evidence
 
 | Suite | Before (Phase 2) | After |
 |---|---|---|
 | Backend local (venv, SQLite) | 1772 passed, 0 failed, 33 skipped | 1854 passed, 2 failed*, 39 skipped |
-| Backend CI (postgres:16) | passed | _pending_ |
+| Backend CI (postgres:16) | passed | passed (`83e1dba`) |
+| Frontend (vitest, local and CI) | passed | 1242 passed |
 
 **New tests:**
 
-- `tests/test_tax_phase3a_governed.py` (42): T01, T03, T08, T09, T10, T15,
+- `tests/test_tax_phase3a_governed.py` (43, including the autoflush regression): T01, T03, T08, T09, T10, T15,
   T17, T18 (×2), T19 and a light T20; every creation and issuance path;
   fixes (a)–(d); changes A–E; test-pack isolation; idempotency; frozen
   snapshots.
