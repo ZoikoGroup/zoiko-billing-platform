@@ -13,7 +13,7 @@
  *          SearchInput, Field, Select, ActivityTimeline, CommunicationHistory
  */
 
-import { createContext, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, useInRouterContext } from "react-router-dom";
 import useMediaQuery, { BELOW_MD, BELOW_SM } from "../hooks/useMediaQuery";
@@ -1241,7 +1241,11 @@ export function Modal({
   const onCloseRef = useRef(onClose);
   useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
 
-  useEffect(() => {
+  // A layout effect, not a passive one: the Esc / Tab handlers must exist in
+  // the same commit that puts the dialog on screen. With useEffect there was a
+  // window where the dialog was visible but Esc did nothing (it made the
+  // "closes on Esc" quotation test flaky on slow CI runners).
+  useLayoutEffect(() => {
     if (!open) return;
     // Remember whatever had focus before the modal opened so it can be
     // restored on close (e.g. the "New Organization" button that triggered it).
