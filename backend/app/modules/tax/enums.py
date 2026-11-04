@@ -389,11 +389,31 @@ class EngineKind(str, enum.Enum):
 
 
 class RoundingRule(str, enum.Enum):
-    """Where tax is rounded to the currency's minor unit. Declared by the
-    engine (rule packs per jurisdiction; tenant-config follows the org's
-    tax_rounding_method setting)."""
+    """Where tax is rounded to the currency's minor unit (the level; the
+    RoundingMode says how). Declared by the engine (rule packs per
+    jurisdiction; tenant-config follows the org's tax_rounding_method)."""
     PER_LINE     = "per_line"       # each line's component tax rounded, then summed
     PER_DOCUMENT = "per_document"   # component tax summed unrounded, rounded once, allocated to lines
+
+
+class RoundingMode(str, enum.Enum):
+    """How a value is rounded to the currency's minor unit (F4). Declared by
+    the engine with its RoundingRule level; governed math has no default."""
+    HALF_UP   = "half_up"     # ties away from zero
+    HALF_EVEN = "half_even"   # ties to even (banker's rounding)
+    HALF_DOWN = "half_down"   # ties toward zero
+    UP        = "up"          # always away from zero
+    DOWN      = "down"        # always toward zero (truncate)
+
+    @property
+    def decimal_rounding(self) -> str:
+        import decimal
+
+        return {
+            RoundingMode.HALF_UP: decimal.ROUND_HALF_UP, RoundingMode.HALF_EVEN: decimal.ROUND_HALF_EVEN,
+            RoundingMode.HALF_DOWN: decimal.ROUND_HALF_DOWN, RoundingMode.UP: decimal.ROUND_UP,
+            RoundingMode.DOWN: decimal.ROUND_DOWN,
+        }[self]
 
 
 class RemoteCommitState(str, enum.Enum):

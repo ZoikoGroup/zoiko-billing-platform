@@ -16,7 +16,7 @@ Behaviour (fixture rules only):
   * a buyer without business evidence => consumer treatment (charges tax).
 """
 from app.modules.tax.engines import ROUTING_FACTS, ComponentResult, EngineRequest, LineResult, RulePack
-from app.modules.tax.enums import RoundingRule, TaxOutcome
+from app.modules.tax.enums import RoundingMode, RoundingRule, TaxOutcome
 from app.modules.tax.registry_service import RegistryReadService
 
 TEST_PACK_CODE = "TEST-ONLY-FIXTURE"
@@ -29,8 +29,10 @@ class TestOnlyRulePack(RulePack):
     required_facts = ROUTING_FACTS
     unresolved_buyer_as_consumer = True
 
-    def __init__(self, rounding_rule: RoundingRule = RoundingRule.PER_LINE):
+    def __init__(self, rounding_rule: RoundingRule = RoundingRule.PER_LINE,
+                 rounding_mode: RoundingMode = RoundingMode.HALF_UP):
         self.rounding_rule = rounding_rule
+        self.rounding_mode = rounding_mode
 
     def determine(self, request: EngineRequest) -> LineResult:
         components = []

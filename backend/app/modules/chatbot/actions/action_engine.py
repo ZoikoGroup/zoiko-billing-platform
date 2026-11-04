@@ -1133,6 +1133,29 @@ class ActionEngine:
                 ],
             }
 
+        # Legacy issuance obeys the "pause invoice finalization" kill switch
+        # like every other DRAFT -> SENT path (Phase 3a fix (a) covers all
+        # invoices). While paused the invoice stays a DRAFT.
+        from app.modules.super_admin.kill_switch_service import (
+            TENANT_INVOICE_FINALIZATION,
+            BillingBlockedError,
+            BillingKillSwitchService,
+        )
+
+        try:
+            BillingKillSwitchService(self.db).require_enabled(TENANT_INVOICE_FINALIZATION)
+        except BillingBlockedError as exc:
+            return {
+                "operation_id": f"INV-DRAFT-{invoice.id}",
+                "invoice_id": invoice.id,
+                "invoice_number": invoice.invoice_number,
+                "status": "invoice_draft_finalization_paused",
+                "message": f"Draft created, not issued: {exc}",
+                "resources_created": [
+                    {"type": "invoice", "id": invoice.id, "version": "1"},
+                ],
+            }
+
         # Legacy: issued immediately as before, with the Phase 0 tax point
         # (tax date = issue date) the finalize path would have stamped.
         if invoice.tax_date is None:

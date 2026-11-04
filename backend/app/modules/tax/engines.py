@@ -31,6 +31,7 @@ from typing import Callable, Optional
 from app.modules.tax.enums import (
     EngineKind,
     RemoteCommitState,
+    RoundingMode,
     RoundingRule,
     SupplyCategory,
     TaxOperatingMode,
@@ -107,6 +108,8 @@ class TaxEngine(ABC):
     name: str
     version: str
     rounding_rule: RoundingRule = RoundingRule.PER_LINE
+    #: Must be declared (F4): an engine without a rounding mode cannot quote.
+    rounding_mode: Optional[RoundingMode] = None
     required_facts: frozenset = ROUTING_FACTS
     #: Whether the engine's legal rules treat a buyer without business
     #: evidence as a consumer (charging tax). Engines that don't declare it
@@ -116,7 +119,7 @@ class TaxEngine(ABC):
 
     @property
     def identity(self) -> tuple:
-        return (self.kind, self.name, self.version, self.rounding_rule)
+        return (self.kind, self.name, self.version, self.rounding_rule, self.rounding_mode)
 
     @abstractmethod
     def determine(self, request: EngineRequest) -> LineResult:
@@ -125,13 +128,21 @@ class TaxEngine(ABC):
 
 # ── Tenant-configured rates ─────────────────────────────────────────────
 
+#: The tenant-config engine's declared rounding mode: the same as the org's
+#: own billing arithmetic (legacy money rounding), so governed and legacy figures for a
+#: tenant-configured rate agree. A declaration, recorded on every quote.
+TENANT_CONFIG_ROUNDING_MODE = RoundingMode.HALF_UP
+
+
 class TenantConfigEngine(TaxEngine):
     kind = EngineKind.TENANT_CONFIG
     name = "tenant-config"
     version = "1"
 
-    def __init__(self, rounding_rule: RoundingRule = RoundingRule.PER_LINE):
+    def __init__(self, rounding_rule: RoundingRule = RoundingRule.PER_LINE,
+                 rounding_mode: RoundingMode = TENANT_CONFIG_ROUNDING_MODE):
         self.rounding_rule = rounding_rule
+        self.rounding_mode = rounding_mode
 
     def determine(self, request: EngineRequest) -> LineResult:
         components = []
@@ -164,6 +175,8 @@ class RulePack(ABC):
     code: str
     version: str
     rounding_rule: RoundingRule = RoundingRule.PER_LINE
+    #: Required declaration (F4); a pack that leaves it None cannot quote.
+    rounding_mode: Optional[RoundingMode] = None
     required_facts: frozenset = ROUTING_FACTS
     unresolved_buyer_as_consumer: bool = False
 
@@ -180,6 +193,7 @@ class RulePackEngine(TaxEngine):
         self.name = pack.code
         self.version = pack.version
         self.rounding_rule = pack.rounding_rule
+        self.rounding_mode = pack.rounding_mode
         self.required_facts = pack.required_facts
         self.unresolved_buyer_as_consumer = pack.unresolved_buyer_as_consumer
 
@@ -208,6 +222,7 @@ class ProviderAdapter(ABC):
     name: str
     version: str = "1"
     rounding_rule: RoundingRule = RoundingRule.PER_LINE
+    rounding_mode: Optional[RoundingMode] = None
     required_facts: frozenset = ROUTING_FACTS
     unresolved_buyer_as_consumer: bool = False
 
@@ -234,6 +249,7 @@ class ProviderEngine(TaxEngine):
         self.name = adapter.name
         self.version = adapter.version
         self.rounding_rule = adapter.rounding_rule
+        self.rounding_mode = adapter.rounding_mode
         self.required_facts = adapter.required_facts
         self.unresolved_buyer_as_consumer = adapter.unresolved_buyer_as_consumer
 

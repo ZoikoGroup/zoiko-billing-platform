@@ -151,6 +151,12 @@ class TaxRulePackVersion(_PolicyApprovalMixin, Base):
     version            = Column(String(30), nullable=False)
     markets            = Column(JSON, nullable=False)       # [{"jurisdiction_code": .., "tax_type": ..}]
     rounding_rule      = Column(String(20), nullable=False)
+    rounding_mode      = Column(String(20), nullable=False)
+    # Phase 3b declarations, copied from the pack's code at registration and
+    # frozen with the rest of the content once submitted.
+    required_facts     = Column(JSON, nullable=True)       # ["BUYER_ADDRESS_UNRESOLVED", ...]
+    coverage           = Column(JSON, nullable=True)       # what the pack decides; all else NOT_DETERMINED
+    source_dependencies = Column(JSON, nullable=True)      # [{"source_id", "source_code", "approved"}]
     golden_test_report = Column(JSON, nullable=True)
     notes              = Column(Text, nullable=True)
     status             = Column(CaseInsensitiveEnum(PlatformVersionStatus), nullable=False, index=True,
@@ -172,8 +178,9 @@ POLICY_TABLES = ("tax_market_availability_versions", "tax_code_set_versions", "t
 AVAILABILITY_CONTENT_FIELDS = ("jurisdiction_id", "tax_type_id", "transaction_class", "mode",
                                "tenant_config_permitted", "gates", "notes", "created_by_user_id", "created_at")
 CODE_SET_CONTENT_FIELDS = ("code", "version", "notes", "created_by_user_id", "created_at")
-RULE_PACK_CONTENT_FIELDS = ("code", "version", "markets", "rounding_rule", "golden_test_report", "notes",
-                            "created_by_user_id", "created_at")
+RULE_PACK_CONTENT_FIELDS = ("code", "version", "markets", "rounding_rule", "rounding_mode", "required_facts",
+                            "coverage", "source_dependencies", "golden_test_report", "notes", "created_by_user_id",
+                            "created_at")
 
 
 # ── Postgres-only DDL (frozen copy in migration c5e2d8a4b7f1) ────────────

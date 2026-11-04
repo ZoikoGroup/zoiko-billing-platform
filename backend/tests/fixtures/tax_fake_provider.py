@@ -9,12 +9,13 @@ A correct caller reconciles (remote_state) instead of committing again.
 from decimal import Decimal
 
 from app.modules.tax.engines import ComponentResult, EngineRequest, LineResult, ProviderAdapter, ProviderTimeout
-from app.modules.tax.enums import RemoteCommitState, TaxOutcome
+from app.modules.tax.enums import RemoteCommitState, RoundingMode, TaxOutcome
 
 
 class FakeTaxProvider(ProviderAdapter):
     name = "fake-provider"
     version = "1-test"
+    rounding_mode = RoundingMode.HALF_UP
 
     def __init__(self, rate: Decimal = Decimal("10"), fail_mode: str = ""):
         self.rate = rate

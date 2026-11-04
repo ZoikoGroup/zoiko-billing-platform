@@ -47,6 +47,7 @@ from app.modules.tax.enums import (
     MarketGate,
     RateKind,
     RemoteCommitState,
+    RoundingMode,
     RoundingRule,
     StagingOrigin,
     SupplyCategory,
@@ -57,6 +58,7 @@ from app.modules.tax.enums import (
     TransactionClass,
     VerificationStatus,
 )
+from app.modules.tax.determination_service import view_quote
 from app.modules.tax.governed_credit_service import GovernedCreditService
 from app.modules.tax.issuance_gate import GovernedIssuanceGate, RemoteCommitter, TaxIssuanceBlocked
 from app.modules.tax.legal_entity_service import LegalEntityService
@@ -266,8 +268,8 @@ def draft(w, lines, customer=None, discount_pct="0", currency="GBP", tax_date=TA
     return inv
 
 
-def resolver(w, rounding=RoundingRule.PER_LINE):
-    return EngineResolver(w["db"], rule_pack_lookup=lambda a: TestOnlyRulePack(rounding),
+def resolver(w, rounding=RoundingRule.PER_LINE, rounding_mode=RoundingMode.HALF_UP):
+    return EngineResolver(w["db"], rule_pack_lookup=lambda a: TestOnlyRulePack(rounding, rounding_mode),
                           provider_lookup=lambda a: w["provider"])
 
 
@@ -389,10 +391,22 @@ def test_t08_engine_without_consumer_rule_refuses_unresolved_buyer(w):
 
 # ── Plan changes B, D, E ────────────────────────────────────────────────
 
-@pytest.mark.parametrize("currency", ["KWD", "BHD", "JOD"])
-def test_three_decimal_currencies_are_unsupported(w, currency):
+@pytest.mark.parametrize("currency", ["KWD", "BHD", "JOD", "CLF", "UYW", "ZZZ", "XAU", "XDR", "HRK", "US"])
+def test_unknown_invalid_or_over_two_decimal_currencies_are_unsupported(w, currency):
+    # F1: an ISO 4217 allowlist. Unknown (ZZZ), withdrawn (HRK), no minor units
+    # (XAU, XDR), malformed (US) and 3/4-decimal codes are all UNSUPPORTED.
     q = quote(w, draft(w, [(w["svc_product"], 100, 1, False)], currency=currency))
     assert q.status == TaxQuoteStatus.UNSUPPORTED and q.refusal_code == "CURRENCY_MINOR_UNITS_UNSUPPORTED"
+
+
+def test_currency_allowlist_unit():
+    from app.modules.tax.currencies import ISO_4217_MINOR_UNITS, governed_currency_decimals
+    assert governed_currency_decimals("gbp") == 2 and governed_currency_decimals(" AUD ") == 2
+    assert governed_currency_decimals("JPY") == 0
+    for bad in (None, "", "ZZZ", "GBPX", "KWD", "CLF", "UYW"):
+        assert governed_currency_decimals(bad) is None
+    assert all(len(c) == 3 and c.isalpha() and c.isupper() for c in ISO_4217_MINOR_UNITS)
+    assert set(ISO_4217_MINOR_UNITS.values()) <= {0, 2, 3, 4}
 
 
 def test_zero_decimal_currency_rounds_to_whole_units(w):
@@ -539,11 +553,62 @@ def test_t18_money_path_handles_negative_bases():
         return row
 
     rows = [line("100"), line("-20.025")]
-    _apply_rates(rows, 2, RoundingRule.PER_LINE)
+    _apply_rates(rows, 2, RoundingRule.PER_LINE, RoundingMode.HALF_UP)
     assert [r.component_rounded[0] for r in rows] == [Decimal("20.00"), Decimal("-4.01")]   # symmetric half-up
     rows = [line("100"), line("-20.025")]
-    _apply_rates(rows, 2, RoundingRule.PER_DOCUMENT)
+    _apply_rates(rows, 2, RoundingRule.PER_DOCUMENT, RoundingMode.HALF_UP)
     assert sum(r.component_rounded[0] for r in rows) == Decimal("16.00")
+    # F4: the declared mode decides ties (-4.005).
+    rows = [line("-20.025")]
+    _apply_rates(rows, 2, RoundingRule.PER_LINE, RoundingMode.HALF_EVEN)
+    assert rows[0].component_rounded[0] == Decimal("-4.00")
+
+
+# ── F4: rounding mode is declared by the engine ─────────────────────────
+
+def test_f4_governed_math_has_no_hardcoded_rounding_mode():
+    import pathlib
+
+    for name in ("determination_service.py", "issuance_gate.py", "governed_credit_service.py", "engines.py"):
+        src = (pathlib.Path("app/modules/tax") / name).read_text(encoding="utf-8")
+        assert "ROUND_HALF_UP" not in src and "round_money" not in src, name
+
+
+@pytest.mark.parametrize("mode, expected", [(RoundingMode.HALF_UP, Decimal("0.13")),
+                                            (RoundingMode.HALF_EVEN, Decimal("0.12")),
+                                            (RoundingMode.DOWN, Decimal("0.12")),
+                                            (RoundingMode.UP, Decimal("0.13"))])
+def test_f4_pack_declared_mode_rounds_and_is_recorded(w, mode, expected):
+    # 1.25 less a 50% document discount = 0.625; x 20% = 0.125, a tie at 2
+    # places that goes the way the pack declares.
+    unverified = buyer(w, verified=False, code=f"RM{mode.name}")
+    inv = draft(w, [(w["svc_product"], "1.25", 1, False)], customer=unverified, discount_pct="50")
+    q = TaxDeterminationService(w["db"], resolver=resolver(w, rounding_mode=mode)).create_quote(
+        w["org"].id, w["maker"].id, "invoice", inv.id)
+    assert q.status == TaxQuoteStatus.QUOTED, (q.refusal_code, q.refusal_reason)
+    assert q.rounding_mode == mode and q.tax_amount == expected
+    assert view_quote(q)["engine"]["rounding_mode"] == mode.name
+
+
+def test_f4_engine_without_a_declared_mode_cannot_quote(w):
+    q = TaxDeterminationService(w["db"], resolver=resolver(w, rounding_mode=None)).create_quote(
+        w["org"].id, w["maker"].id, "invoice", draft(w, [(w["svc_product"], 100, 1, False)]).id)
+    assert q.status == TaxQuoteStatus.UNSUPPORTED and q.refusal_code == "ROUNDING_MODE_UNDECLARED"
+
+
+def test_f4_credits_round_with_the_quotes_mode(w):
+    unverified = buyer(w, verified=False, code="RMCR")
+    inv = draft(w, [(w["svc_product"], 100, 1, False)], customer=unverified)
+    q = TaxDeterminationService(w["db"], resolver=resolver(w, rounding_mode=RoundingMode.HALF_EVEN)).create_quote(
+        w["org"].id, w["maker"].id, "invoice", inv.id)
+    assert q.rounding_mode == RoundingMode.HALF_EVEN
+    finalize(w, inv)
+    # 0.00625 of the line: tax 20 x 0.00625 = 0.125 -> -0.12 under the quote's
+    # HALF_EVEN (HALF_UP would give -0.13); base 0.625 -> -0.62.
+    note = GovernedCreditService(w["db"]).create(w["org"].id, w["maker"].id, inv.id,
+                                                 lines=[{"invoice_item_id": inv.items[0].id, "fraction": "0.00625"}])
+    row = w["db"].query(CreditNoteTaxLine).filter(CreditNoteTaxLine.credit_note_id == note.id).one()
+    assert (row.credited_base, row.credited_tax) == (Decimal("-0.62"), Decimal("-0.12"))
 
 
 # ── T03 / T17: legal dates ──────────────────────────────────────────────
@@ -772,6 +837,29 @@ def test_path_assistant_legacy_issue_gets_phase0_stamping(w):
     assert inv.seller_entity_id == w["entity"].id and inv.tax_date == inv.issue_date
 
 
+def test_f2_assistant_legacy_issue_obeys_the_finalization_kill_switch(w):
+    # F2: fix (a) covers all invoices, including the assistant's legacy path.
+    from app.modules.chatbot.actions.action_engine import ActionEngine
+    from app.modules.super_admin.kill_switch_service import TENANT_INVOICE_FINALIZATION, BillingKillSwitchService
+
+    db = w["db"]
+    w["entity"].tax_regime = EntityTaxRegime.LEGACY_MANUAL
+    w["customer"].currency = "GBP"
+    BillingKillSwitchService(db).set_enabled(TENANT_INVOICE_FINALIZATION, False, reason="test", actor_id=w["reviewer"].id)
+    db.commit()
+    draft_obj = SimpleNamespace(organization_id=w["org"].id, action_uid="p3b-ks", action_type="invoice_draft",
+                                proposed_params={"customer_id": w["customer"].id, "currency": "GBP",
+                                                 "line_items": [{"description": "Work", "quantity": 1, "unit_price": 100}]})
+    preview = SimpleNamespace(preview_payload={"currency": "GBP", "subtotal": "100", "tax_amount": "0", "total": "100",
+                                               "line_items": [{"description": "Work", "quantity": 1, "unit_price": 100,
+                                                               "total": 100}]})
+    ctx = SimpleNamespace(user_id=w["maker"].id, organization_id=w["org"].id)
+    result = ActionEngine(db)._execute_invoice_draft(draft_obj, preview, ctx)
+    inv = db.get(Invoice, result["invoice_id"])
+    assert result["status"] == "invoice_draft_finalization_paused"
+    assert inv.status == InvoiceStatus.DRAFT and inv.sent_at is None and inv.tax_date is None
+
+
 def test_mark_sent_and_email_paths_are_gated(w, monkeypatch):
     svc = invoice_service(w)
     inv = draft(w, [(w["svc_product"], 100, 1, False)])
@@ -864,6 +952,35 @@ def test_reports_tenant_detail_and_platform_aggregate(w):
     assert reports.tenant_duplicates(w["org"].id)["duplicate_rows"] == 2
     dup = reports.platform_duplicates()
     assert dup == {"organizations_affected": 1, "invoices_affected": 1, "duplicate_rows": 2, "note": dup["note"]}
+
+
+def test_f3_overcollection_includes_fixed_document_discounts(w):
+    """F3: a fixed document discount counts; line discounts (applied before
+    tax) do not. Estimate = tax x document discount / pre-discount subtotal."""
+    db = w["db"]
+
+    def legacy(number, *, subtotal, discount_amount, line_discount, tax, pct="0"):
+        inv = make_invoice(db, w["org"].id, w["customer"].id, status=InvoiceStatus.SENT, invoice_number=number,
+                           currency="GBP")
+        inv.subtotal, inv.discount_amount = Decimal(subtotal), Decimal(discount_amount)
+        inv.discount_percentage, inv.tax_amount = Decimal(pct), Decimal(tax)
+        item = make_invoice_item(db, w["org"].id, inv.id, total=subtotal, unit_price=subtotal)
+        item.discount_amount = Decimal(line_discount)
+        return inv
+
+    legacy("FIXED-1", subtotal="200.00", discount_amount="15.00", line_discount="5.00", tax="40.00")   # doc 10
+    legacy("PCT-1", subtotal="100.00", discount_amount="10.00", line_discount="0", tax="20.00", pct="10")
+    legacy("LINE-ONLY", subtotal="100.00", discount_amount="5.00", line_discount="5.00", tax="20.00")
+    db.commit()
+    rows = {r["invoice_number"]: r for r in TaxFindingsReportService(db).tenant_overcollection(w["org"].id)["invoices"]}
+    assert set(rows) == {"FIXED-1", "PCT-1"}
+    assert rows["FIXED-1"]["document_discount"] == Decimal("10.00")
+    assert rows["FIXED-1"]["estimated_overcollected_tax"] == Decimal("2.00")     # 40 x 10 / 200
+    assert rows["PCT-1"]["estimated_overcollected_tax"] == Decimal("2.00")       # 20 x 10 / 100
+    platform = TaxFindingsReportService(db).platform_overcollection()
+    assert platform["invoice_count"] == 2 and platform["totals_by_currency"][0]["estimated_overcollected_tax"] == Decimal("4.00")
+    assert "FIXED-1" not in str(platform) and "invoices" not in platform
+    assert "fixed document discounts" in platform["method"]
 
 
 # ── T20 (light): batch determinism and tenant isolation ─────────────────
