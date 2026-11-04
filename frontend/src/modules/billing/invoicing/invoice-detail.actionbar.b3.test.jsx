@@ -13,6 +13,7 @@ vi.mock("react-router-dom", async () => {
 });
 
 vi.mock("../../../service/billingService", () => ({
+  governedTaxApi: { invoiceSummary: vi.fn(() => Promise.resolve({ governed: false })), requestQuote: vi.fn() },
   invoiceApi: {
     get: vi.fn(),
     listItems: vi.fn(() => Promise.resolve([])),

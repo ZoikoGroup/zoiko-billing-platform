@@ -81,5 +81,6 @@ export { default as TaxDashboardPage } from "./tax/dashboard";
 export { default as TaxConfigurationPage } from "./tax/tax-configuration";
 export { default as TaxReportsPage } from "./tax/reports";
 export { default as TaxSettingsPage } from "./tax/settings";
+export { default as TaxExceptionsPage } from "./tax/exceptions";
 export { default as CustomerProfitabilityReport } from "./customers/profitability-report";
 export { default as ForecastReport } from "./dashboard/forecast-report";
