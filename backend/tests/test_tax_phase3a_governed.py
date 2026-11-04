@@ -53,6 +53,7 @@ from app.modules.tax.enums import (
     TaxOperatingMode,
     TaxOutcome,
     TaxQuoteStatus,
+    TenantApprovalStatus,
     TransactionClass,
     VerificationStatus,
 )
@@ -589,6 +590,26 @@ def test_t19_classification_change_makes_the_quote_stale(w):
         finalize(w, inv)
     w["db"].refresh(q)
     assert q.status == TaxQuoteStatus.STALE
+
+
+def test_classification_decision_survives_autoflush(db_session):
+    """Regression (Phase 3a CI on Postgres): the PG test session autoflushes,
+    and a query between status=APPROVED and the approver fields made the
+    retention guard refuse the approver. The decision must flush as one."""
+    db_session.autoflush = True
+    try:
+        w = build_world(db_session, org_code="P3A-AF")
+        dig = next(c for c in active_code_set(db_session).codes if c.code == "DIG")
+        cls = ClassificationService(db_session)
+        row = cls.propose(w["org"].id, w["maker"].id, product_id=w["svc_product"].id, tax_code_id=dig.id)
+        decided = cls.decide(w["org"].id, w["checker"].id, row.id, approve=True)
+        assert (decided.status, decided.approved_by) == (TenantApprovalStatus.APPROVED, w["checker"].id)
+        inv = draft(w, [(w["svc_product"], 100, 1, False)])
+        quote(w, inv)
+        finalize(w, inv)
+        assert inv.status == InvoiceStatus.SENT
+    finally:
+        db_session.autoflush = False
 
 
 def test_document_change_or_expiry_makes_the_quote_unusable(w):

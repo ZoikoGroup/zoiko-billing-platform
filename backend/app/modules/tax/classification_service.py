@@ -171,14 +171,17 @@ class ClassificationService:
                 self.db.flush()
                 row.predecessor_id = prior.id
             row.classification_version = bump_classification_version(self.db, organization_id)
-            row.status = TenantApprovalStatus.APPROVED
-            stale_quotes = self._mark_quotes_stale(organization_id, row.product_id)
-        else:
-            row.status = TenantApprovalStatus.REJECTED
+        # The whole decision is recorded before any further query: with
+        # autoflush on, a query between the status change and the approver
+        # would flush APPROVED alone, and the retention guard (rightly)
+        # refuses to change a decided record's approver afterwards.
+        row.status = TenantApprovalStatus.APPROVED if approve else TenantApprovalStatus.REJECTED
         row.approved_by = actor_id
         row.approved_at = now
         row.decision_reason = reason
         self.db.flush()
+        if approve:
+            stale_quotes = self._mark_quotes_stale(organization_id, row.product_id)
         self.audit.log_no_commit(
             organization_id, actor_id, BillingAuditAction.APPROVE if approve else BillingAuditAction.REJECT,
             "ProductTaxClassification", row.id,
