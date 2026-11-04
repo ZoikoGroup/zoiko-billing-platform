@@ -25,6 +25,7 @@ from app.core.exceptions import BadRequestException, ForbiddenException
 from app.database import Base
 from app.modules.auth.models import PlatformRole, User, UserRole
 from app.modules.super_admin.models import ApprovalRequest, AttentionItem, PlatformAuditAction, PlatformAuditLog
+from app.modules.tax.legal_entity_service import LegalEntityService
 from app.modules.tax.enums import (
     AcquisitionMethod,
     EvidenceStatus,
@@ -556,10 +557,6 @@ def test_jurisdiction_listing_reports_status_never_production(db_session, regist
 # ── No tenant data on registry endpoints (§09.1, §11.1) ─────────────────
 
 def test_registry_endpoints_carry_no_tenant_data(db_session, registry, people):
-    # Imported here: importing legal_entity_service before the billing services
-    # hits a pre-existing Phase 0 import cycle (see TAX_PHASE1.md findings).
-    import app.modules.billing.services.invoice_service  # noqa: F401 — must precede legal_entity_service
-    from app.modules.tax.legal_entity_service import LegalEntityService
 
     org = make_organization(db_session, code="TENANT1")
     org.tax_no = "GB999888777"
