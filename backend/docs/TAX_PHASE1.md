@@ -413,6 +413,15 @@ New: `backend/tests/test_tax_phase1_registry.py` (50 tests, SQLite) and
    the registry uses `GET …/tax-registry/readiness`, which reports actual
    enrolment. Suggested fix, owned by Security: return the real `enrolled`
    flag separately from `step_up_required` / `bypassed`.
+9. **Tenant erasure purge crashed on Postgres once the registry existed (fixed).**
+   `OrganizationPurgeService` walks every foreign key, including the
+   `SET NULL` user references into the registry tables, and UNIONs primary
+   keys across tables. `tax_source_artifacts` is keyed by a text hash, so
+   Postgres rejected the query. SQLite doesn't type-check UNIONs, so the
+   local suite missed it; Phase 2's Postgres purge test caught it in CI.
+   Registry tables (`REGISTRY_TABLES`) are now outside the purge graph,
+   because they hold no tenant data. Covered by
+   `test_tenant_purge_runs_on_postgres_with_the_registry_present`.
 
 The four Phase 0 findings (email-send kill switch, dead `resolve_tax`
 branch, discounts after tax, `TaxPricing`/`TaxGroup` duplication) are still

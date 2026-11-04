@@ -331,6 +331,13 @@ class TaxRateVersion(Base):
     )
 
 
+#: Platform reference tables (§12.1): never tenant data. The tenant erasure
+#: purge must not walk into them (their user FKs are SET NULL).
+REGISTRY_TABLES = (
+    "tax_jurisdictions", "tax_authorities", "tax_type_definitions", "tax_components", "tax_source_artifacts",
+    "tax_legal_source_revisions", "tax_change_approvals", "tax_rate_staging", "tax_rate_versions",
+)
+
 #: The only TaxRateVersion columns that may ever change after insert.
 RATE_VERSION_MUTABLE_FIELDS = ("status", "superseded_at")
 
