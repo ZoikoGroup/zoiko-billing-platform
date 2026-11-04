@@ -362,6 +362,10 @@ class Settings(BaseSettings):
     INVOICE_REMINDER_LEAD_DAYS: int = 3
     ENABLE_INVOICE_PRE_DUE_REMINDER: bool = True
     INVOICE_REMINDER_INTERVAL_MINUTES: int = 1440  # daily sweep
+    # ZB-TAX-ARCH-001 T14: flag expiring/expired registrations, exemption
+    # certificates and tax-ID verifications for tenant review.
+    TAX_REVIEW_SWEEP_INTERVAL_MINUTES: int = 1440
+    TAX_REVIEW_EXPIRY_WINDOW_DAYS: int = 30
 
     # ── ZB-COM-003: Trial-ending-soon warning (Prompt 4) ─────────────────
     # Days before trial_ends_at to fire the proactive warning email.

@@ -224,3 +224,156 @@ class RateVersionStatus(str, enum.Enum):
 class ChangeKind(str, enum.Enum):
     NEW         = "new"
     SUPERSEDING = "superseding"   # correction / retroactive notice / end-dating
+
+
+# ── Phase 2: policy, activation and tax context (§05, §07, §08.1, §13.2) ─
+
+class TransactionClass(str, enum.Enum):
+    """Routing categories for activation and availability. NOT a legal
+    characterization of a supply: that belongs to rule packs (Phase 3+).
+    B2B vs B2C is derived from buyer evidence (a verified tax ID), never
+    from a tenant flag alone; extensible."""
+    B2B_SERVICES = "b2b_services"
+    B2C_SERVICES = "b2c_services"
+    B2B_DIGITAL  = "b2b_digital"
+    B2C_DIGITAL  = "b2c_digital"
+    B2B_GOODS    = "b2b_goods"
+    B2C_GOODS    = "b2c_goods"
+
+
+class SupplyCategory(str, enum.Enum):
+    """What a platform tax code classifies (combined with buyer status to
+    pick a TransactionClass)."""
+    SERVICES = "services"
+    DIGITAL  = "digital"
+    GOODS    = "goods"
+
+
+def transaction_class_for(is_business_buyer: bool, category: SupplyCategory) -> TransactionClass:
+    prefix = "B2B" if is_business_buyer else "B2C"
+    return TransactionClass[f"{prefix}_{category.name}"]
+
+
+class MarketGate(str, enum.Enum):
+    """The seven market launch gates of §13.2 — all must pass before a
+    market is made available in a calculating mode."""
+    LEGAL_AUTHORITY_AND_USAGE_RIGHTS   = "legal_authority_and_usage_rights"
+    SOURCE_PROVENANCE_AND_FRESHNESS    = "source_provenance_and_freshness"
+    RESOLUTION_AND_DETERMINATION_TESTS = "resolution_and_determination_tests"
+    GOLDEN_TESTS_SIGNED_OFF            = "golden_tests_signed_off"
+    PROVIDER_CONTRACTS_AND_RECOVERY    = "provider_contracts_and_recovery"
+    UI_AND_AUDIT_EVIDENCE              = "ui_and_audit_evidence"
+    AVAILABILITY_REGISTRY_UPDATED      = "availability_registry_updated"
+
+
+class GateStatus(str, enum.Enum):
+    NOT_STARTED    = "not_started"
+    PASSED         = "passed"
+    FAILED         = "failed"
+    NOT_APPLICABLE = "not_applicable"   # e.g. provider gate for a native rule pack; needs a note
+
+
+#: Modes the platform may make available for a market. TENANT_CONFIG_APPROVED
+#: is never a platform mode: it is tenant-selected, and only where the active
+#: availability version sets tenant_config_permitted.
+PLATFORM_AVAILABILITY_MODES = frozenset({
+    TaxOperatingMode.NATIVE_RULEPACK_APPROVED,
+    TaxOperatingMode.PROVIDER_APPROVED,
+    TaxOperatingMode.REFERENCE_ONLY,
+    TaxOperatingMode.UNSUPPORTED,
+    TaxOperatingMode.SUSPENDED,
+})
+
+#: Modes a tenant may activate (they all calculate).
+TENANT_ACTIVATION_MODES = CALCULATING_MODES
+
+
+class PlatformVersionStatus(str, enum.Enum):
+    """Lifecycle of versioned platform policy records (market availability,
+    tax-code sets). Content is frozen from IN_APPROVAL onward."""
+    PENDING_REVIEW    = "pending_review"
+    VALIDATION_FAILED = "validation_failed"
+    VALIDATED         = "validated"
+    IN_APPROVAL       = "in_approval"
+    APPROVED          = "approved"
+    ACTIVE            = "active"
+    SUPERSEDED        = "superseded"
+    REJECTED          = "rejected"
+
+
+EDITABLE_PLATFORM_STATUSES = frozenset({
+    PlatformVersionStatus.PENDING_REVIEW, PlatformVersionStatus.VALIDATION_FAILED, PlatformVersionStatus.VALIDATED,
+})
+
+
+class TenantApprovalStatus(str, enum.Enum):
+    """Tenant maker-checker lifecycle (activations, legal bases, product
+    classifications). APPROVED is the live version; changes are new rows."""
+    PROPOSED   = "proposed"
+    APPROVED   = "approved"
+    REJECTED   = "rejected"
+    SUPERSEDED = "superseded"
+    WITHDRAWN  = "withdrawn"
+
+
+class RegistrationStatus(str, enum.Enum):
+    ACTIVE        = "active"
+    PENDING       = "pending"
+    SUSPENDED     = "suspended"
+    DEREGISTERED  = "deregistered"
+
+
+class VerificationStatus(str, enum.Enum):
+    UNVERIFIED = "unverified"
+    VERIFIED   = "verified"
+    INVALID    = "invalid"
+
+
+class AddressRole(str, enum.Enum):
+    BILLING  = "billing"
+    SHIPPING = "shipping"
+
+
+class AddressConfidence(str, enum.Enum):
+    VALIDATED = "validated"   # checked by an address validation service
+    ENTERED   = "entered"     # structured fields entered by the tenant
+    DERIVED   = "derived"     # derived from legacy free text (backfill)
+
+
+class EvidenceSource(str, enum.Enum):
+    TENANT_ENTERED = "tenant_entered"
+    LEGACY_BACKFILL = "legacy_backfill"
+    VERIFICATION_SERVICE = "verification_service"
+
+
+class CertificateStatus(str, enum.Enum):
+    ACTIVE     = "active"
+    REVOKED    = "revoked"
+    SUPERSEDED = "superseded"
+
+
+class ReviewItemKind(str, enum.Enum):
+    REGISTRATION_EXPIRING = "registration_expiring"
+    REGISTRATION_EXPIRED  = "registration_expired"
+    CERTIFICATE_EXPIRING  = "certificate_expiring"
+    CERTIFICATE_EXPIRED   = "certificate_expired"
+    TAX_ID_VERIFICATION_EXPIRED = "tax_id_verification_expired"
+
+
+class ReviewItemStatus(str, enum.Enum):
+    OPEN     = "open"
+    RESOLVED = "resolved"
+
+
+class ContextIssueKind(str, enum.Enum):
+    MISSING     = "missing"
+    EXPIRED     = "expired"
+    AMBIGUOUS   = "ambiguous"
+    UNVERIFIED  = "unverified"
+    NOT_PERMITTED = "not_permitted"   # e.g. no effective activation for the market
+
+
+class TaxContextStatus(str, enum.Enum):
+    """Whether a quote's stored tax context still matches current facts."""
+    CURRENT = "current"
+    STALE   = "stale"

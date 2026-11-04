@@ -44,6 +44,21 @@ from app.modules.tax.registry_schemas import (
     StepUpRequest,
     SubmitRateRequest,
 )
+from app.modules.tax.enums import PlatformVersionStatus
+from app.modules.tax.policy_models import TaxCodeSetVersion, TaxMarketAvailabilityVersion
+from app.modules.tax.policy_schemas import (
+    AvailabilityAmendRequest,
+    AvailabilityDraftRequest,
+    CodeSetDraftRequest,
+    PolicyActionRequest,
+    TaxCodeUpsertRequest,
+)
+from app.modules.tax.policy_service import (
+    MarketAvailabilityService,
+    TaxCodeSetService,
+    view_availability,
+    view_code_set,
+)
 from app.modules.tax.registry_service import (
     RegistryReadService,
     TaxRegistryPipeline,
@@ -329,3 +344,137 @@ def publish_staged_rate(
     db.commit()
     row = pipeline.get_staged(staged_id)
     return {"staged_rate": staged_view(row), "rate_version_id": version.id, "predecessor_id": version.predecessor_id}
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# Phase 2 — platform market availability and tax-code taxonomy
+# Same roles and controls as rates: TAX_REVIEWER drafts/validates/submits;
+# a different TAX_PUBLISHER approves and publishes with MFA step-up.
+# ═════════════════════════════════════════════════════════════════════════
+
+@admin_router.get("/market-availability", summary="List market availability versions")
+def list_market_availability(
+    status_filter: Optional[PlatformVersionStatus] = Query(None, alias="status"),
+    db: Session = Depends(get_db),
+    _user=Depends(require_capability("tax_registry.read")),
+):
+    q = db.query(TaxMarketAvailabilityVersion)
+    if status_filter is not None:
+        q = q.filter(TaxMarketAvailabilityVersion.status == status_filter)
+    return {"items": [view_availability(r) for r in q.order_by(TaxMarketAvailabilityVersion.id)]}
+
+
+@admin_router.post("/market-availability", status_code=status.HTTP_201_CREATED, summary="Draft a market availability version")
+def draft_market_availability(
+    data: AvailabilityDraftRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_capability("tax_registry.write")),
+):
+    payload = data.model_dump(exclude_none=True)
+    row = MarketAvailabilityService(db).draft(actor_id=current_user.id, **payload)
+    db.commit()
+    return view_availability(row)
+
+
+@admin_router.patch("/market-availability/{version_id}", summary="Amend a draft availability version")
+def amend_market_availability(
+    version_id: int,
+    data: AvailabilityAmendRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_capability("tax_registry.write")),
+):
+    row = MarketAvailabilityService(db).amend(actor_id=current_user.id, version_id=version_id,
+                                              changes=data.model_dump(exclude_unset=True))
+    db.commit()
+    return view_availability(row)
+
+
+def _availability_action(action: str, capability: str, step_up: bool):
+    def handler(
+        version_id: int,
+        db: Session = Depends(get_db),
+        current_user=Depends(require_capability(capability)),
+        data: Optional[PolicyActionRequest] = None,
+    ):
+        data = data or PolicyActionRequest()
+        if step_up:
+            require_tax_step_up(db, current_user, StepUpRequest(code=data.code, recovery_code=data.recovery_code))
+        svc = MarketAvailabilityService(db)
+        kwargs = {"actor_id": current_user.id, "version_id": version_id}
+        if action in ("submit", "reject"):
+            if not (data.reason or "").strip():
+                raise BadRequestException("A reason is required.")
+            kwargs["reason"] = data.reason
+        row = getattr(svc, action)(**kwargs)
+        db.commit()
+        return view_availability(row)
+    return handler
+
+
+for _action, _cap, _step_up in (("validate", "tax_registry.write", False), ("submit", "tax_registry.write", False),
+                                ("approve", "tax_registry.approve", True), ("reject", "tax_registry.approve", False),
+                                ("publish", "tax_registry.approve", True)):
+    admin_router.add_api_route(
+        f"/market-availability/{{version_id}}/{_action}", _availability_action(_action, _cap, _step_up),
+        methods=["POST"], summary=f"{_action.capitalize()} a market availability version",
+    )
+
+
+@admin_router.get("/tax-code-sets", summary="List tax-code set versions")
+def list_tax_code_sets(db: Session = Depends(get_db), _user=Depends(require_capability("tax_registry.read"))):
+    return {"items": [view_code_set(db, r) for r in db.query(TaxCodeSetVersion).order_by(TaxCodeSetVersion.id)]}
+
+
+@admin_router.post("/tax-code-sets", status_code=status.HTTP_201_CREATED, summary="Draft a tax-code set version")
+def draft_tax_code_set(data: CodeSetDraftRequest, db: Session = Depends(get_db),
+                       current_user=Depends(require_capability("tax_registry.write"))):
+    row = TaxCodeSetService(db).draft(actor_id=current_user.id, **data.model_dump())
+    db.commit()
+    return view_code_set(db, row)
+
+
+@admin_router.put("/tax-code-sets/{version_id}/codes", summary="Add or update a tax code in a draft set")
+def upsert_tax_code(version_id: int, data: TaxCodeUpsertRequest, db: Session = Depends(get_db),
+                    current_user=Depends(require_capability("tax_registry.write"))):
+    TaxCodeSetService(db).upsert_code(actor_id=current_user.id, version_id=version_id, **data.model_dump())
+    db.commit()
+    return view_code_set(db, TaxCodeSetService(db).get(version_id))
+
+
+@admin_router.delete("/tax-code-sets/{version_id}/codes/{code}", summary="Remove a tax code from a draft set")
+def remove_tax_code(version_id: int, code: str, db: Session = Depends(get_db),
+                    current_user=Depends(require_capability("tax_registry.write"))):
+    TaxCodeSetService(db).remove_code(actor_id=current_user.id, version_id=version_id, code=code)
+    db.commit()
+    return view_code_set(db, TaxCodeSetService(db).get(version_id))
+
+
+def _code_set_action(action: str, capability: str, step_up: bool):
+    def handler(
+        version_id: int,
+        db: Session = Depends(get_db),
+        current_user=Depends(require_capability(capability)),
+        data: Optional[PolicyActionRequest] = None,
+    ):
+        data = data or PolicyActionRequest()
+        if step_up:
+            require_tax_step_up(db, current_user, StepUpRequest(code=data.code, recovery_code=data.recovery_code))
+        svc = TaxCodeSetService(db)
+        kwargs = {"actor_id": current_user.id, "version_id": version_id}
+        if action in ("submit", "reject"):
+            if not (data.reason or "").strip():
+                raise BadRequestException("A reason is required.")
+            kwargs["reason"] = data.reason
+        row = getattr(svc, action)(**kwargs)
+        db.commit()
+        return view_code_set(db, row)
+    return handler
+
+
+for _action, _cap, _step_up in (("validate", "tax_registry.write", False), ("submit", "tax_registry.write", False),
+                                ("approve", "tax_registry.approve", True), ("reject", "tax_registry.approve", False),
+                                ("publish", "tax_registry.approve", True)):
+    admin_router.add_api_route(
+        f"/tax-code-sets/{{version_id}}/{_action}", _code_set_action(_action, _cap, _step_up),
+        methods=["POST"], summary=f"{_action.capitalize()} a tax-code set version",
+    )

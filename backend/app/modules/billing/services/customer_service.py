@@ -455,6 +455,19 @@ class CustomerService:
         return customer
 
     def bulk_delete_customers(self, organization_id: int, ids: List[int]) -> int:
+        # Customers holding recorded tax evidence (ZB-TAX-ARCH-001 Phase 2) are
+        # retained: refuse clearly instead of failing on the RESTRICT foreign key.
+        from app.modules.tax.models import CustomerExemptionCertificate, CustomerTaxAddress, CustomerTaxId
+
+        held = set()
+        for model in (CustomerTaxAddress, CustomerTaxId, CustomerExemptionCertificate):
+            held.update(cid for (cid,) in self.db.query(model.customer_id).filter(
+                model.organization_id == organization_id, model.customer_id.in_(ids)).distinct())
+        if held:
+            raise BadRequestException(
+                f"Customers {sorted(held)} hold recorded tax evidence and cannot be permanently deleted; "
+                "deactivate them instead."
+            )
         deleted = self.repo.bulk_hard_delete(ids, organization_id)
         logger.info(f"[BILLING] Bulk hard-delete: org={organization_id} ids={ids} count={deleted}")
         return deleted

@@ -1,21 +1,61 @@
 """
 Tax domain HTTP API (ZB-TAX-ARCH-001 §09), mounted at /api/v1/tax.
 
-Phase 0 exposes seller legal entities. Every route resolves the tenant via
+Phase 0 exposes seller legal entities; Phase 2 adds registrations, legal
+bases, activations, product classifications, buyer tax evidence, review items
+and the read-only tax context. Every route resolves the tenant via
 get_organization_id, which refuses super-admin tokens outright: platform
 super administrators have no standing access to tenant tax data (§12.1,
 §13 T13). Support access goes through the existing JIT grant flow instead.
 """
+from datetime import date
+from typing import Optional
+
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import (
+    get_current_billing_admin,
+    get_current_finance_approver,
     get_current_org_admin,
     get_current_user,
     get_organization_id,
     require_active_subscription,
 )
+from app.core.exceptions import BadRequestException
 from app.database import get_db
+from app.modules.tax.buyer_evidence_service import (
+    BuyerEvidenceService,
+    view_address,
+    view_certificate,
+    view_tax_id,
+)
+from app.modules.tax.classification_service import ClassificationService, view_classification
+from app.modules.tax.context_builder import DOCUMENT_TYPES, build_tax_context
+from app.modules.tax.enums import ReviewItemStatus
+from app.modules.tax.models import EntityTaxActivation, EntityTaxLegalBasis, ProductTaxClassification
+from app.modules.tax.policy_schemas import (
+    ActivationCreate,
+    CertificateCreate,
+    ClassificationCreate,
+    DecisionRequest,
+    ImpactPreviewRequest,
+    LegalBasisCreate,
+    RegimeChangeRequest,
+    RegistrationCreate,
+    RegistrationUpdate,
+    TaxAddressCreate,
+    TaxIdCreate,
+    TaxIdVerification,
+)
+from app.modules.tax.policy_service import active_code_set, view_tax_code
+from app.modules.tax.review_service import TaxReviewService, view_review_item
+from app.modules.tax.tenant_tax_service import (
+    TenantTaxService,
+    view_activation,
+    view_legal_basis,
+    view_registration,
+)
 from app.modules.tax.legal_entity_service import LegalEntityService
 from app.modules.tax.schemas import (
     SellerLegalEntityCreate,
@@ -110,3 +150,306 @@ def deactivate_legal_entity(
     current_user=Depends(get_current_user),
 ):
     return LegalEntityService(db).deactivate(entity_id, organization_id, current_user.id)
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# Phase 2 — obligations, activation, classification, buyer evidence, context
+# All tenant-scoped through get_organization_id (refuses super-admin tokens;
+# support staff reach tenant data only through an approved JIT grant).
+# Maker-checker: org_admin/billing_admin propose, a different
+# finance_approver decides.
+# ═════════════════════════════════════════════════════════════════════════
+
+# ── Regime (GOVERNED stays refused until Phase 3) ───────────────────────
+
+@router.get("/legal-entities/{entity_id}/regime-eligibility", summary="Would this entity qualify for GOVERNED?")
+def regime_eligibility(
+    entity_id: int,
+    as_of: Optional[date] = Query(None),
+    db: Session = Depends(get_db),
+    organization_id: int = Depends(get_organization_id),
+):
+    return TenantTaxService(db).regime_eligibility(organization_id, entity_id, as_of)
+
+
+@router.post("/legal-entities/{entity_id}/regime", summary="Request a tax regime change",
+             dependencies=[Depends(get_current_org_admin)])
+def request_regime(
+    entity_id: int,
+    data: RegimeChangeRequest,
+    db: Session = Depends(get_db),
+    organization_id: int = Depends(get_organization_id),
+    current_user=Depends(get_current_user),
+):
+    return TenantTaxService(db).request_regime(organization_id, current_user.id, entity_id, data.tax_regime)
+
+
+# ── Registrations ───────────────────────────────────────────────────────
+
+@router.get("/registrations", summary="List tax registrations")
+def list_registrations(
+    seller_entity_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+    organization_id: int = Depends(get_organization_id),
+):
+    return {"items": [view_registration(r) for r in TenantTaxService(db).list_registrations(organization_id, seller_entity_id)]}
+
+
+@router.post("/registrations", status_code=status.HTTP_201_CREATED, summary="Record a tax registration",
+             dependencies=[Depends(get_current_billing_admin)])
+def create_registration(
+    data: RegistrationCreate,
+    db: Session = Depends(get_db),
+    organization_id: int = Depends(get_organization_id),
+    current_user=Depends(get_current_user),
+):
+    return view_registration(TenantTaxService(db).create_registration(organization_id, current_user.id, **data.model_dump()))
+
+
+@router.patch("/registrations/{registration_id}", summary="Record validity end, status or verification",
+              dependencies=[Depends(get_current_billing_admin)])
+def update_registration(
+    registration_id: int,
+    data: RegistrationUpdate,
+    db: Session = Depends(get_db),
+    organization_id: int = Depends(get_organization_id),
+    current_user=Depends(get_current_user),
+):
+    return view_registration(TenantTaxService(db).update_registration(
+        organization_id, current_user.id, registration_id, **data.model_dump(exclude_unset=True)))
+
+
+# ── Legal bases (collecting without a registration) ─────────────────────
+
+@router.get("/legal-bases", summary="List legal bases for collecting without registration")
+def list_legal_bases(db: Session = Depends(get_db), organization_id: int = Depends(get_organization_id)):
+    return {"items": [view_legal_basis(r) for r in TenantTaxService(db).list_legal_bases(organization_id)]}
+
+
+@router.post("/legal-bases", status_code=status.HTTP_201_CREATED, summary="Propose a legal basis",
+             dependencies=[Depends(get_current_billing_admin)])
+def propose_legal_basis(
+    data: LegalBasisCreate,
+    db: Session = Depends(get_db),
+    organization_id: int = Depends(get_organization_id),
+    current_user=Depends(get_current_user),
+):
+    return view_legal_basis(TenantTaxService(db).propose_legal_basis(organization_id, current_user.id, **data.model_dump()))
+
+
+@router.post("/legal-bases/{basis_id}/approve", summary="Approve a legal basis (different user)",
+             dependencies=[Depends(get_current_finance_approver)])
+def approve_legal_basis(basis_id: int, data: DecisionRequest, db: Session = Depends(get_db),
+                        organization_id: int = Depends(get_organization_id), current_user=Depends(get_current_user)):
+    return view_legal_basis(TenantTaxService(db).decide_legal_basis(
+        organization_id, current_user.id, basis_id, approve=True, reason=data.reason))
+
+
+@router.post("/legal-bases/{basis_id}/reject", summary="Reject a legal basis",
+             dependencies=[Depends(get_current_finance_approver)])
+def reject_legal_basis(basis_id: int, data: DecisionRequest, db: Session = Depends(get_db),
+                       organization_id: int = Depends(get_organization_id), current_user=Depends(get_current_user)):
+    return view_legal_basis(TenantTaxService(db).decide_legal_basis(
+        organization_id, current_user.id, basis_id, approve=False, reason=data.reason))
+
+
+@router.post("/legal-bases/{basis_id}/withdraw", summary="Withdraw a proposed legal basis",
+             dependencies=[Depends(get_current_billing_admin)])
+def withdraw_legal_basis(basis_id: int, db: Session = Depends(get_db),
+                         organization_id: int = Depends(get_organization_id), current_user=Depends(get_current_user)):
+    return view_legal_basis(TenantTaxService(db).withdraw(
+        EntityTaxLegalBasis, "Legal basis", organization_id, current_user.id, basis_id))
+
+
+# ── Activations ─────────────────────────────────────────────────────────
+
+@router.get("/activations", summary="List tax activations")
+def list_activations(
+    seller_entity_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+    organization_id: int = Depends(get_organization_id),
+):
+    return {"items": [view_activation(a) for a in TenantTaxService(db).list_activations(organization_id, seller_entity_id)]}
+
+
+@router.post("/activations", status_code=status.HTTP_201_CREATED, summary="Propose a tax activation",
+             dependencies=[Depends(get_current_billing_admin)])
+def propose_activation(
+    data: ActivationCreate,
+    db: Session = Depends(get_db),
+    organization_id: int = Depends(get_organization_id),
+    current_user=Depends(get_current_user),
+):
+    return view_activation(TenantTaxService(db).propose_activation(organization_id, current_user.id, **data.model_dump()))
+
+
+@router.post("/activations/{activation_id}/approve", summary="Approve a tax activation (different user)",
+             dependencies=[Depends(get_current_finance_approver)])
+def approve_activation(activation_id: int, data: DecisionRequest, db: Session = Depends(get_db),
+                       organization_id: int = Depends(get_organization_id), current_user=Depends(get_current_user)):
+    return view_activation(TenantTaxService(db).decide_activation(
+        organization_id, current_user.id, activation_id, approve=True, reason=data.reason))
+
+
+@router.post("/activations/{activation_id}/reject", summary="Reject a tax activation",
+             dependencies=[Depends(get_current_finance_approver)])
+def reject_activation(activation_id: int, data: DecisionRequest, db: Session = Depends(get_db),
+                      organization_id: int = Depends(get_organization_id), current_user=Depends(get_current_user)):
+    return view_activation(TenantTaxService(db).decide_activation(
+        organization_id, current_user.id, activation_id, approve=False, reason=data.reason))
+
+
+@router.post("/activations/{activation_id}/withdraw", summary="Withdraw a proposed activation",
+             dependencies=[Depends(get_current_billing_admin)])
+def withdraw_activation(activation_id: int, db: Session = Depends(get_db),
+                        organization_id: int = Depends(get_organization_id), current_user=Depends(get_current_user)):
+    return view_activation(TenantTaxService(db).withdraw(
+        EntityTaxActivation, "Tax activation", organization_id, current_user.id, activation_id))
+
+
+@router.get("/activations/{activation_id}/effective", summary="Effective state of an activation on a date")
+def activation_effective_state(
+    activation_id: int,
+    on_date: Optional[date] = Query(None, alias="date"),
+    db: Session = Depends(get_db),
+    organization_id: int = Depends(get_organization_id),
+):
+    svc = TenantTaxService(db)
+    row = svc._get(EntityTaxActivation, activation_id, organization_id, "Tax activation")
+    if on_date is None:
+        raise BadRequestException("Pass ?date= (the activation's legal date to evaluate); it is never assumed.")
+    return svc.effective_state(row, on_date)
+
+
+# ── Tax codes and product classification ─────────────────────────────────
+
+@router.get("/tax-codes", summary="Published platform tax codes")
+def list_tax_codes(db: Session = Depends(get_db), organization_id: int = Depends(get_organization_id)):
+    code_set = active_code_set(db)
+    if code_set is None:
+        return {"code_set": None, "items": []}
+    return {"code_set": {"id": code_set.id, "code": code_set.code, "version": code_set.version},
+            "items": [view_tax_code(c) for c in code_set.codes]}
+
+
+@router.get("/product-classifications", summary="Product tax classifications and history")
+def list_classifications(
+    product_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+    organization_id: int = Depends(get_organization_id),
+):
+    return {"items": [view_classification(c) for c in ClassificationService(db).list_classifications(organization_id, product_id)]}
+
+
+@router.post("/product-classifications", status_code=status.HTTP_201_CREATED, summary="Propose a classification",
+             dependencies=[Depends(get_current_billing_admin)])
+def propose_classification(data: ClassificationCreate, db: Session = Depends(get_db),
+                           organization_id: int = Depends(get_organization_id), current_user=Depends(get_current_user)):
+    return view_classification(ClassificationService(db).propose(organization_id, current_user.id, **data.model_dump()))
+
+
+@router.post("/product-classifications/impact-preview", summary="Draft invoices and open quotes a change affects")
+def classification_impact_preview(data: ImpactPreviewRequest, db: Session = Depends(get_db),
+                                  organization_id: int = Depends(get_organization_id)):
+    return ClassificationService(db).impact_preview(organization_id, data.product_ids)
+
+
+@router.post("/product-classifications/{classification_id}/approve", summary="Approve a classification (different user)",
+             dependencies=[Depends(get_current_finance_approver)])
+def approve_classification(classification_id: int, data: DecisionRequest, db: Session = Depends(get_db),
+                           organization_id: int = Depends(get_organization_id), current_user=Depends(get_current_user)):
+    return view_classification(ClassificationService(db).decide(
+        organization_id, current_user.id, classification_id, approve=True, reason=data.reason))
+
+
+@router.post("/product-classifications/{classification_id}/reject", summary="Reject a classification",
+             dependencies=[Depends(get_current_finance_approver)])
+def reject_classification(classification_id: int, data: DecisionRequest, db: Session = Depends(get_db),
+                          organization_id: int = Depends(get_organization_id), current_user=Depends(get_current_user)):
+    return view_classification(ClassificationService(db).decide(
+        organization_id, current_user.id, classification_id, approve=False, reason=data.reason))
+
+
+@router.post("/product-classifications/{classification_id}/withdraw", summary="Withdraw a proposed classification",
+             dependencies=[Depends(get_current_billing_admin)])
+def withdraw_classification(classification_id: int, db: Session = Depends(get_db),
+                            organization_id: int = Depends(get_organization_id), current_user=Depends(get_current_user)):
+    return view_classification(TenantTaxService(db).withdraw(
+        ProductTaxClassification, "Product tax classification", organization_id, current_user.id, classification_id))
+
+
+# ── Customer tax evidence ───────────────────────────────────────────────
+
+@router.get("/customers/{customer_id}/tax-evidence", summary="Buyer tax evidence")
+def customer_tax_evidence(customer_id: int, include_history: bool = Query(False), db: Session = Depends(get_db),
+                          organization_id: int = Depends(get_organization_id)):
+    return BuyerEvidenceService(db).evidence(organization_id, customer_id, include_history)
+
+
+@router.post("/customers/{customer_id}/tax-addresses", status_code=status.HTTP_201_CREATED,
+             summary="Record a structured tax address", dependencies=[Depends(get_current_billing_admin)])
+def record_tax_address(customer_id: int, data: TaxAddressCreate, db: Session = Depends(get_db),
+                       organization_id: int = Depends(get_organization_id), current_user=Depends(get_current_user)):
+    return view_address(BuyerEvidenceService(db).record_address(
+        organization_id, current_user.id, customer_id, **data.model_dump()))
+
+
+@router.post("/customers/{customer_id}/tax-ids", status_code=status.HTTP_201_CREATED,
+             summary="Record a buyer tax ID (stored exactly as given)", dependencies=[Depends(get_current_billing_admin)])
+def add_customer_tax_id(customer_id: int, data: TaxIdCreate, db: Session = Depends(get_db),
+                        organization_id: int = Depends(get_organization_id), current_user=Depends(get_current_user)):
+    return view_tax_id(BuyerEvidenceService(db).add_tax_id(organization_id, current_user.id, customer_id, **data.model_dump()))
+
+
+@router.post("/tax-ids/{tax_id_id}/verification", summary="Record a tax ID verification result",
+             dependencies=[Depends(get_current_billing_admin)])
+def record_tax_id_verification(tax_id_id: int, data: TaxIdVerification, db: Session = Depends(get_db),
+                               organization_id: int = Depends(get_organization_id), current_user=Depends(get_current_user)):
+    return view_tax_id(BuyerEvidenceService(db).record_verification(
+        organization_id, current_user.id, tax_id_id, **data.model_dump()))
+
+
+@router.post("/tax-ids/{tax_id_id}/retire", summary="Retire a buyer tax ID",
+             dependencies=[Depends(get_current_billing_admin)])
+def retire_tax_id(tax_id_id: int, db: Session = Depends(get_db),
+                  organization_id: int = Depends(get_organization_id), current_user=Depends(get_current_user)):
+    return view_tax_id(BuyerEvidenceService(db).retire_tax_id(organization_id, current_user.id, tax_id_id))
+
+
+@router.post("/customers/{customer_id}/exemption-certificates", status_code=status.HTTP_201_CREATED,
+             summary="Record an exemption certificate", dependencies=[Depends(get_current_billing_admin)])
+def add_exemption_certificate(customer_id: int, data: CertificateCreate, db: Session = Depends(get_db),
+                              organization_id: int = Depends(get_organization_id), current_user=Depends(get_current_user)):
+    return view_certificate(BuyerEvidenceService(db).add_certificate(
+        organization_id, current_user.id, customer_id, **data.model_dump()))
+
+
+@router.post("/exemption-certificates/{certificate_id}/revoke", summary="Revoke an exemption certificate",
+             dependencies=[Depends(get_current_billing_admin)])
+def revoke_exemption_certificate(certificate_id: int, db: Session = Depends(get_db),
+                                 organization_id: int = Depends(get_organization_id), current_user=Depends(get_current_user)):
+    return view_certificate(BuyerEvidenceService(db).revoke_certificate(organization_id, current_user.id, certificate_id))
+
+
+# ── Review items (T14) and tax context ──────────────────────────────────
+
+@router.get("/review-items", summary="Tax evidence review queue")
+def list_review_items(include_resolved: bool = Query(False), db: Session = Depends(get_db),
+                      organization_id: int = Depends(get_organization_id)):
+    items = TaxReviewService(db).list_items(organization_id, None if include_resolved else ReviewItemStatus.OPEN)
+    return {"items": [view_review_item(i) for i in items]}
+
+
+@router.post("/review-items/{item_id}/resolve", summary="Resolve a review item",
+             dependencies=[Depends(get_current_billing_admin)])
+def resolve_review_item(item_id: int, db: Session = Depends(get_db),
+                        organization_id: int = Depends(get_organization_id), current_user=Depends(get_current_user)):
+    return view_review_item(TaxReviewService(db).resolve(organization_id, current_user.id, item_id))
+
+
+@router.get("/context/{document_type}/{document_id}", summary="Assemble the tax context for a draft (read-only)")
+def get_tax_context(document_type: str, document_id: int, db: Session = Depends(get_db),
+                    organization_id: int = Depends(get_organization_id)):
+    if document_type not in DOCUMENT_TYPES:
+        raise BadRequestException(f"document_type must be one of {', '.join(DOCUMENT_TYPES)}.")
+    return build_tax_context(db, organization_id, document_type, document_id)

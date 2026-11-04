@@ -33,6 +33,7 @@ from sqlalchemy.sql import func
 from app.database import Base
 
 from app.core.db_types import CaseInsensitiveEnum
+from app.modules.tax.enums import TaxContextStatus
 
 # ZB-TAX-ARCH-001 §07: rates are decimal fixed-point, never floats, and must
 # hold real-world precision (e.g. New York City 8.875%). Numeric(5, 2) could
@@ -1369,6 +1370,11 @@ class Quotation(Base):
     updated_by                = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at                = Column(DateTime(timezone=True), server_default=func.now(), index=True)
     updated_at                = Column(DateTime(timezone=True), onupdate=func.now())
+    # ZB-TAX-ARCH-001 Phase 2: issuing entity (assigned like invoices) and
+    # whether the tax facts this quote was built on are still current.
+    seller_entity_id          = Column(Integer, ForeignKey("seller_legal_entities.id", ondelete="RESTRICT"), nullable=True, index=True)
+    tax_context_status        = Column(CaseInsensitiveEnum(TaxContextStatus), nullable=True)
+    tax_classification_version = Column(Integer, nullable=True)
 
     customer                  = relationship("BillingCustomer", back_populates="quotations")
     items                     = relationship("QuotationItem", back_populates="quotation")

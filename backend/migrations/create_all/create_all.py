@@ -51,6 +51,7 @@ def main() -> None:
     import app.modules.billing.models  # noqa: F401,F811
     import app.modules.tax.models  # noqa: F401,F811
     import app.modules.tax.registry_models  # noqa: F401,F811
+    import app.modules.tax.policy_models  # noqa: F401,F811
 
     if args.drop:
         print("Dropping all existing tables...")

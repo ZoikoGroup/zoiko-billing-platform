@@ -761,5 +761,5 @@ def test_migration_chain_has_a_single_head():
     config = Config(str(backend / "alembic.ini"))
     config.set_main_option("script_location", str(backend / "alembic"))
     script = ScriptDirectory.from_config(config)
-    assert script.get_heads() == ["b3d8f2a6c1e4"]
+    assert len(script.get_heads()) == 1
     assert script.get_revision("b3d8f2a6c1e4").down_revision == "a7c4e1b9d3f0"
