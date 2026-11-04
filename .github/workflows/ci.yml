@@ -162,10 +162,21 @@ jobs:
         env:
           TAX_PG_TEST_URL: ${{ env.BILLING_DATABASE_URL }}
           TAX_PG_TESTS_REQUIRED: "1"
+        # Failures are also emitted as annotations (scripts/ci_annotate_failures.py)
+        # so they are readable from the PR checks without opening the job log.
         run: |
-          python -m alembic downgrade a7c4e1b9d3f0
-          python -m alembic upgrade head
-          python -m pytest tests/test_tax_phase1_registry_pg.py tests/test_tax_phase2_pg.py -v -rs
+          set -o pipefail
+          for target in a7c4e1b9d3f0 head; do
+            cmd=$([ "$target" = head ] && echo upgrade || echo downgrade)
+            if ! python -m alembic $cmd $target 2>&1 | tee alembic-$cmd.log; then
+              python scripts/ci_annotate_failures.py log alembic-$cmd.log "alembic $cmd $target failed"
+              exit 1
+            fi
+          done
+          python -m pytest tests/test_tax_phase1_registry_pg.py tests/test_tax_phase2_pg.py -v -rs             --junitxml=tax-pg-results.xml || {
+            python scripts/ci_annotate_failures.py junit tax-pg-results.xml
+            exit 1
+          }
       - name: Plane 2 / shared-infra release gate (must be 0 failures, 0 errors)
         run: python -m pytest tests/ --ignore=tests/ai_assistant -q
       - name: AI-assistant suite (informational — known cross-file state issue when combined with the line above; tracked separately, does not block the Plane 2 gate)

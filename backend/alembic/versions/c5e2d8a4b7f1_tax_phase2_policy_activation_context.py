@@ -498,10 +498,15 @@ $$ LANGUAGE plpgsql
 _TAX_CODES_GUARD_FN = f"""
 CREATE OR REPLACE FUNCTION tax_codes_guard() RETURNS trigger AS $$
 DECLARE
+  set_id integer;
   set_status text;
 BEGIN
-  SELECT status INTO set_status FROM tax_code_set_versions
-   WHERE id = (CASE WHEN TG_OP = 'DELETE' THEN OLD.code_set_version_id ELSE NEW.code_set_version_id END);
+  IF TG_OP = 'DELETE' THEN
+    set_id := OLD.code_set_version_id;
+  ELSE
+    set_id := NEW.code_set_version_id;
+  END IF;
+  SELECT status INTO set_status FROM tax_code_set_versions WHERE id = set_id;
   IF set_status NOT IN {_EDITABLE} THEN
     RAISE EXCEPTION 'tax codes of a submitted code-set version are frozen'
       USING ERRCODE = 'integrity_constraint_violation';
@@ -510,7 +515,10 @@ BEGIN
     RAISE EXCEPTION 'a tax code cannot move between code-set versions'
       USING ERRCODE = 'integrity_constraint_violation';
   END IF;
-  RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
+  RETURN NEW;
 END;
 $$ LANGUAGE plpgsql
 """
