@@ -297,3 +297,24 @@ def test_artifacts_are_write_once(pg, world):
     _expect_db_error(pg, "UPDATE tax_source_artifacts SET media_type = 'x' WHERE sha256 = :s", {"s": sha})
     _expect_db_error(pg, "DELETE FROM tax_source_artifacts WHERE sha256 = :s", {"s": sha},
                      errors=(IntegrityError, DBAPIError))
+
+
+# ── Tenant erasure purge with the registry present ──────────────────────
+
+def test_tenant_purge_runs_on_postgres_with_the_registry_present(pg, world):
+    """Regression: the purge FK walk followed users -> registry SET NULL edges
+    and UNIONed tax_source_artifacts' text key with integer keys, which
+    Postgres rejects. Platform tables are now outside the purge graph."""
+    from app.modules.organizations.models import Organization
+    from app.modules.super_admin.organization_purge_service import OrganizationPurgeService
+
+    org = Organization(organization_name="Purge PG Org", organization_code=f"PURGEPG{id(pg) % 100000}")
+    pg.add(org)
+    pg.flush()
+    pg.add(User(email=f"tenant-{id(pg)}@purge.example", hashed_password="x", role=UserRole.ORG_ADMIN,
+                organization_id=org.id, first_name="T", last_name="P"))
+    pg.flush()
+    result = OrganizationPurgeService(pg).purge(org, actor=world["checker"], reason="pg purge regression")
+    pg.flush()
+    assert result.per_table.get("organizations") == 1
+    assert pg.execute(text("SELECT count(*) FROM tax_source_artifacts")).scalar() >= 1
