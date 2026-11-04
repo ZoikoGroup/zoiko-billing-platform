@@ -236,10 +236,10 @@ def test_erasure_purge_deletes_tenant_tax_records_on_postgres(pg, world):
     customer = make_customer(pg, world["org"].id, code="PGP")
     BuyerEvidenceService(pg).add_tax_id(world["org"].id, world["maker"].id, customer.id, value="ZZ9")
     admin = _user(pg, "purger", UserRole.SUPER_ADMIN, platform_role=PlatformRole.PLATFORM_ADMINISTRATOR)
+    reg_id = reg.id                                   # the ORM object is gone after the purge
     result = OrganizationPurgeService(pg).purge(world["org"], actor=admin, reason="pg erasure")
-    pg.flush()
     assert result.per_table.get("entity_tax_activations") == 1 and result.per_table.get("customer_tax_ids") == 1
-    remaining = pg.execute(text("SELECT count(*) FROM entity_tax_registrations WHERE id = :id"), {"id": reg.id}).scalar()
+    remaining = pg.execute(text("SELECT count(*) FROM entity_tax_registrations WHERE id = :id"), {"id": reg_id}).scalar()
     assert remaining == 0
 
 
