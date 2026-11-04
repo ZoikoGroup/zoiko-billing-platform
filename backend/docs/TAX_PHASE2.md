@@ -339,14 +339,19 @@ Phase 2 Postgres tests cover:
 
 | Suite | Before (Phase 1) | After |
 |---|---|---|
-| Backend local (venv from `requirements.txt`, SQLite) | _pending_ | _pending_ |
+| Backend local (venv from `requirements.txt`, SQLite) | 1709 passed, 4 failed*, 21 skipped | **1772 passed, 0 failed, 33 skipped** |
 | Backend CI (postgres:16) | passed | _pending_ |
 
 New: `tests/test_tax_import_cycle.py` (4), `tests/test_tax_phase2_policy.py`
-(36), `tests/privacy/test_tax_phase2_access.py` (11: T13 across every
+(37), `tests/privacy/test_tax_phase2_access.py` (11: T13 across every
 platform role, a live vs. expired support account with real tokens, and a
 route walk proving every tenant tax route resolves `get_organization_id`),
 `tests/test_tax_phase2_pg.py` (13, Postgres only).
+
+\* The Phase 1 baseline ran on the global Python install. Its 4 failures
+were the Stripe API pin (an outdated local `stripe`) and the
+order-dependent `test_aggregate_cache.py` (Phase 1 findings 6 and 7). The
+33 skips are the Postgres-only modules (`TAX_PG_TEST_URL` unset).
 
 ## Findings
 
@@ -363,7 +368,17 @@ route walk proving every tenant tax route resolves `get_organization_id`),
 4. **Quotes have no tax date.** The builder always reports
    `TAX_DATE_MISSING` for quotes. Phase 3 needs an explicit quote tax-date
    rule, such as an expected supply date.
-5. Phase 0 findings 1, 3 and 4 remain open. Finding 2 (dead `resolve_tax`)
+5. **The CI Postgres step found two issues SQLite couldn't.**
+   - The tenant erasure purge walked into the Phase 1 registry tables and
+     failed on a text primary key. Platform tables are now excluded from the
+     purge graph (Phase 1 finding 9).
+   - A Postgres purge test read a row after deleting it.
+
+   The `tax_codes` trigger was also rewritten with plain `IF` branches. The
+   CI tax step now reports failing tests and Alembic errors as check-run
+   annotations (`scripts/ci_annotate_failures.py`), because job logs need
+   GitHub authentication.
+6. Phase 0 findings 1, 3 and 4 remain open. Finding 2 (dead `resolve_tax`)
    is now also listed in the Phase 3 issuance map above.
 
 ## Next: Phase 3 — governed determination

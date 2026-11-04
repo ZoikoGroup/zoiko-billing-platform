@@ -27,7 +27,7 @@ from app.modules.tax.enums import (
 )
 from app.modules.tax.legal_entity_service import LegalEntityService
 from app.modules.tax.models import SellerLegalEntity
-from tests.conftest import make_customer, make_invoice, make_organization, make_tax_rate
+from tests.conftest import make_customer, make_invoice, make_invoice_item, make_organization, make_tax_rate
 
 
 def _org(db, code="TAXORG", **profile):
@@ -307,6 +307,7 @@ def test_finalize_stamps_entity_and_tax_date_for_legacy_drafts(db_session):
     org = _org(db_session)
     cust = make_customer(db_session, org.id)
     inv = make_invoice(db_session, org.id, cust.id, status=InvoiceStatus.DRAFT)
+    make_invoice_item(db_session, org.id, inv.id)        # issuing requires at least one line
     assert inv.seller_entity_id is None and inv.tax_date is None
 
     result = InvoiceService(db_session).finalize_invoice(inv.id, org.id, updated_by=1)
@@ -320,6 +321,7 @@ def test_finalize_preserves_an_explicit_tax_date(db_session):
     cust = make_customer(db_session, org.id)
     explicit = date.today() - timedelta(days=3)
     inv = _create_invoice(db_session, org, cust, tax_date=explicit)
+    make_invoice_item(db_session, org.id, inv.id)        # issuing requires at least one line
     result = InvoiceService(db_session).finalize_invoice(inv.id, org.id, updated_by=1)
     assert result.tax_date == explicit
 
