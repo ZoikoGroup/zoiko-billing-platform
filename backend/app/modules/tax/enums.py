@@ -108,3 +108,119 @@ class EntityTaxRegime(str, enum.Enum):
     """
     LEGACY_MANUAL = "legacy_manual"
     GOVERNED      = "governed"
+
+
+# ── Global Tax Reference Registry (Phase 1, §06-§07, §10) ────────────────
+# Platform-level reference vocabulary. None of these values ever appear on
+# tenant-private rows; registry tables carry no organization_id (§12.1).
+
+class JurisdictionLevel(str, enum.Enum):
+    SUPRANATIONAL  = "supranational"   # e.g. EU: harmonising law, not a rate-setting authority
+    COUNTRY        = "country"
+    STATE_PROVINCE = "state_province"
+    COUNTY         = "county"
+    CITY           = "city"
+    DISTRICT       = "district"
+    SPECIAL_ZONE   = "special_zone"
+
+
+class ComponentCombination(str, enum.Enum):
+    """How a component combines with others in the same jurisdiction chain."""
+    ADDITIVE       = "additive"        # computed on the same base, summed
+    COMPOUND       = "compound"        # computed on base + prior components
+    INTERDEPENDENT = "interdependent"  # requires a rule pack; never auto-combined
+
+
+class TaxableBaseRule(str, enum.Enum):
+    NET_AMOUNT                = "net_amount"
+    NET_PLUS_PRIOR_COMPONENTS = "net_plus_prior_components"
+    RULE_PACK_DEFINED         = "rule_pack_defined"
+
+
+class SourceTier(str, enum.Enum):
+    """Ranked source hierarchy (§06.1). SECONDARY_COMMENTARY is a research
+    signal only and can never back a published rate on its own."""
+    PRIMARY_LEGAL_INSTRUMENT = "primary_legal_instrument"
+    OFFICIAL_DATASET         = "official_dataset"
+    OFFICIAL_GUIDANCE        = "official_guidance"
+    LICENSED_PROVIDER        = "licensed_provider"
+    SECONDARY_COMMENTARY     = "secondary_commentary"
+
+
+class AcquisitionMethod(str, enum.Enum):
+    """Approved acquisition methods (§06.2). Crawling is not authorized by
+    default and AI is a change detector, not an acquisition method, so
+    neither is representable here."""
+    OFFICIAL_API               = "official_api"
+    OFFICIAL_PUBLICATION       = "official_publication"
+    MANUAL_VERIFIED_EXTRACTION = "manual_verified_extraction"
+    COMMERCIAL_FEED            = "commercial_feed"
+
+
+class RedistributionPermission(str, enum.Enum):
+    UNKNOWN    = "unknown"
+    PERMITTED  = "permitted"
+    RESTRICTED = "restricted"
+    DENIED     = "denied"
+
+
+class EvidenceStatus(str, enum.Enum):
+    NOT_CAPTURED = "not_captured"
+    CAPTURED     = "captured"
+
+
+class RateKind(str, enum.Enum):
+    STANDARD      = "standard"
+    REDUCED       = "reduced"
+    SUPER_REDUCED = "super_reduced"
+    PARKING       = "parking"
+    ZERO_RATED    = "zero_rated"
+
+
+class StagingOrigin(str, enum.Enum):
+    """Who/what proposed a staged change (the §07 ChangeApproval 'detector')."""
+    SEED          = "seed"
+    MANUAL        = "manual"
+    OFFICIAL_FEED = "official_feed"
+    LICENSED_FEED = "licensed_feed"
+    AI_PROPOSAL   = "ai_proposal"
+
+
+class StagedRateStatus(str, enum.Enum):
+    """Staging pipeline (§10.1): nothing here is visible on reference reads.
+
+    PENDING_REVIEW -> VALIDATED -> IN_APPROVAL -> APPROVED -> PUBLISHED
+    Exits: VALIDATION_FAILED, CONFLICT_ESCALATED (T11), REJECTED.
+    """
+    PENDING_REVIEW     = "pending_review"
+    VALIDATION_FAILED  = "validation_failed"
+    CONFLICT_ESCALATED = "conflict_escalated"
+    VALIDATED          = "validated"
+    IN_APPROVAL        = "in_approval"
+    APPROVED           = "approved"
+    REJECTED           = "rejected"
+    PUBLISHED          = "published"
+
+
+#: Staged rows a reviewer may still amend.
+AMENDABLE_STAGED_STATUSES = frozenset({
+    StagedRateStatus.PENDING_REVIEW,
+    StagedRateStatus.VALIDATION_FAILED,
+    StagedRateStatus.CONFLICT_ESCALATED,
+    StagedRateStatus.VALIDATED,
+})
+
+#: Staged rows that still compete for a rate key (used for conflict checks).
+OPEN_STAGED_STATUSES = AMENDABLE_STAGED_STATUSES | {StagedRateStatus.IN_APPROVAL, StagedRateStatus.APPROVED}
+
+
+class RateVersionStatus(str, enum.Enum):
+    """Published rate versions only ever move ACTIVE -> SUPERSEDED. Any
+    other change is a new version (T04)."""
+    ACTIVE     = "active"
+    SUPERSEDED = "superseded"
+
+
+class ChangeKind(str, enum.Enum):
+    NEW         = "new"
+    SUPERSEDING = "superseding"   # correction / retroactive notice / end-dating

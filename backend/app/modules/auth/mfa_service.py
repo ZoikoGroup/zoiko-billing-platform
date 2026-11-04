@@ -242,13 +242,19 @@ def verify_enrollment(
 # tokens — the caller already holds a valid access token; this only proves
 # fresh possession of the factor for one sensitive action.
 
-def verify_step_up(db: Session, user: User, code: str | None, recovery_code: str | None) -> None:
+def verify_step_up(
+    db: Session, user: User, code: str | None, recovery_code: str | None, *, enforce_when_retired: bool = False,
+) -> None:
     """Raises BadRequestException/UnauthorizedException on failure. Returns
-    None (no tokens) on success."""
+    None (no tokens) on success.
+
+    enforce_when_retired: verify even while MFA_STEP_UP_ENABLED is off, for
+    controls that must keep step-up regardless (tax registry approve/publish).
+    The dev-only bypass still applies."""
     from app.modules.super_admin.audit_service import PlatformAuditService
     from app.modules.super_admin.models import PlatformAuditAction
 
-    if not settings.MFA_STEP_UP_ENABLED:
+    if not settings.MFA_STEP_UP_ENABLED and not enforce_when_retired:
         # MFA step-up is retired (see config.MFA_STEP_UP_ENABLED).
         return
 

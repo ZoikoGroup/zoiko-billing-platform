@@ -152,6 +152,20 @@ jobs:
         # the same migration chain, and what makes step 3 above pass for
         # real rather than merely not crash.
         run: python -m alembic upgrade head
+      - name: Tax registry on PostgreSQL — migration round trip + PG-only tests (ZB-TAX-ARCH-001 Phase 1)
+        # The immutability triggers, the btree_gist EXCLUDE constraint and its
+        # DEFERRABLE behaviour exist only on Postgres; the SQLite suite below
+        # cannot exercise them. TAX_PG_TESTS_REQUIRED makes a missing URL an
+        # error here instead of a silent skip. The round trip proves
+        # downgrade + re-upgrade rebuilds every guard; it ends at head, so the
+        # steps below see the same schema as before.
+        env:
+          TAX_PG_TEST_URL: ${{ env.BILLING_DATABASE_URL }}
+          TAX_PG_TESTS_REQUIRED: "1"
+        run: |
+          python -m alembic downgrade a7c4e1b9d3f0
+          python -m alembic upgrade head
+          python -m pytest tests/test_tax_phase1_registry_pg.py -v -rs
       - name: Plane 2 / shared-infra release gate (must be 0 failures, 0 errors)
         run: python -m pytest tests/ --ignore=tests/ai_assistant -q
       - name: AI-assistant suite (informational — known cross-file state issue when combined with the line above; tracked separately, does not block the Plane 2 gate)

@@ -63,6 +63,12 @@ class PlatformRole(str, enum.Enum):
     RELIABILITY_OPERATOR = "reliability_operator"
     AUDITOR = "auditor"
     FINANCE_READONLY = "finance_readonly"
+    # ZB-TAX-ARCH-001 Phase 1 — Global Tax Reference Registry maker / checker.
+    # Deliberately separate roles so one account cannot both propose and
+    # approve a published rate; neither is implied by PLATFORM_ADMINISTRATOR
+    # (see EXPLICIT_ONLY_CAPABILITIES).
+    TAX_REVIEWER = "tax_reviewer"
+    TAX_PUBLISHER = "tax_publisher"
 
 
 class User(Base):

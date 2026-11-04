@@ -148,6 +148,21 @@ class PlatformAuditAction(str, enum.Enum):
     REFUND_COMPLETED = "refund_completed"
     REFUND_REJECTED = "refund_rejected"
 
+    # ── Global Tax Reference Registry (ZB-TAX-ARCH-001 Phase 1) ─────────
+    TAX_SOURCE_REGISTERED = "tax_source_registered"
+    TAX_SOURCE_EVIDENCE_ATTACHED = "tax_source_evidence_attached"
+    TAX_RATE_STAGED = "tax_rate_staged"
+    TAX_RATE_AMENDED = "tax_rate_amended"
+    TAX_RATE_ADOPTED = "tax_rate_adopted"
+    TAX_RATE_VALIDATED = "tax_rate_validated"
+    TAX_RATE_VALIDATION_FAILED = "tax_rate_validation_failed"
+    TAX_RATE_CONFLICT_ESCALATED = "tax_rate_conflict_escalated"
+    TAX_RATE_SUBMITTED = "tax_rate_submitted"
+    TAX_RATE_APPROVED = "tax_rate_approved"
+    TAX_RATE_REJECTED = "tax_rate_rejected"
+    TAX_RATE_PUBLISHED = "tax_rate_published"
+    TAX_RATE_SUPERSEDED = "tax_rate_superseded"
+
 
 class PlatformAuditLog(Base):
     """Platform-plane audit trail for Super Admin mutations.
