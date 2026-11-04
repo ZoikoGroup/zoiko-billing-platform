@@ -226,6 +226,18 @@ class StepUpRequest(BaseModel):
     recovery_code: Optional[str] = Field(None, min_length=6, max_length=20)
 
 
+class RegistryReadinessResponse(BaseModel):
+    """Whether the two-person publication path can actually run: at least
+    one active TAX_REVIEWER and one active TAX_PUBLISHER with MFA enrolled
+    (different accounts by construction: one platform role per account)."""
+    step_up_required: bool
+    active_reviewers: int
+    active_publishers: int
+    publishers_with_mfa: int
+    reviewers_with_mfa: int
+    ready: bool
+
+
 class PublishedRateResponse(BaseModel):
     staged_rate: StagedRateResponse
     rate_version_id: int

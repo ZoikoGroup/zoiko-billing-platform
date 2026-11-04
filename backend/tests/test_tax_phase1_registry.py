@@ -658,6 +658,57 @@ def test_publish_requires_step_up(db_session, registry, people):
     assert db_session.query(TaxRateVersion).count() == 0
 
 
+def test_readiness_counts_real_mfa_enrolment_not_the_retired_flag(db_session, people):
+    from app.modules.auth.models import SuperAdminMFA
+
+    status = registry_router.registry_readiness(db=db_session, _user=people["maker"])
+    assert status["step_up_required"] is True
+    assert status["active_reviewers"] == 2 and status["active_publishers"] == 1
+    assert status["publishers_with_mfa"] == 0 and status["ready"] is False
+
+    db_session.add(SuperAdminMFA(user_id=people["checker"].id, secret_encrypted="x", is_enabled=True))
+    db_session.flush()
+    status = registry_router.registry_readiness(db=db_session, _user=people["maker"])
+    assert status["publishers_with_mfa"] == 1 and status["ready"] is True
+
+
+def test_step_up_flag_is_environment_only():
+    """TAX_REGISTRY_STEP_UP_REQUIRED comes from Settings (environment) and no
+    app code assigns to settings at runtime: PlatformSetting rows are a
+    separate key/value store that is never applied to app.config.settings."""
+    import pathlib
+    import re
+
+    app_dir = pathlib.Path(__file__).resolve().parent.parent / "app"
+    writers = re.compile(r"setattr\(\s*settings|settings\.[A-Z_]+\s*=(?!=)")
+    offenders = [
+        f"{path.relative_to(app_dir)}:{n}"
+        for path in app_dir.rglob("*.py")
+        for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+        if writers.search(line)
+    ]
+    assert offenders == []
+
+
+def test_tenant_purge_never_touches_registry_evidence(db_session, registry, people):
+    from app.modules.super_admin.organization_purge_service import OrganizationPurgeService
+
+    version = _publish(registry, people)
+    org = make_organization(db_session, code="PURGEME")
+    db_session.add(User(email="owner@purge.example", hashed_password="x", role=UserRole.ORG_ADMIN,
+                        organization_id=org.id, first_name="P", last_name="Urge"))
+    db_session.flush()
+    admin = _staff(db_session, "purger@tax.example", PlatformRole.PLATFORM_ADMINISTRATOR)
+    before = {t: db_session.execute(Base.metadata.tables[t].select()).fetchall() for t in REGISTRY_TABLES}
+
+    result = OrganizationPurgeService(db_session).purge(org, actor=admin, reason="erasure test")
+
+    assert not set(REGISTRY_TABLES) & set(result.per_table)
+    for table in REGISTRY_TABLES:
+        assert db_session.execute(Base.metadata.tables[table].select()).fetchall() == before[table], table
+    assert db_session.get(TaxRateVersion, version.id).status == RateVersionStatus.ACTIVE
+
+
 # ── ORM immutability guard (Postgres triggers: see the _pg test module) ──
 
 def test_published_version_fields_cannot_be_changed_through_the_orm(db_session, registry, people):

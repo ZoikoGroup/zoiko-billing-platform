@@ -53,6 +53,7 @@ explicit-only: `PLATFORM_ADMINISTRATOR` does not get them implicitly.
 | `…/staged-rates/{id}/adopt`, `/validate`, `/submit` | reviewer | |
 | `…/staged-rates/{id}/approve`, `/publish` | publisher + **MFA step-up** | |
 | `…/staged-rates/{id}/reject` | publisher | |
+| `…/readiness` (GET) | read | Active reviewers and publishers, and actual MFA enrolment |
 
 ## Time model
 
@@ -169,6 +170,12 @@ proposals carry none, and a reviewer must enter them from the official
 source while capturing evidence. These findings are recorded on each source
 revision's internal notes. This automated check is not evidence capture.
 
+**Decision (product owner, 2026-11-04).** Rows without a figure stay
+unrated until a reviewer enters the rate while attaching evidence, and
+lookups return `NO_APPROVED_RATE` until then. No rate is filled from model
+or engineer knowledge. Additional sources wait for tax-lead approval (see
+the template below).
+
 **Reviewer workflow for a seeded row:**
 1. Capture the source artifact (`POST …/source-revisions/{id}/evidence`)
    and record its redistribution permission.
@@ -176,6 +183,107 @@ revision's internal notes. This automated check is not evidence capture.
    instrument, and an owner.
 3. Validate, then submit (TAX_REVIEWER).
 4. Approve, then publish (a different TAX_PUBLISHER, with MFA).
+
+## Source register: entry template for the tax lead
+
+Copy one block per proposed source. An entry is registered only after the
+tax lead approves it, either through `POST …/source-revisions` or by adding
+it to `registry_seed.SOURCES`. Approving a source here does not approve any
+rate: rates still go through capture → stage → validate → maker-checker.
+
+```
+Source ID (next free S-number):
+Market / jurisdiction code(s):            e.g. GB | AU | DE
+Authority (levying or publishing body):
+Source tier (§06.1):                      PRIMARY_LEGAL_INSTRUMENT | OFFICIAL_DATASET |
+                                          OFFICIAL_GUIDANCE | LICENSED_PROVIDER
+Binding?                                  yes (statute / gazette / regulation) | no (guidance / reference)
+Use:                                      PRIMARY (may back a rate) | CROSS_CHECK_ONLY
+Acquisition method (§06.2):               OFFICIAL_API | OFFICIAL_PUBLICATION |
+                                          MANUAL_VERIFIED_EXTRACTION | COMMERCIAL_FEED
+Automated retrieval permitted?            yes | no (manual evidence-attach only)
+Permanent URL (https):
+Title (as published):
+Citation (authority, title, document/version id, date):
+Document / version id:
+Language:
+Redistribution permission:                PERMITTED | RESTRICTED | DENIED | UNKNOWN
+  basis (licence / terms URL):
+Rate types it states:                     standard | reduced | zero | other:
+States effective dates?                   yes | no
+Known limitations:
+Approved by (tax lead) / date:
+```
+
+**Candidate sources awaiting approval** (not registered and not used):
+
+| Candidate | Market | Proposed use | Notes |
+|---|---|---|---|
+| https://www.gov.uk/vat-rates | GB | PRIMARY candidate | Linked from S11, which doesn't state the standard rate itself |
+| ATO GST pages | AU | PRIMARY candidate | Manual capture only, by a reviewer through evidence-attach; no automated fetching (S16's API URL refused it) |
+| EC TEDB (S10, already registered) | EU-27 | CROSS_CHECK_ONLY | Non-binding per the handoff; must never be the sole source behind a published EU rate |
+| Member-state tax authority / legislation | each EU state | PRIMARY (required) | Binding EU sources must be national authorities or legislation |
+
+## Operations: MFA for Tax Reviewers and Tax Publishers
+
+**`TAX_REGISTRY_STEP_UP_REQUIRED` is environment-only.** It is a field on
+`app.config.Settings`, read from the process environment or `.env` at
+startup. No API, super-admin screen or `platform_settings` row can change
+it. `platform_settings` is a separate key/value table that is never applied
+to `app.config.settings`. `test_step_up_flag_is_environment_only` fails if
+any app code assigns to `settings` at runtime. Turning it off needs a config
+change and a redeploy, and every decision made with it off logs a warning.
+
+**Enrolment (API only; the MFA UI has been removed).** Each Tax Reviewer
+and Tax Publisher enrols on their own account:
+
+1. A platform administrator creates the super-admin account and assigns
+   `platform_role` = `tax_reviewer` or `tax_publisher` through the existing
+   platform-role endpoint (`platform_role.manage`). One account holds one
+   role, so the reviewer and publisher are necessarily different accounts,
+   and they must be different people.
+2. The user logs in (`POST /api/auth/login`) to get an access token.
+3. `POST /api/auth/mfa/setup/start` returns a TOTP secret and provisioning
+   URI. Add it to an authenticator app. Repeating the call replays the same
+   unconfirmed secret; `?regenerate=true` issues a new one.
+4. `POST /api/auth/mfa/setup/verify` with `{"code": "<6 digits>"}`
+   confirms enrolment and returns recovery codes **once**. Store them
+   offline.
+5. Check readiness with `GET /api/v1/super-admin/tax-registry/readiness`.
+   Don't rely on `/api/auth/mfa/status`: while platform step-up is retired,
+   it reports `enabled: true, bypassed: true` whether or not the account has
+   enrolled.
+
+Approve and publish require MFA. Enrolment is recommended for reviewers as
+well, but not enforced. **Minimum before any publication:** one active Tax
+Reviewer and one active Tax Publisher with MFA enrolled, held by two
+different people. `readiness.ready` reports the account part of this.
+Confirming that they are different people is an organizational control.
+If a factor is lost, `PUT /api/super-admin/users/{id}/mfa/reset` by a
+platform administrator resets it, and the user enrols again.
+
+## Evidence storage
+
+- **Write-once.** `tax_source_artifacts` rows can never be updated or
+  deleted: the trigger `trg_tax_source_artifacts_guard` blocks it, as does
+  the ORM guard. A source revision's evidence fields can be set exactly once,
+  enforced by `trg_tax_legal_source_revisions_guard` and the ORM guard.
+  CI's Postgres tests verify both.
+- **Excluded from tenant exports and purges.** The only tenant export,
+  `CustomerService.export_customers`, covers customers only. The erasure
+  purge (`OrganizationPurgeService`) finds tenant rows from
+  `organization_id` and follows foreign keys. Registry tables have no
+  `organization_id`, and their user foreign keys point only at super-admin
+  accounts. `test_tenant_purge_never_touches_registry_evidence` purges a
+  tenant against a populated registry and confirms every registry table is
+  unchanged.
+- **Backlog: move artifacts to object storage.** Use a bucket with object
+  lock / WORM retention, server-side encryption, a retention policy per
+  source licence, and access logging. Keep `sha256` as the key, and switch
+  `artifact_storage_uri` from `db://` to the bucket URI. Migrate existing
+  rows by copying them and verifying the hash. The table's `content`
+  column can only be dropped by a migration that first disables the
+  write-once trigger under change control. The 25 MB cap stays until then.
 
 ## Compatibility
 
@@ -255,7 +363,7 @@ unset). The local failures are environmental or flaky, not regressions:
   Phase 0 tree with the same ordered subset (`tests/privacy/*` then
   `test_aggregate_cache.py`), and the tests pass in isolation and in CI.
 
-New: `backend/tests/test_tax_phase1_registry.py` (47 tests, SQLite) and
+New: `backend/tests/test_tax_phase1_registry.py` (50 tests, SQLite) and
 `backend/tests/test_tax_phase1_registry_pg.py` (21 tests, Postgres-only).
 
 ## Findings
@@ -281,15 +389,21 @@ New: `backend/tests/test_tax_phase1_registry.py` (47 tests, SQLite) and
 5. **Jurisdiction timezones** were set only for single-zone jurisdictions
    and should be confirmed by a reviewer. They decide the legal calendar
    for `as_of` (T03/T17).
-6. **Local baseline differs from TAX_PHASE0.md.** On this machine the four
-   "pre-existing" failures pass, and they also passed in CI.
-   `test_stripe_plane2_phase_gaps::test_pinned_version_matches_installed_sdk_default`
-   fails locally only, because the installed `stripe` 15.5.0 bundles API
-   `2026-07-29.dahlia` against the pinned `2026-08-26.dahlia`. This is an
-   environment difference, unrelated to tax.
-7. **Flaky dashboard cache tests (pre-existing).** `test_aggregate_cache.py`
-   can fail after `tests/privacy/*` on a slower machine. This reproduces on
-   Phase 0 code, and CI is unaffected. Not changed here.
+6. **Local baseline differs from TAX_PHASE0.md (resolved).** On this
+   machine the four "pre-existing" failures pass, and they also pass in CI.
+   The Stripe API-pin test failed only because the global Python had
+   `stripe` 15.5.0. A fresh venv (`backend/.venv`, gitignored) built from
+   `requirements.txt` with `--no-cache-dir` resolves 15.6.2, the same as CI,
+   and the test passes. A plain install picked 15.5.0 from pip's stale
+   cached index.
+7. **Order-dependent dashboard cache tests (pre-existing, not fixed).**
+   `test_aggregate_cache.py` (`test_rollback_keeps_cache_commit_invalidates`,
+   `test_status_change_and_bulk_delete_invalidate`,
+   `test_explicit_invalidate_helper`) can fail when run after
+   `tests/privacy/*` on a slower machine. It reproduces with the same ordered
+   subset on Phase 0 code, and the tests pass in isolation and in CI. Cause
+   not investigated; it looks like cache state or timing leaking across
+   tests.
 
 The four Phase 0 findings (email-send kill switch, dead `resolve_tax`
 branch, discounts after tax, `TaxPricing`/`TaxGroup` duplication) are still

@@ -32,6 +32,7 @@ from app.modules.tax.registry_schemas import (
     AmendRateRequest,
     PublishedRateResponse,
     RateLookupResponse,
+    RegistryReadinessResponse,
     RegisterSourceRevisionRequest,
     RegistryJurisdictionListResponse,
     RejectRateRequest,
@@ -115,6 +116,39 @@ def get_source_revision(
     _user=Depends(require_capability("tax_registry.read")),
 ):
     return privileged_source_view(RegistryReadService(db).get_source_revision(revision_id))
+
+
+# ── Readiness ───────────────────────────────────────────────────────────
+
+@admin_router.get("/readiness", response_model=RegistryReadinessResponse,
+                  summary="Are enough distinct, MFA-enrolled people in place to publish?")
+def registry_readiness(
+    db: Session = Depends(get_db),
+    _user=Depends(require_capability("tax_registry.read")),
+):
+    """/auth/mfa/status reports enabled=True while platform step-up is retired,
+    so it cannot show whether a TAX_PUBLISHER can pass the registry's
+    always-on step-up. This reports actual enrolment."""
+    from app.modules.auth.models import PlatformRole, User, UserRole
+    from app.modules.auth.mfa_service import is_mfa_enabled
+
+    def _active(role):
+        return db.query(User).filter(
+            User.role == UserRole.SUPER_ADMIN, User.platform_role == role, User.is_active.is_(True),
+        ).all()
+
+    reviewers = _active(PlatformRole.TAX_REVIEWER)
+    publishers = _active(PlatformRole.TAX_PUBLISHER)
+    publishers_mfa = sum(1 for u in publishers if is_mfa_enabled(db, u.id))
+    step_up = bool(settings.TAX_REGISTRY_STEP_UP_REQUIRED)
+    return {
+        "step_up_required": step_up,
+        "active_reviewers": len(reviewers),
+        "active_publishers": len(publishers),
+        "publishers_with_mfa": publishers_mfa,
+        "reviewers_with_mfa": sum(1 for u in reviewers if is_mfa_enabled(db, u.id)),
+        "ready": bool(reviewers) and (publishers_mfa > 0 if step_up else bool(publishers)),
+    }
 
 
 # ── Sources ─────────────────────────────────────────────────────────────
