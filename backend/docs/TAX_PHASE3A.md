@@ -275,7 +275,7 @@ the above, and keeps the Phase 2 `tax_tenant_record_guard` function.
 
 | Suite | Before (Phase 2) | After |
 |---|---|---|
-| Backend local (venv, SQLite) | 1772 passed, 0 failed, 33 skipped | _pending_ |
+| Backend local (venv, SQLite) | 1772 passed, 0 failed, 33 skipped | 1854 passed, 2 failed*, 39 skipped |
 | Backend CI (postgres:16) | passed | _pending_ |
 
 **New tests:**
@@ -289,6 +289,13 @@ the above, and keeps the Phase 2 `tax_tenant_record_guard` function.
 - `tests/test_tax_phase3a_pg.py` (6, Postgres only).
 
 The Phase 2 route walk now also covers the new tenant routes.
+
+\* The 2 failures are `test_aggregate_cache.py`
+(`test_status_change_and_bulk_delete_invalidate`,
+`test_explicit_invalidate_helper`). This is the pre-existing order-dependent
+cache test (Phase 1 finding 7): the file passes 22/22 run alone on this tree.
+The 39 skips are the Postgres-only modules (`TAX_PG_TEST_URL` unset), which
+run in CI.
 
 ## Findings
 
