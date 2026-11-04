@@ -22,3 +22,15 @@ export const TAX_REPORT_TABS = ["overview", "collection", "jurisdiction", "filin
 // honours the setting.
 export const TAX_ROUNDING_NOT_APPLIED_NOTICE =
   "Not applied yet: the selected method is saved but doesn't change calculations. Today each line's tax is rounded on its own, while the invoice total rounds the combined tax once, so line amounts can differ from the total by a cent.";
+
+// Format a tax rate percentage for display without losing legal precision
+// (ZB-TAX-ARCH-001 §07). Rates are stored at up to 6 decimal places, so a
+// fixed toFixed(2) would show New York City's 8.875% as "8.88". Shows at least
+// 2 decimals and at most 6, trimming trailing zeros beyond the second.
+export function formatTaxRate(value) {
+  const n = Number.parseFloat(value);
+  if (!Number.isFinite(n)) return "0.00";
+  const fixed = n.toFixed(6).replace(/0+$/, "");
+  const [whole, frac = ""] = fixed.split(".");
+  return `${whole}.${frac.padEnd(2, "0")}`;
+}

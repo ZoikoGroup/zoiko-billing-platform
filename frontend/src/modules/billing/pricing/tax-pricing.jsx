@@ -129,7 +129,7 @@ function TaxFormModal({ show, onClose, onSave, editItem, saving }) {
               {TAX_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </div>
-          <div><label htmlFor="tp-rate" className="block text-xs font-medium text-slate-500 mb-1">Rate (%) *</label><input id="tp-rate" type="number" step="0.01" min="0" max="100" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.rate} onChange={e => set("rate", e.target.value)} /></div>
+          <div><label htmlFor="tp-rate" className="block text-xs font-medium text-slate-500 mb-1">Rate (%) *</label><input id="tp-rate" type="number" step="0.000001" min="0" max="100" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.rate} onChange={e => set("rate", e.target.value)} /></div>
           <div><label htmlFor="tp-pricing-type" className="block text-xs font-medium text-slate-500 mb-1">Pricing Type</label>
             <select id="tp-pricing-type" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.pricing_type} onChange={e => set("pricing_type", e.target.value)}>
               {PRICING_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}

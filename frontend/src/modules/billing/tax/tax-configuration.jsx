@@ -4,6 +4,7 @@ import { SettingsPageShell, SettingsSaveBar, useUnsavedChangesGuard } from "../.
 import { taxApi, settingsApi } from "../../../service/billingService";
 import { extractArray } from "../../../utils/billing-helpers";
 import { ErrorState } from "../../../components/billing-shared";
+import { formatTaxRate } from "./tax-helpers";
 
 const TAX_RULE_OPTIONS = [
   { value: "standard", label: "Standard Rate" },
@@ -266,7 +267,7 @@ export default function TaxConfigurationPage() {
               className="px-4 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
               <option value="">No specific rate</option>
               {taxRates.filter((r) => r.is_active !== false).map((r) => (
-                <option key={r.id} value={r.id}>{r.name} ({parseFloat(r.rate || 0).toFixed(2)}%)</option>
+                <option key={r.id} value={r.id}>{r.name} ({formatTaxRate(r.rate)}%)</option>
               ))}
             </select>
             <button onClick={addExemption} disabled={!newExemption.name}

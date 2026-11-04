@@ -223,6 +223,7 @@ from app.modules.super_admin.router import router as super_admin_router
 from app.modules.chatbot.router import router as chatbot_router
 from app.modules.chatbot.public_router import router as public_assistant_router
 from app.modules.billing.router import billing_router
+from app.modules.tax.router import router as tax_domain_router
 from app.modules.billing.routers.quote_router import public_quote_router
 from app.modules.billing.routers.invoice_router import public_invoice_router
 from app.modules.billing.routers.webhook_router import router as stripe_webhook_router
@@ -252,6 +253,8 @@ app.include_router(public_assistant_router, prefix="/api")
 # Billing is mounted at /billing (root), exactly like the ZoikoOne main
 # platform — the billing frontend (modules/billing) calls /billing/* paths.
 app.include_router(billing_router)
+# ZB-TAX-ARCH-001 tax domain (legal entities now; registry/quotes in later phases).
+app.include_router(tax_domain_router)
 # Public estimate links live OUTSIDE billing_router (which is gated by
 # require_active_subscription) — the HMAC-signed token is the authentication.
 app.include_router(public_quote_router, prefix="/billing")

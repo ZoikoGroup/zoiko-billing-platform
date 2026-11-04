@@ -50,6 +50,7 @@ from app.modules.billing.services.customer_service import CustomerService
 from app.modules.billing.services.settings_service import BillingConfigurationService
 from app.modules.billing.services.exchange_rate_service import ExchangeRateService
 from app.modules.billing.services.tax_service import TaxService
+from app.modules.tax.legal_entity_service import LegalEntityService
 from app.modules.billing.utils.currency_utils import round_money, convert_amount
 
 logger = logging.getLogger("zoiko_billing")
@@ -68,6 +69,8 @@ INVOICE_ALLOWED_FIELDS = {
     "due_date", "discount_percentage", "shipping_amount", "round_off",
     "currency", "exchange_rate", "notes", "payment_terms", "po_number",
     "subscription_id", "quotation_id", "contract_id", "is_recurring",
+    # ZB-TAX-ARCH-001 Phase 0: issuing seller entity + legal tax point date.
+    "seller_entity_id", "tax_date",
 }
 # "status" is intentionally NOT an allowed field — invoice status may only
 # change through the validated transition machine (finalize/mark_sent/cancel/
@@ -112,6 +115,23 @@ class InvoiceService:
 
     def _record_status_history(self, organization_id: int, invoice_id: int, from_status: Optional[str], to_status: str, changed_by: Optional[int] = None, reason: Optional[str] = None) -> InvoiceStatusHistory:
         return self.history_repo.log_status_change(organization_id, invoice_id, from_status, to_status, changed_by, reason)
+
+    def _stamp_issue_tax_context(self, inv: Invoice, organization_id: int) -> None:
+        """Fix the tax context an invoice is issued under, at the moment it
+        leaves DRAFT (ZB-TAX-ARCH-001 Phase 0).
+
+        * seller_entity_id: backstop for invoices created by paths that don't
+          go through create_invoice (recurring billing, assistant actions,
+          pre-Phase-0 drafts) — they are issued by the org default entity.
+        * tax_date: under the LEGACY_MANUAL regime the tax point defaults to
+          the issue date, which is exactly what the pre-framework code
+          implicitly assumed. The GOVERNED regime (Phase 3) will instead
+          require an explicitly determined tax point and fail closed.
+        """
+        if inv.seller_entity_id is None:
+            inv.seller_entity_id = LegalEntityService(self.db).ensure_default_entity(organization_id).id
+        if inv.tax_date is None:
+            inv.tax_date = inv.issue_date
 
     def _record_invoice_tax_snapshots(self, invoice_id: int, organization_id: int, created_by: int) -> None:
         """Persist tax snapshot rows for a finalized invoice.
@@ -375,6 +395,13 @@ class InvoiceService:
 
         customer = self.customer_service.get_customer(customer_id, organization_id)
 
+        # Every invoice is issued by a seller legal entity (ZB-TAX-ARCH-001
+        # §02). Resolved after the idempotency hash so the hash reflects only
+        # what the client actually sent.
+        data["seller_entity_id"] = LegalEntityService(self.db).resolve_issuing_entity(
+            organization_id, data.get("seller_entity_id"),
+        ).id
+
         # Use customer's currency if not explicitly provided, else org default
         if "currency" not in data or not data["currency"]:
             data["currency"] = customer.currency or self.config_service.get_default_currency(organization_id)
@@ -498,6 +525,10 @@ class InvoiceService:
         inv = self.repo.get_by_id(invoice_id, organization_id)
         if inv.status != InvoiceStatus.DRAFT:
             raise BadRequestException("Only draft invoices can be edited")
+        if "seller_entity_id" in data:
+            data["seller_entity_id"] = LegalEntityService(self.db).resolve_issuing_entity(
+                organization_id, data["seller_entity_id"],
+            ).id
         updated = self.repo.update(invoice_id, organization_id, **data)
         # Recalculate after discount_percentage change
         try:
@@ -816,6 +847,7 @@ class InvoiceService:
         self._validate_status_transition(inv.status, InvoiceStatus.SENT)
         old_status = inv.status.value
         self.recalculate_invoice(invoice_id, organization_id)
+        self._stamp_issue_tax_context(inv, organization_id)
         inv.status = InvoiceStatus.SENT
         inv.sent_at = datetime.utcnow()
         self._record_status_history(organization_id, invoice_id, old_status, InvoiceStatus.SENT, updated_by)
@@ -873,6 +905,8 @@ class InvoiceService:
         if inv.status == InvoiceStatus.DRAFT:
             self.recalculate_invoice(invoice_id, organization_id)
             inv = self.repo.get_by_id(invoice_id, organization_id)
+            # Rolled back together with the status change if delivery fails.
+            self._stamp_issue_tax_context(inv, organization_id)
 
         old_status = inv.status.value
 

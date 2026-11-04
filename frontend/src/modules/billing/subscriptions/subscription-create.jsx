@@ -632,7 +632,7 @@ export default function CreateSubscriptionWizardPage({ onClose, onCreated }) {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Tax %</label>
-                    <input type="number" min="0" max="100" step="0.01" value={wizardData.tax_percentage}
+                    <input type="number" min="0" max="100" step="0.000001" value={wizardData.tax_percentage}
                       onChange={(e) => setWizardData((p) => ({ ...p, tax_percentage: parseFloat(e.target.value) || 0 }))}
                       className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30" />
                   </div>
