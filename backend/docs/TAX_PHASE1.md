@@ -404,6 +404,15 @@ New: `backend/tests/test_tax_phase1_registry.py` (50 tests, SQLite) and
    subset on Phase 0 code, and the tests pass in isolation and in CI. Cause
    not investigated; it looks like cache state or timing leaking across
    tests.
+8. **`GET /api/auth/mfa/status` misreports enrolment (pre-existing; for the
+   security owner).** While platform step-up is retired
+   (`MFA_STEP_UP_ENABLED=false`), it returns `enabled: true, bypassed: true`
+   for every super admin, whether or not they have enrolled
+   (`auth/router.py`, `mfa_status`). Any UI or runbook that reads `enabled`
+   as "this account has a factor" is misled. Not changed in the tax work:
+   the registry uses `GET …/tax-registry/readiness`, which reports actual
+   enrolment. Suggested fix, owned by Security: return the real `enrolled`
+   flag separately from `step_up_required` / `bypassed`.
 
 The four Phase 0 findings (email-send kill switch, dead `resolve_tax`
 branch, discounts after tax, `TaxPricing`/`TaxGroup` duplication) are still
