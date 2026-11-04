@@ -231,14 +231,29 @@ missing URL into an error. Those 21 tests cover:
 Elsewhere (SQLite, local) they skip with the reason
 `TAX_PG_TEST_URL is not set`.
 
-**CI result:** _see below_.
+**CI result:** run 41774147615 on commit 89670fe passed the postgres:16
+service steps: `alembic upgrade head`, the downgrade → upgrade round trip,
+and all 21 PG-only tests. Phase 0 (run 41769879247 on 5198104) had already
+applied `a7c4e1b9d3f0` on the same service.
 
 ## Test evidence
 
 | Suite | Before | After |
 |---|---|---|
-| Backend local (`pytest tests/ --ignore=tests/ai_assistant`, SQLite) | _pending_ | _pending_ |
-| Backend CI (postgres:16 service) | _pending_ | _pending_ |
+| Backend local (`pytest tests/ --ignore=tests/ai_assistant`, SQLite, Windows) | 1667 passed, 1 failed | 1709 passed, 4 failed, 21 skipped* |
+| Backend CI release gate (`postgres:16` service) | passed, 0 failures (run 41769879247) | passed, 0 failures (run 41774147615) |
+| CI tax registry PG step (round trip + 21 PG-only tests) | — | passed |
+| Frontend CI (vitest + build) | passed | passed |
+
+\* The local full run predates two late tests, so it counts 45 of the 47
+new SQLite tests. The 21 skips are the PG-only module (`TAX_PG_TEST_URL`
+unset). The local failures are environmental or flaky, not regressions:
+- `test_stripe_plane2_phase_gaps::test_pinned_version_matches_installed_sdk_default`
+  fails on both trees (local stripe SDK version; see finding 6).
+- Three tests in `test_aggregate_cache.py` (dashboard cache invalidation)
+  fail depending on run order and timing. The same failure reproduces on the
+  Phase 0 tree with the same ordered subset (`tests/privacy/*` then
+  `test_aggregate_cache.py`), and the tests pass in isolation and in CI.
 
 New: `backend/tests/test_tax_phase1_registry.py` (47 tests, SQLite) and
 `backend/tests/test_tax_phase1_registry_pg.py` (21 tests, Postgres-only).
@@ -272,6 +287,9 @@ New: `backend/tests/test_tax_phase1_registry.py` (47 tests, SQLite) and
    fails locally only, because the installed `stripe` 15.5.0 bundles API
    `2026-07-29.dahlia` against the pinned `2026-08-26.dahlia`. This is an
    environment difference, unrelated to tax.
+7. **Flaky dashboard cache tests (pre-existing).** `test_aggregate_cache.py`
+   can fail after `tests/privacy/*` on a slower machine. This reproduces on
+   Phase 0 code, and CI is unaffected. Not changed here.
 
 The four Phase 0 findings (email-send kill switch, dead `resolve_tax`
 branch, discounts after tax, `TaxPricing`/`TaxGroup` duplication) are still
