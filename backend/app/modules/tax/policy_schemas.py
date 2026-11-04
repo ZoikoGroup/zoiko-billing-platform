@@ -75,6 +75,25 @@ class PolicyActionRequest(_Strict):
 
 # ── Tenant: registrations, legal bases, activations ─────────────────────
 
+class GoldenTestReport(_Strict):
+    suite: str = Field(..., min_length=1, max_length=255)
+    commit: str = Field(..., min_length=7, max_length=64)
+    passed: int = Field(..., ge=0)
+    failed: int = Field(..., ge=0)
+    ci_run_url: Optional[str] = Field(None, max_length=1000)
+    notes: Optional[str] = Field(None, max_length=4000)
+
+
+class RulePackRegisterRequest(_Strict):
+    code: str = Field(..., min_length=1, max_length=60)
+    notes: Optional[str] = Field(None, max_length=4000)
+
+
+class RulePackAmendRequest(_Strict):
+    golden_test_report: Optional[GoldenTestReport] = None
+    notes: Optional[str] = Field(None, max_length=4000)
+
+
 class RegistrationCreate(_Strict):
     seller_entity_id: int
     jurisdiction_id: int

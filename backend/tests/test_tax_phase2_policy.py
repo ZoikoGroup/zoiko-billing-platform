@@ -274,15 +274,18 @@ def test_t12_no_activation_through_settings_toggle_currency_or_country(w):
     assert entity.tax_regime == EntityTaxRegime.LEGACY_MANUAL
 
 
-def test_governed_regime_is_refused_in_phase_2_even_when_eligible(w):
+def test_governed_regime_needs_an_activation_backed_by_a_published_pack(w):
+    # Phase 3b: an approved, effective native-pack activation is not enough
+    # while no published rule pack covers the market (drafts never qualify).
     svc = TenantTaxService(w["db"])
     report = svc.regime_eligibility(w["org"].id, w["entity"].id, TAX_DATE)
     assert report["would_qualify"] is False and report["unmet_conditions"]
     publish_availability(w)
     approve(w, propose(w))
     report = svc.regime_eligibility(w["org"].id, w["entity"].id, TAX_DATE)
-    assert report["would_qualify"] is True and report["governed_available"] is False
-    with pytest.raises(BadRequestException, match="Phase 3"):
+    assert report["would_qualify"] is False and report["governed_available"] is True
+    assert any("backed by a published rule pack" in u for u in report["unmet_conditions"])
+    with pytest.raises(BadRequestException, match="does not qualify"):
         svc.request_regime(w["org"].id, w["proposer"].id, w["entity"].id, EntityTaxRegime.GOVERNED)
     assert w["entity"].tax_regime == EntityTaxRegime.LEGACY_MANUAL
 

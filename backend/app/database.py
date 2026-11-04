@@ -478,6 +478,16 @@ CRITICAL_COLUMNS: list[tuple[str, str, str, str]] = [
         "alembic/versions/d7a3f9c2e8b6_tax_phase3a_governed_quotes.py",
         "ZB-TAX-ARCH-001 Phase 3a: the governed issuance gate links the committed tax quote",
     ),
+    (
+        "tax_quotes", "rounding_mode",
+        "alembic/versions/e4b8c1d6f2a9_tax_phase3b_rounding_and_packs.py",
+        "ZB-TAX-ARCH-001 Phase 3b: every governed quote records its engine-declared rounding mode",
+    ),
+    (
+        "tax_rule_pack_versions", "rounding_mode",
+        "alembic/versions/e4b8c1d6f2a9_tax_phase3b_rounding_and_packs.py",
+        "ZB-TAX-ARCH-001 Phase 3b: the rule-pack registry records each pack's declarations",
+    ),
 ]
 
 

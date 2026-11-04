@@ -338,20 +338,23 @@ class TaxDeterminationService:
         engine = next(iter(engines.values()), None)
 
         # Only issues on facts the engine requires block the quote (plan change C).
+        # Buyer status matters only to an engine that applies: with no engine,
+        # the routing problem (e.g. an expired registration) is the reason.
         required = set(engine.required_facts if engine else ROUTING_FACTS)
-        if engine is not None and engine.unresolved_buyer_as_consumer:
-            required.discard("BUYER_STATUS_UNRESOLVED")
-        else:
+        if engine is not None and not engine.unresolved_buyer_as_consumer:
             required.add("BUYER_STATUS_UNRESOLVED")
+        else:
+            required.discard("BUYER_STATUS_UNRESOLVED")
         blocking = [i for i in issues if i["code"] in required and i["code"] not in ACTIVATION_FACTS]
         warnings = [i for i in issues if i not in blocking]
         if blocking:
             raise _Refusal(TaxQuoteStatus.NEEDS_EVIDENCE, "REQUIRED_FACTS_MISSING",
                            "Required tax facts are missing, expired or ambiguous.", issues=blocking, warnings=warnings)
         if engine is None or routing_problems:
+            activation_issues = [i for i in warnings if i["code"] in ACTIVATION_FACTS]
             raise _Refusal(TaxQuoteStatus.NEEDS_EVIDENCE, "NOT_DETERMINED",
                            "Tax could not be determined: " + "; ".join(routing_problems or ["no engine applies"]),
-                           warnings=warnings)
+                           issues=activation_issues, warnings=[i for i in warnings if i not in activation_issues])
 
         # Buyers without business evidence get consumer treatment only where
         # the engine's rules say so; the line class is re-derived for them.

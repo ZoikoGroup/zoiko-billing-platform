@@ -51,9 +51,9 @@ from app.modules.tax.policy_service import current_availability
 from app.modules.tax.registry_models import TaxJurisdiction, TaxTypeDefinition
 
 TENANT_CONFIG_LABEL = "tenant-configured, not verified by Zoiko"
-GOVERNED_NOT_AVAILABLE = (
-    "The governed tax regime arrives in Phase 3 of ZB-TAX-ARCH-001 and cannot be enabled yet. "
-    "GET /api/v1/tax/legal-entities/{id}/regime-eligibility shows whether this entity would qualify."
+GOVERNED_NOT_QUALIFIED = (
+    "This entity does not qualify for the governed tax regime yet: {reasons}. "
+    "GET /api/v1/tax/legal-entities/{id}/regime-eligibility shows the details."
 )
 
 
@@ -397,7 +397,19 @@ class TenantTaxService:
             "availability_mode": availability.mode.name if availability else None,
         }
 
-    # ── GOVERNED regime (still refused in Phase 2) ──
+    # ── GOVERNED regime (Phase 3b) ──
+    def governed_backing_problem(self, activation: EntityTaxActivation) -> Optional[str]:
+        """Why an activation cannot back GOVERNED, or None when it can: a
+        native pack whose registry row is published (drafts never qualify),
+        an approved positive tenant-configured rate, or a configured provider."""
+        from app.modules.tax.engines import EngineResolver
+
+        if activation.mode == TaxOperatingMode.TENANT_CONFIG_APPROVED:
+            rate = activation.tenant_rate_percent
+            return None if rate is not None and Decimal(rate) > 0 else "its tenant-configured rate is not positive"
+        engine, reason = EngineResolver(self.db).engine_for(activation)
+        return None if engine is not None else (reason or "no engine applies").rstrip(".")
+
     def regime_eligibility(self, organization_id: int, entity_id: int, on_date: Optional[date] = None) -> dict:
         entity = self._entity(entity_id, organization_id)
         day = on_date or _now().date()
@@ -406,14 +418,21 @@ class TenantTaxService:
             EntityTaxActivation.seller_entity_id == entity.id,
             EntityTaxActivation.status == TenantApprovalStatus.APPROVED,
         ).all()
+        by_id = {a.id: a for a in activations}
         states = [self.effective_state(a, day) for a in activations if a.mode in CALCULATING_MODES]
         effective = [s for s in states if s["effective"]]
+        problems = {s["activation_id"]: self.governed_backing_problem(by_id[s["activation_id"]]) for s in effective}
+        backed = [i for i, p in problems.items() if p is None]
         unmet = []
         if not activations:
             unmet.append("no approved tax activation for this entity")
         elif not effective:
             unmet.append("no approved activation in a calculating mode is in effect")
             unmet += [f"activation {s['activation_id']}: {r}" for s in states for r in s["reasons"]]
+        elif not backed:
+            unmet.append("no effective activation is backed by a published rule pack, an approved tenant "
+                         "configuration or a configured provider")
+            unmet += [f"activation {i}: {p}" for i, p in problems.items() if p]
         if not entity.is_active:
             unmet.append("the entity is inactive")
         return {
@@ -421,17 +440,36 @@ class TenantTaxService:
             "current_regime": entity.tax_regime.name,
             "evaluated_on": day,
             "would_qualify": not unmet,
-            "governed_available": False,
-            "governed_available_note": "GOVERNED arrives in Phase 3; it cannot be enabled yet.",
+            "governed_available": True,
             "unmet_conditions": unmet,
             "effective_activations": [s["activation_id"] for s in effective],
+            "backing_activations": backed,
         }
 
     def request_regime(self, organization_id: int, actor_id: int, entity_id: int, regime: EntityTaxRegime) -> dict:
+        """GOVERNED is accepted only through here and only when the entity has
+        at least one ACTIVE (effective, approved) activation backed by a
+        published pack or approved tenant configuration (T12): never by a
+        settings toggle, a currency or a plan."""
         eligibility = self.regime_eligibility(organization_id, entity_id)
-        if regime == EntityTaxRegime.GOVERNED:
-            raise BadRequestException(GOVERNED_NOT_AVAILABLE.replace("{id}", str(entity_id)))
-        return eligibility
+        if regime != EntityTaxRegime.GOVERNED:
+            return eligibility
+        entity = self._entity(entity_id, organization_id)
+        if entity.tax_regime == EntityTaxRegime.GOVERNED:
+            return eligibility
+        if not eligibility["would_qualify"]:
+            raise BadRequestException(GOVERNED_NOT_QUALIFIED.replace("{id}", str(entity_id))
+                                      .replace("{reasons}", "; ".join(eligibility["unmet_conditions"])))
+        old = entity.tax_regime
+        entity.tax_regime = EntityTaxRegime.GOVERNED
+        entity.version = (entity.version or 1) + 1
+        entity.updated_by = actor_id
+        self._log(organization_id, actor_id, BillingAuditAction.UPDATE, "SellerLegalEntity", entity.id,
+                  old_values={"tax_regime": old.name},
+                  new_values={"tax_regime": EntityTaxRegime.GOVERNED.name,
+                              "backing_activations": eligibility["backing_activations"]})
+        self.db.commit()
+        return self.regime_eligibility(organization_id, entity_id)
 
 
 def view_registration(row: EntityTaxRegistration) -> dict:

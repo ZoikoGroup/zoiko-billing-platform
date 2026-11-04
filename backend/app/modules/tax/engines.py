@@ -13,9 +13,10 @@ Engine kinds:
   * TenantConfigEngine — the tenant's own approved rate (TENANT_CONFIG_APPROVED),
     always labelled "tenant-configured, not verified by Zoiko".
   * RulePackEngine     — a native rule pack: code registered in RULE_PACKS AND an
-    ACTIVE tax_rule_pack_versions row. RULE_PACKS is empty in Phase 3a; real
-    packs arrive in 3b. Test-only packs live under tests/ and are injected
-    through the resolver — never registered here.
+    ACTIVE tax_rule_pack_versions row. Phase 3b registers the UK and Australia
+    packs (app.modules.tax.rule_packs); they stay unusable until published.
+    Test-only packs live under tests/ and are injected through the resolver —
+    never registered here.
   * ProviderEngine     — wraps a ProviderAdapter (PROVIDER_APPROVED). PROVIDERS is
     empty in Phase 3a; tests inject a fake adapter.
 
@@ -201,8 +202,16 @@ class RulePackEngine(TaxEngine):
         return self.pack.determine(request)
 
 
-#: code -> RulePack class. Empty in Phase 3a by design (packs arrive in 3b).
+#: code -> RulePack class, filled by app.modules.tax.rule_packs (native packs
+#: only; see registered_rule_packs()).
 RULE_PACKS: dict = {}
+
+
+def registered_rule_packs() -> dict:
+    """RULE_PACKS with the native packs loaded."""
+    import app.modules.tax.rule_packs  # noqa: F401  (registers the packs)
+
+    return RULE_PACKS
 
 
 # ── Providers (interface + seam; no real provider in 3a) ─────────────────
@@ -283,8 +292,12 @@ class EngineResolver:
         jurisdiction = activation.jurisdiction.code if activation.jurisdiction else None
         tax_type = activation.tax_type.code if activation.tax_type else None
         for row in self.db.query(TaxRulePackVersion).filter(TaxRulePackVersion.status == PlatformVersionStatus.ACTIVE):
-            pack_cls = RULE_PACKS.get(row.code)
+            pack_cls = registered_rule_packs().get(row.code)
             if pack_cls is None or getattr(pack_cls, "version", None) != row.version:
+                continue
+            # The published declaration must still match the code (no drift).
+            declared_mode = pack_cls.rounding_mode.name if pack_cls.rounding_mode else None
+            if (row.rounding_rule, row.rounding_mode) != (pack_cls.rounding_rule.name, declared_mode):
                 continue
             if any(m.get("jurisdiction_code") == jurisdiction and m.get("tax_type") == tax_type for m in row.markets or []):
                 return pack_cls()

@@ -508,6 +508,23 @@ def get_tax_quote(quote_id: int, db: Session = Depends(get_db), organization_id:
     return view_quote(quote)
 
 
+@router.get("/invoices/{invoice_id}/tax-summary",
+            summary="Governed tax for the invoice editor: totals, components, sources, freshness, blocking reasons")
+def invoice_tax_summary(invoice_id: int, db: Session = Depends(get_db),
+                        organization_id: int = Depends(get_organization_id)):
+    from app.modules.tax.exception_service import TaxExceptionService
+
+    return TaxExceptionService(db).invoice_tax_summary(organization_id, invoice_id)
+
+
+@router.get("/exceptions", summary="Governed drafts that cannot be issued, with reason, owner and re-quote")
+def list_tax_exceptions(limit: int = Query(200, ge=1, le=500), db: Session = Depends(get_db),
+                        organization_id: int = Depends(get_organization_id)):
+    from app.modules.tax.exception_service import TaxExceptionService
+
+    return TaxExceptionService(db).list_exceptions(organization_id, limit=limit)
+
+
 @router.post("/invoices/{invoice_id}/credit-notes", status_code=status.HTTP_201_CREATED,
              summary="Credit a governed invoice from its tax snapshot", dependencies=[Depends(get_current_billing_admin)])
 def create_governed_credit_note(
