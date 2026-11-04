@@ -10,6 +10,7 @@ import { formatDisplayDate, formatDisplayCurrency, extractArray } from "../../..
 import { PageSkeleton, ErrorState, StatusBadge as SharedStatusBadge, Pagination } from "../../../components/billing-shared";
 import { useCurrency } from "../utils/CurrencyContext";
 import { useTerminology } from "../utils/TerminologyContext";
+import { useAuth } from "../../../context/AuthContext";
 import useLatestRequest from "../utils/useLatestRequest";
 import { PageHeader, Button, DataTable, SearchInput, Select, Modal } from "../../../components/billing-ui";
 
@@ -43,8 +44,17 @@ const TYPE_OPTIONS = [
 
 const inputClass = "block w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder:text-slate-500 transition-colors focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand/30";
 
+// Approval is restricted to Finance Approver (or Super Admin) by design --
+// maker-checker separation of duties, enforced by the backend's
+// get_current_finance_approver dependency (same roles as refund approval).
+// This only decides between the button and an explanation; it is never the
+// authorization decision itself.
+const CAN_APPROVE_CREDIT_NOTE_ROLES = ["finance_approver", "super_admin"];
+
 export default function CreditNotesPage() {
   const { singular, plural, getLabel } = useTerminology();
+  const { role } = useAuth();
+  const canApprove = CAN_APPROVE_CREDIT_NOTE_ROLES.includes(role);
   const navigate = useNavigate();
   const { baseCurrency } = useCurrency();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -333,10 +343,12 @@ export default function CreditNotesPage() {
             className={`${actionBtn} hover:text-blue-600`} title="Edit" aria-label="Edit credit note">
             <Edit size={15} />
           </button>
-          <button type="button" onClick={(e) => { e.stopPropagation(); handleAction("approve", () => creditNoteApi.approve(cn.id)); }} disabled={actionLoading === "approve"}
-            className={`${actionBtn} hover:text-brand-600`} title="Approve" aria-label="Approve credit note">
-            <CheckCircle size={15} />
-          </button>
+          {canApprove && (
+            <button type="button" onClick={(e) => { e.stopPropagation(); handleAction("approve", () => creditNoteApi.approve(cn.id)); }} disabled={actionLoading === "approve"}
+              className={`${actionBtn} hover:text-brand-600`} title="Approve" aria-label="Approve credit note">
+              <CheckCircle size={15} />
+            </button>
+          )}
         </>
       )}
       {cn.status === "approved" && (

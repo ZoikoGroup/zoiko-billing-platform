@@ -795,6 +795,14 @@ class InvoiceService:
 
     # ── Status Transitions ─────────────────────────────────────────────────
 
+    def _require_line_items(self, invoice_id: int, organization_id: int) -> None:
+        """An invoice with no line items has nothing to bill: finalizing or
+        emailing one issued a numbered invoice for just its shipping amount
+        (or for 0.00). A fully-discounted invoice with real lines is still
+        allowed -- only the empty case is rejected."""
+        if not self.item_repo.list_by_invoice(organization_id, invoice_id):
+            raise BadRequestException("Add at least one line item before issuing this invoice.")
+
     def finalize_invoice(self, invoice_id: int, organization_id: int, updated_by: int) -> Invoice:
         # ZB-SA-CMD-003 §18 — real, server-enforced circuit breaker (not a
         # UI-only switch): a Super Admin can pause new invoice finalization
@@ -814,6 +822,7 @@ class InvoiceService:
 
         inv = self.repo.get_by_id(invoice_id, organization_id)
         self._validate_status_transition(inv.status, InvoiceStatus.SENT)
+        self._require_line_items(invoice_id, organization_id)
         old_status = inv.status.value
         self.recalculate_invoice(invoice_id, organization_id)
         inv.status = InvoiceStatus.SENT
@@ -870,6 +879,7 @@ class InvoiceService:
                 "Please update the customer profile before sending."
             )
 
+        self._require_line_items(invoice_id, organization_id)
         if inv.status == InvoiceStatus.DRAFT:
             self.recalculate_invoice(invoice_id, organization_id)
             inv = self.repo.get_by_id(invoice_id, organization_id)
@@ -1507,7 +1517,10 @@ class InvoiceService:
         inv.status = InvoiceStatus.CANCELLED
         inv.cancelled_at = datetime.utcnow()
         inv.cancellation_reason = reason or "Voided"
-        inv.is_active = False
+        # is_active is deliberately left alone: the invoice list filters on it,
+        # so clearing it made a voided (issued, numbered) invoice vanish from
+        # the list and the audit trail, unlike a cancelled one. CANCELLED
+        # status already keeps it out of balances and outstanding totals.
         inv.public_link_version = (getattr(inv, "public_link_version", 1) or 1) + 1
         safe_commit_and_refresh(self.db, inv)
         self._record_status_history(organization_id, invoice_id, old_status, InvoiceStatus.CANCELLED.value, updated_by, reason or "Voided")

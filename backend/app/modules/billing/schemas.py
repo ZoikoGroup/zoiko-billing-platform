@@ -118,6 +118,12 @@ class BillingSettingResponse(BaseModel):
 # BILLING CUSTOMERS
 # ═══════════════════════════════════════════════════════════════════════════════
 
+# The org-level PaymentTerm enum (settings default terms, and the invoice /
+# contract forms) includes net_7 and net_10; a hard-coded subset here meant a
+# customer could not be saved on terms the org itself offers.
+CUSTOMER_PAYMENT_TERMS = tuple(t.value for t in PaymentTerm)
+
+
 class CustomerCreate(BaseModel):
     # Optional: left blank, the server assigns the next number from Customer
     # Settings (prefix + format, DocumentSequence "customer").
@@ -237,9 +243,8 @@ class CustomerCreate(BaseModel):
     def validate_payment_terms(cls, v: Optional[str]) -> Optional[str]:
         if v is None or v.strip() == "":
             return "net_30"
-        valid_terms = {"due_on_receipt", "net_15", "net_30", "net_45", "net_60", "net_90"}
-        if v.strip() not in valid_terms:
-            raise ValueError(f"Invalid payment terms. Must be one of: {', '.join(valid_terms)}")
+        if v.strip() not in CUSTOMER_PAYMENT_TERMS:
+            raise ValueError(f"Invalid payment terms. Must be one of: {', '.join(CUSTOMER_PAYMENT_TERMS)}")
         return v.strip()
 
     @field_validator("customer_type", mode="before")
@@ -369,9 +374,8 @@ class CustomerUpdate(BaseModel):
     def validate_payment_terms(cls, v: Optional[str]) -> Optional[str]:
         if v is None or v.strip() == "":
             return None
-        valid_terms = {"due_on_receipt", "net_15", "net_30", "net_45", "net_60", "net_90"}
-        if v.strip() not in valid_terms:
-            raise ValueError(f"Invalid payment terms. Must be one of: {', '.join(valid_terms)}")
+        if v.strip() not in CUSTOMER_PAYMENT_TERMS:
+            raise ValueError(f"Invalid payment terms. Must be one of: {', '.join(CUSTOMER_PAYMENT_TERMS)}")
         return v.strip()
 
     @field_validator("customer_type", mode="before")
@@ -467,6 +471,11 @@ class CustomerContactCreate(BaseModel):
     is_primary: bool = False
     notes: Optional[str] = None
 
+    @field_validator("email", mode="before")
+    @classmethod
+    def validate_email(cls, v: Optional[str]) -> Optional[str]:
+        return validate_email_format(v)
+
 
 class CustomerContactUpdate(BaseModel):
     salutation: Optional[str] = None
@@ -480,6 +489,11 @@ class CustomerContactUpdate(BaseModel):
     is_primary: Optional[bool] = None
     is_active: Optional[bool] = None
     notes: Optional[str] = None
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def validate_email(cls, v: Optional[str]) -> Optional[str]:
+        return validate_email_format(v)
 
 
 class CustomerContactResponse(BaseModel):

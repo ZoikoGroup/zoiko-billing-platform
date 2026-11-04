@@ -573,9 +573,20 @@ class SubscriptionService:
         if sub.status not in (BillingSubscriptionStatus.ACTIVE, BillingSubscriptionStatus.EXPIRED):
             raise BadRequestException("Subscription cannot be renewed")
         plan = sub.plan
+        previous_next_billing = sub.next_billing_at
         sub.current_term_start = sub.current_term_end or date.today()
         sub.current_term_end = self._compute_next_billing_date(sub.current_term_start, plan.billing_period)
-        sub.next_billing_at = self.compute_next_billing(sub)
+        # Renewal opens a term without invoicing it, so that term is due when
+        # it starts (generate_invoice bills in advance). compute_next_billing()
+        # returned the END of the new term plus a period, so the renewed term
+        # and the one after it were never billed. An earlier, still-unbilled
+        # next_billing_at is kept so no period is skipped.
+        if self.compute_next_billing(sub) is None:
+            sub.next_billing_at = None
+        elif previous_next_billing and previous_next_billing < sub.current_term_start:
+            sub.next_billing_at = previous_next_billing
+        else:
+            sub.next_billing_at = sub.current_term_start
         sub.status = BillingSubscriptionStatus.ACTIVE
         safe_commit_and_refresh(self.db, sub)
         self._log_event(organization_id, sub_id, "renewed", None, {"current_term_start": str(sub.current_term_start), "current_term_end": str(sub.current_term_end)}, created_by=updated_by)
@@ -791,7 +802,12 @@ class SubscriptionService:
         # Advance the subscription term in the SAME transaction.
         sub.current_term_start = billing_date
         sub.current_term_end = self._compute_next_billing_date(billing_date, plan.billing_period if plan else BillingPeriod.MONTHLY)
-        sub.next_billing_at = self.compute_next_billing(sub)
+        # This invoice billed the term just opened, in advance, so the next
+        # one is due when that term ends. compute_next_billing() adds a period
+        # to current_term_end, which put the next bill two periods out -- a
+        # monthly subscription was invoiced every other month. It still
+        # decides whether there is a next bill at all (one-time / no plan).
+        sub.next_billing_at = sub.current_term_end if self.compute_next_billing(sub) is not None else None
         sub.last_billed_at = datetime.utcnow()
 
         # Status history + subscription event, flushed with the same commit.

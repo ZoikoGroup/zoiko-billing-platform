@@ -54,6 +54,13 @@ CONTRACT_ITEM_ALLOWED_FIELDS = {
 }
 
 
+def _require_end_after_start(start_date, end_date) -> None:
+    """A contract ending before it starts was accepted as-is (QA created one
+    starting 2026-11-03 and ending 2026-11-02)."""
+    if start_date is not None and end_date is not None and end_date < start_date:
+        raise BadRequestException("Contract end date cannot be before its start date.")
+
+
 class ContractService:
     def __init__(self, db: Session):
         self.db = db
@@ -74,6 +81,7 @@ class ContractService:
         self.customer_service.get_customer(customer_id, organization_id)
         if self.repo.exists(organization_id, contract_number=contract_number):
             raise AlreadyExistsException("Contract", "contract_number")
+        _require_end_after_start(data.get("start_date"), data.get("end_date"))
         if "currency" not in data or not data.get("currency"):
             customer = self.customer_service.get_customer(customer_id, organization_id)
             data["currency"] = customer.currency or self.config_service.get_default_currency(organization_id)
@@ -91,6 +99,7 @@ class ContractService:
         if data.get("contract_number") and data["contract_number"] != contract.contract_number:
             if self.repo.exists(organization_id, contract_number=data["contract_number"]):
                 raise AlreadyExistsException("Contract", "contract_number")
+        _require_end_after_start(data.get("start_date", contract.start_date), data.get("end_date", contract.end_date))
         updated = self.repo.update(contract_id, organization_id, **data)
         self.audit.log(organization_id, updated_by, BillingAuditAction.UPDATE, "Contract", contract_id)
         return updated
@@ -351,6 +360,7 @@ class ContractService:
         contract.terminated_reason = reason
         safe_commit_and_refresh(self.db, contract)
         self.audit.log(organization_id, updated_by, BillingAuditAction.UPDATE, "Contract", contract_id)
+        self._cancel_linked_subscriptions(contract_id, organization_id, updated_by, f"Contract terminated{': ' + reason if reason else ''}")
         return contract
 
     def renew_contract(self, contract_id: int, organization_id: int, updated_by: int, new_end_date: Optional[date] = None) -> Contract:
@@ -402,7 +412,24 @@ class ContractService:
         contract.status = ContractStatus.CANCELLED
         safe_commit_and_refresh(self.db, contract)
         self.audit.log(organization_id, updated_by, BillingAuditAction.CANCEL, "Contract", contract_id)
+        self._cancel_linked_subscriptions(contract_id, organization_id, updated_by, "Contract cancelled")
         return contract
+
+    def _cancel_linked_subscriptions(self, contract_id: int, organization_id: int, updated_by: int, reason: str) -> None:
+        """Activating a contract creates a subscription for it; ending the
+        contract left that subscription ACTIVE, so it kept billing a customer
+        whose contract was over. End it through the normal cancel path (event
+        + audit log). Already cancelled / expired subscriptions are skipped."""
+        from app.modules.billing.services.subscription_service import SubscriptionService
+
+        linked = self.db.query(Subscription).filter(
+            Subscription.organization_id == organization_id,
+            Subscription.contract_id == contract_id,
+            Subscription.status.in_([BillingSubscriptionStatus.ACTIVE, BillingSubscriptionStatus.PAUSED, BillingSubscriptionStatus.PAST_DUE]),
+        ).all()
+        sub_svc = SubscriptionService(self.db)
+        for sub in linked:
+            sub_svc.cancel_subscription(sub.id, organization_id, reason=reason, updated_by=updated_by)
 
     def soft_delete_contract(self, contract_id: int, organization_id: int, deleted_by: int) -> None:
         contract = self.repo.get_by_id(contract_id, organization_id)
@@ -555,6 +582,7 @@ class ContractService:
             contract_name = data.get("contract_name") or f"Contract from {quotation.quote_number}"
             start_date = data.get("start_date") or date.today()
             end_date = data.get("end_date")
+            _require_end_after_start(start_date, end_date)
             notes = data.get("notes") or quotation.notes
 
             if self.repo.exists(organization_id, contract_number=contract_number):

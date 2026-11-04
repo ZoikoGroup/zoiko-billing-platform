@@ -44,7 +44,7 @@ from app.modules.super_admin.router import (
     set_tenant_invoice_finalization_breaker,
 )
 from app.modules.super_admin.schemas import CircuitBreakerToggleRequest
-from tests.conftest import make_customer, make_invoice, make_organization
+from tests.conftest import make_customer, make_invoice, make_invoice_item, make_organization
 
 
 # These tests cover MFA step-up while it is switched on; it is retired by
@@ -70,6 +70,7 @@ def test_finalize_works_by_default(db_session):
     org = make_organization(db_session)
     cust = make_customer(db_session, org.id)
     inv = make_invoice(db_session, org.id, cust.id, status=InvoiceStatus.DRAFT)
+    make_invoice_item(db_session, org.id, inv.id)  # finalize requires at least one line
 
     result = InvoiceService(db_session).finalize_invoice(inv.id, org.id, updated_by=1)
     assert result.status == InvoiceStatus.SENT
@@ -180,6 +181,7 @@ def test_resume_restores_real_finalization(db_session):
     org = make_organization(db_session)
     cust = make_customer(db_session, org.id)
     inv = make_invoice(db_session, org.id, cust.id, status=InvoiceStatus.DRAFT, invoice_number="INV-RESUME-1")
+    make_invoice_item(db_session, org.id, inv.id)  # finalize requires at least one line
     security_op, secret = _security_operator(db_session)
 
     set_tenant_invoice_finalization_breaker(

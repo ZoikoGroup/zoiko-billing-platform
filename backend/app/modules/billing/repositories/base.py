@@ -393,8 +393,18 @@ class BaseRepository(Generic[ModelType]):
     def bulk_hard_delete(self, ids: List[int], organization_id: int) -> int:
         query = self.db.query(self.model).filter(self.model.id.in_(ids))
         query = self._org_filter(query, organization_id)
-        deleted = query.delete(synchronize_session="fetch")
-        self.db.commit()
+        # Same IntegrityError handling as hard_delete: a selected record that
+        # still has related rows (a customer's contacts, invoices, payments)
+        # used to escape as an unhandled 500.
+        try:
+            deleted = query.delete(synchronize_session="fetch")
+            self.db.commit()
+        except IntegrityError as e:
+            self.db.rollback()
+            raise BadRequestException(
+                f"{self.model.__name__} records cannot be hard deleted while related records still exist. "
+                "Deactivate them instead, or remove the related records first."
+            ) from e
         return deleted
 
     # ── Search ───────────────────────────────────────────────────────────────
