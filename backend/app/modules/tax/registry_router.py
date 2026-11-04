@@ -478,3 +478,24 @@ for _action, _cap, _step_up in (("validate", "tax_registry.write", False), ("sub
         f"/tax-code-sets/{{version_id}}/{_action}", _code_set_action(_action, _cap, _step_up),
         methods=["POST"], summary=f"{_action.capitalize()} a tax-code set version",
     )
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# Phase 3a — findings reports: aggregate counts and totals only (T13).
+# No organization names or ids, customers or invoice numbers.
+# ═════════════════════════════════════════════════════════════════════════
+
+@admin_router.get("/reports/legacy-discount-overcollection", summary="Aggregate legacy discount-after-tax estimate")
+def platform_overcollection_report(db: Session = Depends(get_db),
+                                   _user=Depends(require_capability("tax_registry.read"))):
+    from app.modules.tax.report_service import TaxFindingsReportService
+
+    return TaxFindingsReportService(db).platform_overcollection()
+
+
+@admin_router.get("/reports/duplicate-tax-rows", summary="Aggregate duplicate legacy tax snapshot rows")
+def platform_duplicate_tax_rows(db: Session = Depends(get_db),
+                                _user=Depends(require_capability("tax_registry.read"))):
+    from app.modules.tax.report_service import TaxFindingsReportService
+
+    return TaxFindingsReportService(db).platform_duplicates()

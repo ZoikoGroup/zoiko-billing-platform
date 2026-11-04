@@ -333,14 +333,28 @@ Phase 2 Postgres tests cover:
 - the purge end to end;
 - concurrent version bumps.
 
-**CI result:** _pending_.
+**CI result:**
+- **Final runs** 41789442063 (push) and 41789448881 (pull request, merged
+  with `main`) on c64dd4c passed every step:
+  - `alembic upgrade head`;
+  - the tax step (downgrade to `a7c4e1b9d3f0`, upgrade head, then the
+    Phase 1 and Phase 2 Postgres-only tests);
+  - the release gate (0 failures);
+  - the privacy control tests;
+  - the frontend tests and build.
+- **Earlier failures and their fixes:**
+  - The purge crash (finding 5): fixed in 8ca2bd7/b27c57e/b563c43.
+  - The pull-request run on 44522ea: `main`'s new "issue requires line
+    items" rule (a122c44) broke two Phase 0 tests that issued empty
+    invoices. Fixed in c64dd4c.
+- **Merge:** merged to `main` in PR #128 (8c1c7a3).
 
 ## Test evidence
 
 | Suite | Before (Phase 1) | After |
 |---|---|---|
 | Backend local (venv from `requirements.txt`, SQLite) | 1709 passed, 4 failed*, 21 skipped | **1772 passed, 0 failed, 33 skipped** |
-| Backend CI (postgres:16) | passed | _pending_ |
+| Backend CI (postgres:16) | passed | **passed** (push and PR runs on c64dd4c, incl. migration round trip + PG-only tests) |
 
 New: `tests/test_tax_import_cycle.py` (4), `tests/test_tax_phase2_policy.py`
 (37), `tests/privacy/test_tax_phase2_access.py` (11: T13 across every

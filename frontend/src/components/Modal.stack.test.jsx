@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { useEffect, useState } from "react";
+import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import { Modal } from "./billing-ui";
 
 // Stacked Modals (e.g. Tax Groups -> Members): only the top-most one reacts to
@@ -40,6 +41,33 @@ describe("Modal stack", () => {
 
     unmount();
     expect(document.body.style.overflow).toBe("");
+  });
+
+  it("Esc works from the moment the dialog is on screen", async () => {
+    // The dialog opens from an async update (as the ?create=1 quotation
+    // wizard does), and Esc is pressed the instant it appears in the DOM.
+    // With the key listener in a passive effect this Esc was lost.
+    const onClose = vi.fn();
+    function OpensLater() {
+      const [open, setOpen] = useState(false);
+      useEffect(() => { Promise.resolve().then(() => setOpen(true)); }, []);
+      return <Modal open={open} title="Late" onClose={onClose}>body</Modal>;
+    }
+    let pressed = false;
+    const observer = new MutationObserver(() => {
+      if (!pressed && screen.queryByRole("dialog", { name: "Late" })) {
+        pressed = true;
+        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    try {
+      render(<OpensLater />);
+      await waitFor(() => expect(pressed).toBe(true));
+      expect(onClose).toHaveBeenCalledTimes(1);
+    } finally {
+      observer.disconnect();
+    }
   });
 
   it("a single Modal still closes on Esc", () => {

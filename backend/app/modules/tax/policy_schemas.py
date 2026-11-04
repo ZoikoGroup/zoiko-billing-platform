@@ -3,7 +3,7 @@ classification, buyer evidence). Responses are built by the services' view_*
 helpers so enums are always serialized by name."""
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Annotated, Dict, List, Optional
+from typing import Annotated, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -178,3 +178,22 @@ class CertificateCreate(_Strict):
     valid_from: date
     expires_at: Optional[date] = None
     evidence_ref: str = Field(..., min_length=1, max_length=500)
+
+
+# ── Phase 3a: governed quotes and credits ───────────────────────────────
+
+class QuoteCreate(_Strict):
+    document_type: Literal["invoice", "quote"]
+    document_id: int
+
+
+class GovernedCreditLine(_Strict):
+    invoice_item_id: int
+    fraction: Annotated[Decimal, Field(gt=0, le=1, max_digits=12, decimal_places=10)] = Decimal("1")
+
+
+class GovernedCreditCreate(_Strict):
+    lines: List[GovernedCreditLine] = Field(..., min_length=1, max_length=500)
+    credit_note_type: str = Field("partial_credit", max_length=30)
+    reason: Optional[str] = Field(None, max_length=2000)
+    issue_date: Optional[date] = None

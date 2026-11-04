@@ -1615,6 +1615,9 @@ class Invoice(Base):
     # differ). Under the LEGACY_MANUAL regime it is set from issue_date at
     # finalization; the GOVERNED regime (Phase 3) requires it explicitly.
     tax_date            = Column(Date, nullable=True, index=True)
+    # ZB-TAX-ARCH-001 Phase 3a: the committed governed tax quote (the
+    # invoice's immutable tax snapshot). NULL for LEGACY_MANUAL invoices.
+    tax_quote_id        = Column(Integer, ForeignKey("tax_quotes.id", ondelete="RESTRICT"), nullable=True, index=True)
     subtotal            = Column(Numeric(14, 2), default=0)
     discount_percentage = Column(Numeric(5, 2), default=0)
     discount_amount     = Column(Numeric(14, 2), default=0)

@@ -366,6 +366,9 @@ class Settings(BaseSettings):
     # certificates and tax-ID verifications for tenant review.
     TAX_REVIEW_SWEEP_INTERVAL_MINUTES: int = 1440
     TAX_REVIEW_EXPIRY_WINDOW_DAYS: int = 30
+    # ZB-TAX-ARCH-001 Phase 3a: a governed tax quote must be committed within
+    # this window; an expired quote is refused at issuance (re-quote).
+    TAX_QUOTE_TTL_HOURS: int = 24
 
     # ── ZB-COM-003: Trial-ending-soon warning (Prompt 4) ─────────────────
     # Days before trial_ends_at to fire the proactive warning email.

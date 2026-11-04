@@ -377,3 +377,40 @@ class TaxContextStatus(str, enum.Enum):
     """Whether a quote's stored tax context still matches current facts."""
     CURRENT = "current"
     STALE   = "stale"
+
+
+# ── Phase 3a: governed determination (§08, §09) ──────────────────────────
+
+class EngineKind(str, enum.Enum):
+    """Which determination engine produced a quote line."""
+    NATIVE_RULE_PACK = "native_rule_pack"
+    PROVIDER         = "provider"
+    TENANT_CONFIG    = "tenant_config"
+
+
+class RoundingRule(str, enum.Enum):
+    """Where tax is rounded to the currency's minor unit. Declared by the
+    engine (rule packs per jurisdiction; tenant-config follows the org's
+    tax_rounding_method setting)."""
+    PER_LINE     = "per_line"       # each line's component tax rounded, then summed
+    PER_DOCUMENT = "per_document"   # component tax summed unrounded, rounded once, allocated to lines
+
+
+class RemoteCommitState(str, enum.Enum):
+    """State of a provider-side commit (Phase 4 outbox/saga seam). Native and
+    tenant-config engines commit locally only (NOT_APPLICABLE)."""
+    NOT_APPLICABLE = "not_applicable"
+    PENDING        = "pending"
+    UNCERTAIN      = "uncertain"      # timed out: reconcile remote state before any retry (T10)
+    COMMITTED      = "committed"
+    VOIDED         = "voided"
+
+
+#: Quote statuses that can still be validated and committed at issuance.
+COMMITTABLE_QUOTE_STATUSES = frozenset({TaxQuoteStatus.QUOTED, TaxQuoteStatus.VALIDATED})
+
+#: Statuses a quote ends in when determination is refused.
+REFUSED_QUOTE_STATUSES = frozenset({
+    TaxQuoteStatus.NEEDS_EVIDENCE, TaxQuoteStatus.UNSUPPORTED, TaxQuoteStatus.REVIEW_REQUIRED,
+    TaxQuoteStatus.PROVIDER_UNAVAILABLE,
+})

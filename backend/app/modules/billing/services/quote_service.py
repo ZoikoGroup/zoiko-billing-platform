@@ -970,7 +970,20 @@ class QuoteService:
             currency=quote.currency, quotation_id=quote_id,
             seller_entity_id=quote.seller_entity_id,
         )
+        # GOVERNED entities invoice exactly what was quoted: no re-pricing,
+        # and the tax-rate link and price semantics travel with the line
+        # (ZB-TAX-ARCH-001 Phase 3a fix (d)). Whether legacy conversion
+        # should re-price is an open product question (TAX_PHASE3A.md).
+        from app.modules.tax.determination_service import entity_regime
+        from app.modules.tax.enums import EntityTaxRegime
+
+        governed = entity_regime(self.db, organization_id, quote.seller_entity_id) == EntityTaxRegime.GOVERNED
         for item in quote.items:
+            governed_extra = {
+                "keep_quoted_price": True,
+                "tax_rate_id": getattr(item, "tax_rate_id", None),
+                "resolved_price_type": getattr(item, "resolved_price_type", None),
+            } if governed else {}
             inv_service.add_item(
                 invoice_id=inv.id, organization_id=organization_id,
                 line_number=item.line_number,
@@ -989,6 +1002,7 @@ class QuoteService:
                 original_currency=getattr(item, "original_currency", None),
                 original_amount=getattr(item, "original_amount", None),
                 exchange_rate=getattr(item, "exchange_rate", None),
+                **governed_extra,
             )
         inv_service.recalculate_invoice(inv.id, organization_id)
         if quote.status == QuoteStatus.SENT:

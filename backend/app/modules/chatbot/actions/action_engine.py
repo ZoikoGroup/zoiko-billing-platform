@@ -1063,8 +1063,12 @@ class ActionEngine:
         seq = BillingAdapter(self.db).count_invoices_for_org(draft.organization_id) + 1
         invoice_number = f"AI-INV-{now.strftime('%Y%m%d')}-{seq:04d}"
 
+        # Issuing seller entity set at creation (ZB-TAX-ARCH-001 Phase 3a).
+        from app.modules.tax.legal_entity_service import LegalEntityService
+
         invoice = Invoice(
             organization_id=draft.organization_id,
+            seller_entity_id=LegalEntityService(self.db).resolve_issuing_entity(draft.organization_id).id,
             customer_id=customer_id,
             invoice_number=invoice_number,
             invoice_type="STANDARD",
@@ -1111,6 +1115,28 @@ class ActionEngine:
 
         self.db.flush()
 
+        # ZB-TAX-ARCH-001 Phase 3a: a GOVERNED seller entity issues only
+        # through the tax gate, which needs a committed governed tax quote —
+        # impossible for an invoice created in this same action. It stays a
+        # DRAFT (tax NOT_DETERMINED) for the user to quote and issue.
+        from app.modules.tax.issuance_gate import is_governed
+
+        if is_governed(self.db, invoice):
+            return {
+                "operation_id": f"INV-DRAFT-{invoice.id}",
+                "invoice_id": invoice.id,
+                "invoice_number": invoice.invoice_number,
+                "status": "invoice_draft_requires_tax_quote",
+                "message": "Draft created. Its seller entity uses governed tax: request a tax quote, then issue it.",
+                "resources_created": [
+                    {"type": "invoice", "id": invoice.id, "version": "1"},
+                ],
+            }
+
+        # Legacy: issued immediately as before, with the Phase 0 tax point
+        # (tax date = issue date) the finalize path would have stamped.
+        if invoice.tax_date is None:
+            invoice.tax_date = invoice.issue_date
         invoice.status = "SENT"
         invoice.sent_at = datetime.utcnow()
         self.db.flush()

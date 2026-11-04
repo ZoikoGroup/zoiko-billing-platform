@@ -11,7 +11,7 @@ super administrators have no standing access to tenant tax data (§12.1,
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Header, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import (
@@ -22,7 +22,7 @@ from app.core.dependencies import (
     get_organization_id,
     require_active_subscription,
 )
-from app.core.exceptions import BadRequestException
+from app.core.exceptions import BadRequestException, ForbiddenException, NotFoundException
 from app.database import get_db
 from app.modules.tax.buyer_evidence_service import (
     BuyerEvidenceService,
@@ -32,14 +32,20 @@ from app.modules.tax.buyer_evidence_service import (
 )
 from app.modules.tax.classification_service import ClassificationService, view_classification
 from app.modules.tax.context_builder import DOCUMENT_TYPES, build_tax_context
+from app.modules.tax.determination_service import TaxDeterminationService, view_quote
 from app.modules.tax.enums import ReviewItemStatus
+from app.modules.tax.governed_credit_service import GovernedCreditService, view_credit_lines
+from app.modules.tax.quote_models import TaxQuote
+from app.modules.tax.report_service import TaxFindingsReportService
 from app.modules.tax.models import EntityTaxActivation, EntityTaxLegalBasis, ProductTaxClassification
 from app.modules.tax.policy_schemas import (
     ActivationCreate,
     CertificateCreate,
     ClassificationCreate,
     DecisionRequest,
+    GovernedCreditCreate,
     ImpactPreviewRequest,
+    QuoteCreate,
     LegalBasisCreate,
     RegimeChangeRequest,
     RegistrationCreate,
@@ -453,3 +459,95 @@ def get_tax_context(document_type: str, document_id: int, db: Session = Depends(
     if document_type not in DOCUMENT_TYPES:
         raise BadRequestException(f"document_type must be one of {', '.join(DOCUMENT_TYPES)}.")
     return build_tax_context(db, organization_id, document_type, document_id)
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# Phase 3a — governed quotes, governed credit notes, findings reports
+# ═════════════════════════════════════════════════════════════════════════
+
+def require_tax_report_role(current_user=Depends(get_current_user)):
+    """Findings reports: the tenant's own admins and finance approvers."""
+    role = getattr(current_user.role, "value", current_user.role)
+    if role not in ("org_admin", "finance_approver"):
+        raise ForbiddenException("Tax findings reports are available to organization admins and finance approvers.")
+    return current_user
+
+
+@router.post("/quotes", status_code=status.HTTP_201_CREATED, summary="Request a governed tax quote for a draft",
+             dependencies=[Depends(get_current_billing_admin)])
+def create_tax_quote(
+    data: QuoteCreate,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key", max_length=255),
+    db: Session = Depends(get_db),
+    organization_id: int = Depends(get_organization_id),
+    current_user=Depends(get_current_user),
+):
+    quote = TaxDeterminationService(db).create_quote(
+        organization_id, current_user.id, data.document_type, data.document_id, idempotency_key=idempotency_key)
+    return view_quote(quote)
+
+
+@router.get("/quotes", summary="Governed tax quotes for a document")
+def list_tax_quotes(
+    document_type: str = Query(..., pattern="^(invoice|quote)$"),
+    document_id: int = Query(...),
+    db: Session = Depends(get_db),
+    organization_id: int = Depends(get_organization_id),
+):
+    rows = db.query(TaxQuote).filter(TaxQuote.organization_id == organization_id,
+                                     TaxQuote.document_type == document_type,
+                                     TaxQuote.document_id == document_id).order_by(TaxQuote.id.desc()).all()
+    return {"items": [view_quote(q) for q in rows]}
+
+
+@router.get("/quotes/{quote_id}", summary="A governed tax quote, with components and explanation")
+def get_tax_quote(quote_id: int, db: Session = Depends(get_db), organization_id: int = Depends(get_organization_id)):
+    quote = db.query(TaxQuote).filter(TaxQuote.id == quote_id, TaxQuote.organization_id == organization_id).first()
+    if quote is None:
+        raise NotFoundException("Tax quote", quote_id)
+    return view_quote(quote)
+
+
+@router.post("/invoices/{invoice_id}/credit-notes", status_code=status.HTTP_201_CREATED,
+             summary="Credit a governed invoice from its tax snapshot", dependencies=[Depends(get_current_billing_admin)])
+def create_governed_credit_note(
+    invoice_id: int,
+    data: GovernedCreditCreate,
+    db: Session = Depends(get_db),
+    organization_id: int = Depends(get_organization_id),
+    current_user=Depends(get_current_user),
+):
+    from app.modules.billing.models import CreditNoteType
+
+    try:
+        note_type = CreditNoteType(data.credit_note_type.lower())
+    except ValueError:
+        raise BadRequestException(f"Unknown credit_note_type {data.credit_note_type!r}.")
+    credit_note = GovernedCreditService(db).create(
+        organization_id, current_user.id, invoice_id,
+        lines=[l.model_dump() for l in data.lines], credit_note_type=note_type,
+        reason=data.reason, issue_date=data.issue_date,
+    )
+    return {"credit_note_id": credit_note.id, "credit_note_number": credit_note.credit_note_number,
+            "status": credit_note.status.name, "subtotal": credit_note.subtotal,
+            "tax_amount": credit_note.tax_amount, "total_amount": credit_note.total_amount,
+            "tax_lines": view_credit_lines(db, credit_note.id)}
+
+
+@router.get("/reports/legacy-discount-overcollection",
+            summary="Estimated tax over-collected by legacy discount-after-tax (this organization)")
+def tenant_overcollection_report(
+    db: Session = Depends(get_db),
+    organization_id: int = Depends(get_organization_id),
+    _user=Depends(require_tax_report_role),
+):
+    return TaxFindingsReportService(db).tenant_overcollection(organization_id)
+
+
+@router.get("/reports/duplicate-tax-rows", summary="Duplicate legacy tax snapshot rows (this organization)")
+def tenant_duplicate_tax_rows(
+    db: Session = Depends(get_db),
+    organization_id: int = Depends(get_organization_id),
+    _user=Depends(require_tax_report_role),
+):
+    return TaxFindingsReportService(db).tenant_duplicates(organization_id)
