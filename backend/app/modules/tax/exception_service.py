@@ -215,14 +215,18 @@ class TaxExceptionService:
         }
 
     # ── Taxes → Exceptions ──
-    def list_exceptions(self, organization_id: int, limit: int = 200) -> dict:
+    def list_exceptions(self, organization_id: int, limit: int = 200, after_invoice_id: Optional[int] = None) -> dict:
         governed_entities = [e.id for e in self.db.query(SellerLegalEntity.id).filter(
             SellerLegalEntity.organization_id == organization_id,
             SellerLegalEntity.tax_regime == EntityTaxRegime.GOVERNED)]
-        drafts = (self.db.query(Invoice)
-                  .filter(Invoice.organization_id == organization_id, Invoice.status == InvoiceStatus.DRAFT,
-                          Invoice.seller_entity_id.in_(governed_entities or [0]))
-                  .order_by(Invoice.id).limit(limit).all())
+        query = (self.db.query(Invoice)
+                 .filter(Invoice.organization_id == organization_id, Invoice.status == InvoiceStatus.DRAFT,
+                         Invoice.seller_entity_id.in_(governed_entities or [0])))
+        if after_invoice_id is not None:
+            query = query.filter(Invoice.id > int(after_invoice_id))
+        drafts = query.order_by(Invoice.id).limit(limit + 1).all()
+        more = len(drafts) > limit
+        drafts = drafts[:limit]
         items = []
         for invoice in drafts:
             quote = self._latest_quote(organization_id, invoice.id)
@@ -252,4 +256,7 @@ class TaxExceptionService:
                 "requote": {"method": "POST", "path": "/api/v1/tax/quotes",
                             "body": {"document_type": "invoice", "document_id": invoice.id}},
             })
-        return {"items": items, "count": len(items), "checked": len(drafts)}
+        from app.modules.tax.pagination import encode_cursor
+
+        return {"items": items, "count": len(items), "checked": len(drafts),
+                "next_cursor": encode_cursor(drafts[-1].id) if more and drafts else None}

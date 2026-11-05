@@ -116,7 +116,18 @@ fixes follow the review.
 its verification; CANCELLED is final; the supply address and street lines are
 frozen.
 
-**CI result:** _see PR_.
+**CI result:** PR #133 passed on `6d48238`, push and pull request, with
+`backend-tests` (including the Postgres tax step) and `frontend-tests` green.
+It was merged as `54ae5d0`, whose files match `6d48238` exactly.
+
+The first push, `7314cb6`, failed the full-suite release gate. The new fix-3
+tests took their clock from module import time (`BASE`). In a full run they
+start about 25 minutes after collection, so "+20 minutes" was already in the
+past. `6d48238` makes the clock relative to the call, and the code under
+test was unchanged.
+
+The local full run on `6d48238` had 4943 passed, 54 skipped (Postgres-only)
+and 1 failure: the known order-dependent `test_aggregate_cache.py`.
 
 ## Open, carried to 4a-2 / 4d
 

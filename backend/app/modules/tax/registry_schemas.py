@@ -38,6 +38,7 @@ class RegistryJurisdiction(BaseModel):
 
 class RegistryJurisdictionListResponse(BaseModel):
     items: List[RegistryJurisdiction]
+    next_cursor: Optional[str] = None
 
 
 class PublicSourceSummary(BaseModel):
@@ -122,6 +123,7 @@ class SourceRevisionDetail(BaseModel):
 
 class SourceRevisionListResponse(BaseModel):
     items: List[SourceRevisionDetail]
+    next_cursor: Optional[str] = None
 
 
 class RegisterSourceRevisionRequest(BaseModel):
@@ -209,6 +211,7 @@ class StagedRateResponse(BaseModel):
 class StagedRateListResponse(BaseModel):
     items: List[StagedRateResponse]
     total: int
+    next_cursor: Optional[str] = None
 
 
 class SubmitRateRequest(BaseModel):

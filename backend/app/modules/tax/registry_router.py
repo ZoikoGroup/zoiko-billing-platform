@@ -27,7 +27,8 @@ from app.core.dependencies import get_current_user
 from app.core.exceptions import BadRequestException
 from app.database import get_db
 from app.modules.tax.enums import JurisdictionLevel, RedistributionPermission, StagedRateStatus, StagingOrigin
-from app.modules.tax.registry_models import TaxLegalSourceRevision
+from app.modules.tax.pagination import PageParams, decode_cursor, encode_cursor, paginate
+from app.modules.tax.registry_models import TaxLegalSourceRevision, TaxRateStaging
 from app.modules.tax.registry_schemas import (
     AmendRateRequest,
     PublishedRateResponse,
@@ -107,10 +108,13 @@ def list_jurisdictions(
     country: Optional[str] = Query(None, max_length=2),
     level: Optional[JurisdictionLevel] = Query(None),
     parent_code: Optional[str] = Query(None, max_length=20),
+    page: PageParams = Depends(),
     db: Session = Depends(get_db),
     _user=Depends(get_current_user),
 ):
-    return {"items": RegistryReadService(db).list_jurisdictions(country=country, level=level, parent_code=parent_code)}
+    items = RegistryReadService(db).list_jurisdictions(country=country, level=level, parent_code=parent_code)
+    items, next_cursor = paginate(items, page, key=lambda j: j["id"])
+    return {"items": items, "next_cursor": next_cursor}
 
 
 @reference_router.get("/rates", response_model=RateLookupResponse,
@@ -175,11 +179,12 @@ def registry_readiness(
 
 @admin_router.get("/source-revisions", response_model=SourceRevisionListResponse)
 def list_source_revisions(
+    page: PageParams = Depends(),
     db: Session = Depends(get_db),
     _user=Depends(require_capability("tax_registry.read")),
 ):
-    rows = db.query(TaxLegalSourceRevision).order_by(TaxLegalSourceRevision.id).all()
-    return {"items": [privileged_source_view(r) for r in rows]}
+    rows, next_cursor = paginate(db.query(TaxLegalSourceRevision).order_by(TaxLegalSourceRevision.id).all(), page)
+    return {"items": [privileged_source_view(r) for r in rows], "next_cursor": next_cursor}
 
 
 @admin_router.post("/source-revisions", response_model=SourceRevisionDetail, status_code=status.HTTP_201_CREATED)
@@ -225,11 +230,23 @@ def list_staged_rates(
     status_filter: Optional[StagedRateStatus] = Query(None, alias="status"),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
+    cursor: Optional[str] = Query(None, max_length=512, description="next_cursor of the previous page"),
     db: Session = Depends(get_db),
     _user=Depends(require_capability("tax_registry.read")),
 ):
-    rows, total = TaxRegistryPipeline(db).list_staged(status=status_filter, skip=skip, limit=limit)
-    return {"items": [staged_view(r) for r in rows], "total": total}
+    # Keeps its existing skip/limit (default 100, max 500); cursor is additive.
+    query = db.query(TaxRateStaging)
+    if status_filter is not None:
+        query = query.filter(TaxRateStaging.status == status_filter)
+    total = query.count()
+    after = decode_cursor(cursor)
+    query = query.order_by(TaxRateStaging.id)
+    query = query.filter(TaxRateStaging.id > int(after)) if after is not None else query.offset(skip)
+    rows = query.limit(limit + 1).all()
+    more = len(rows) > limit
+    rows = rows[:limit]
+    return {"items": [staged_view(r) for r in rows], "total": total,
+            "next_cursor": encode_cursor(rows[-1].id) if more and rows else None}
 
 
 @admin_router.get("/staged-rates/{staged_id}", response_model=StagedRateResponse)
@@ -360,13 +377,15 @@ def publish_staged_rate(
 @admin_router.get("/market-availability", summary="List market availability versions")
 def list_market_availability(
     status_filter: Optional[PlatformVersionStatus] = Query(None, alias="status"),
+    page: PageParams = Depends(),
     db: Session = Depends(get_db),
     _user=Depends(require_capability("tax_registry.read")),
 ):
     q = db.query(TaxMarketAvailabilityVersion)
     if status_filter is not None:
         q = q.filter(TaxMarketAvailabilityVersion.status == status_filter)
-    return {"items": [view_availability(r) for r in q.order_by(TaxMarketAvailabilityVersion.id)]}
+    rows, next_cursor = paginate(q.order_by(TaxMarketAvailabilityVersion.id).all(), page)
+    return {"items": [view_availability(r) for r in rows], "next_cursor": next_cursor}
 
 
 @admin_router.post("/market-availability", status_code=status.HTTP_201_CREATED, summary="Draft a market availability version")
@@ -426,8 +445,10 @@ for _action, _cap, _step_up in (("validate", "tax_registry.write", False), ("sub
 
 
 @admin_router.get("/tax-code-sets", summary="List tax-code set versions")
-def list_tax_code_sets(db: Session = Depends(get_db), _user=Depends(require_capability("tax_registry.read"))):
-    return {"items": [view_code_set(db, r) for r in db.query(TaxCodeSetVersion).order_by(TaxCodeSetVersion.id)]}
+def list_tax_code_sets(page: PageParams = Depends(), db: Session = Depends(get_db),
+                       _user=Depends(require_capability("tax_registry.read"))):
+    rows, next_cursor = paginate(db.query(TaxCodeSetVersion).order_by(TaxCodeSetVersion.id).all(), page)
+    return {"items": [view_code_set(db, r) for r in rows], "next_cursor": next_cursor}
 
 
 @admin_router.post("/tax-code-sets", status_code=status.HTTP_201_CREATED, summary="Draft a tax-code set version")
@@ -502,8 +523,28 @@ def rule_pack_catalogue(db: Session = Depends(get_db), _user=Depends(require_cap
 
 
 @admin_router.get("/rule-packs", summary="List rule-pack registry versions")
-def list_rule_packs(db: Session = Depends(get_db), _user=Depends(require_capability("tax_registry.read"))):
-    return {"items": [view_rule_pack(r) for r in db.query(TaxRulePackVersion).order_by(TaxRulePackVersion.id)]}
+def list_rule_packs(page: PageParams = Depends(), db: Session = Depends(get_db),
+                    _user=Depends(require_capability("tax_registry.read"))):
+    rows, next_cursor = paginate(db.query(TaxRulePackVersion).order_by(TaxRulePackVersion.id).all(), page)
+    return {"items": [view_rule_pack(r) for r in rows], "next_cursor": next_cursor}
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# Tax Control Center B1 — approvals inbox (screen P8). Tax roles only;
+# platform records only (no tenant data).
+# ═════════════════════════════════════════════════════════════════════════
+
+@admin_router.get("/approvals-inbox", summary="Platform tax changes awaiting approval, with can_approve per item")
+def approvals_inbox(
+    kind: Optional[str] = Query(None, pattern="^(staged_rate|tax_code_set|rule_pack|market_availability)$"),
+    page: PageParams = Depends(),
+    db: Session = Depends(get_db),
+    current_user=Depends(require_capability("tax_registry.read")),
+):
+    from app.modules.tax.approvals_inbox import approvals_inbox as build, item_key
+
+    items, next_cursor = paginate(build(db, current_user, kind), page, key=item_key)
+    return {"items": items, "next_cursor": next_cursor}
 
 
 @admin_router.post("/rule-packs", status_code=status.HTTP_201_CREATED, summary="Register a coded rule pack as a draft")

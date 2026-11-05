@@ -64,3 +64,4 @@ class SellerLegalEntityResponse(BaseModel):
 
 class SellerLegalEntityListResponse(BaseModel):
     items: List[SellerLegalEntityResponse]
+    next_cursor: Optional[str] = None
