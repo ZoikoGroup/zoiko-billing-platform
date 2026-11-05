@@ -172,6 +172,8 @@ class TaxAddressCreate(_Strict):
     subdivision_code: Optional[str] = Field(None, max_length=6)
     postal_code: Optional[str] = Field(None, max_length=20)
     city: Optional[str] = Field(None, max_length=100)
+    line1: Optional[str] = Field(None, max_length=255)
+    line2: Optional[str] = Field(None, max_length=255)
     confidence: AddressConfidence = AddressConfidence.ENTERED
 
 

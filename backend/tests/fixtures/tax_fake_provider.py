@@ -10,7 +10,9 @@ test can see exactly what the provider holds. Faults are injected with
 
   timeout_after_success    commit lands remotely, then the caller times out
   timeout_before_success   the caller times out and nothing lands
-  commit_error             the provider refuses the commit
+  ambiguous_after_success  commit lands, then the connection resets (ProviderAmbiguous)
+  server_error             a 5xx after sending; nothing landed (ProviderAmbiguous)
+  commit_error             the provider refuses the commit (ProviderRefused: definite)
   rate_limited             the provider throttles the commit
   state_error              transaction_state fails
   void_error               void fails
@@ -30,8 +32,10 @@ from app.modules.tax.provider_contract import (
     ProviderAdapter,
     ProviderCapabilities,
     ProviderError,
+    ProviderAmbiguous,
     ProviderMode,
     ProviderRateLimited,
+    ProviderRefused,
     ProviderTimeout,
     ProviderTransaction,
     RemoteTransactionState,
@@ -98,13 +102,15 @@ class FakeTaxProvider(ProviderAdapter):
         self.commit_calls += 1
         unexpected = set(payload) - ALLOWED_COMMIT_FIELDS
         if unexpected:
-            raise ProviderError(f"unexpected payload fields {sorted(unexpected)}")
+            raise ProviderRefused(f"unexpected payload fields {sorted(unexpected)}")
         if self._fires("commit_error"):
-            raise ProviderError("simulated refusal")
+            raise ProviderRefused("simulated refusal")
         if self._fires("rate_limited"):
             raise ProviderRateLimited("simulated throttling", retry_after_seconds=30)
         if self._fires("timeout_before_success"):
             raise ProviderTimeout("simulated timeout; nothing committed")
+        if self._fires("server_error"):
+            raise ProviderAmbiguous("simulated 503 after the request was sent")
         entry = self.ledger.get(idempotency_key)
         if entry is None:
             entry = {"id": f"fake-{len(self.ledger) + 1}", "state": RemoteTransactionState.COMMITTED,
@@ -113,6 +119,8 @@ class FakeTaxProvider(ProviderAdapter):
             self.payloads.append(payload)
         if self._fires("timeout_after_success"):
             raise ProviderTimeout("simulated timeout after the provider committed")
+        if self._fires("ambiguous_after_success"):
+            raise ProviderAmbiguous("simulated connection reset after the provider committed")
         return entry["id"]
 
     def transaction_state(self, *, idempotency_key: str) -> ProviderTransaction:

@@ -45,7 +45,10 @@ class TaxProviderOutbox(Base):
     last_error              = Column(Text, nullable=True)
     provider_transaction_id = Column(String(255), nullable=True)
     remote_snapshot         = Column(JSON, nullable=True)            # transaction_state at commit / last check
+    verified_at             = Column(DateTime(timezone=True), nullable=True)   # snapshot confirmed by a state lookup
+    review_kind             = Column(String(40), nullable=True)      # OutboxReviewKind name
     review_reason           = Column(Text, nullable=True)
+    send_intent             = Column(JSON, nullable=True)            # {"channel": "email", ...} once SENT
     created_by              = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at              = Column(DateTime(timezone=True), nullable=False)
     updated_at              = Column(DateTime(timezone=True), nullable=True)
@@ -61,11 +64,17 @@ OUTBOX_FROZEN_FIELDS = ("organization_id", "invoice_id", "tax_quote_id", "operat
                         "idempotency_key", "created_by", "created_at")
 register_tenant_record_guard(TaxProviderOutbox.__table__, OUTBOX_FROZEN_FIELDS)
 
+#: The only columns a terminal row may still change: a committed snapshot is
+#: verified by a later state lookup (fix 6) without reopening the row.
+TERMINAL_MUTABLE_FIELDS = ("verified_at", "remote_snapshot", "updated_at")
+
 PG_OUTBOX_TERMINAL_GUARD = [
     """
     CREATE OR REPLACE FUNCTION tax_provider_outbox_terminal_guard() RETURNS trigger AS $$
     BEGIN
-      IF OLD.state IN ('DONE', 'FAILED', 'VOIDED') AND to_jsonb(NEW) IS DISTINCT FROM to_jsonb(OLD) THEN
+      IF OLD.state IN ('DONE', 'FAILED', 'VOIDED', 'CANCELLED')
+         AND (to_jsonb(NEW) - 'verified_at' - 'remote_snapshot' - 'updated_at')
+             IS DISTINCT FROM (to_jsonb(OLD) - 'verified_at' - 'remote_snapshot' - 'updated_at') THEN
         RAISE EXCEPTION 'tax_provider_outbox % is % and final', OLD.id, OLD.state
           USING ERRCODE = 'integrity_constraint_violation';
       END IF;
@@ -91,9 +100,13 @@ def _guard_outbox_terminal(session, flush_context, instances):
     for obj in session.dirty:
         if not isinstance(obj, TaxProviderOutbox) or not session.is_modified(obj):
             continue
-        hist = sa_inspect(obj).attrs["state"].history
+        state = sa_inspect(obj)
+        hist = state.attrs["state"].history
         old = hist.deleted[0] if hist.deleted else obj.state
-        if old in TERMINAL_OUTBOX_STATES:
+        if old not in TERMINAL_OUTBOX_STATES:
+            continue
+        changed = {a.key for a in state.mapper.column_attrs if state.attrs[a.key].history.has_changes()}
+        if changed - set(TERMINAL_MUTABLE_FIELDS):
             raise TaxRecordFrozenError(f"Provider outbox row {obj.id} is {old.name} and final.")
 
 

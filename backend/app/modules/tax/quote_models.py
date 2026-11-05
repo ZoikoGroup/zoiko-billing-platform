@@ -85,6 +85,9 @@ class TaxQuote(Base):
     currency_decimals       = Column(Integer, nullable=True)
     tax_date                = Column(Date, nullable=True)
     pricing_mode            = Column(String(20), nullable=True)
+    # The place-of-supply address the quote was determined with, and its role
+    # (PlaceOfSupplyRole). Sent to a provider exactly as stored (Phase 4a-1 fix 4).
+    supply_address          = Column(JSON, nullable=True)
     context_fingerprint     = Column(String(64), nullable=False)
     document_hash           = Column(String(64), nullable=False)
     request_hash            = Column(String(64), nullable=False)

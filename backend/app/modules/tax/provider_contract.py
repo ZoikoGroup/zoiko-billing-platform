@@ -31,15 +31,27 @@ from app.modules.tax.enums import RoundingMode, RoundingRule, TaxOutcome
 
 
 class ProviderError(Exception):
-    """The provider refused or failed: nothing was committed."""
+    """Base of every provider failure. An error that is neither a
+    ProviderRefused nor a ProviderAmbiguous is treated as ambiguous: the
+    request may have been acted on."""
 
 
-class ProviderTimeout(ProviderError):
-    """The provider may or may not have acted: ask for the transaction's
-    state before anything else (T10). Never retried blindly."""
+class ProviderRefused(ProviderError):
+    """A definite refusal (validation, authentication, unsupported request):
+    the provider did NOT act. The commit is FAILED; nothing to reconcile."""
 
 
-class ProviderRateLimited(ProviderError):
+class ProviderAmbiguous(ProviderError):
+    """The request may have been acted on (5xx after sending, connection reset
+    after the request went out, unknown). Never retried blindly: ask for the
+    transaction's state first (T10)."""
+
+
+class ProviderTimeout(ProviderAmbiguous):
+    """No answer in time: the provider may or may not have acted."""
+
+
+class ProviderRateLimited(ProviderRefused):
     """Throttled: nothing was committed; retry after the indicated delay."""
 
     def __init__(self, message: str, retry_after_seconds: int = 60):
@@ -115,7 +127,8 @@ class ProviderAdapter(ABC):
     @abstractmethod
     def commit(self, *, idempotency_key: str, payload: dict) -> str:
         """Commit remotely; return the provider transaction id. Raises
-        ProviderTimeout (outcome unknown) or ProviderError (not committed)."""
+        ProviderRefused (definitely not committed; ProviderRateLimited: retry
+        later) or ProviderAmbiguous / ProviderTimeout (outcome unknown)."""
 
     @abstractmethod
     def transaction_state(self, *, idempotency_key: str) -> ProviderTransaction:

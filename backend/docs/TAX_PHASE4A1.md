@@ -77,6 +77,47 @@ The Postgres test checks the generated `FOR UPDATE SKIP LOCKED` and runs the
 real query. A two-worker race test belongs with the dedicated worker
 (4d gate).
 
+## Fixes after the post-merge review of PR #132 (PR "4a-1 fixes")
+
+PR #132 was merged (6ef722c) and deployed with `f2c7a9e1b4d3` before review.
+No provider activations exist, so production never reached this path. These
+fixes follow the review.
+
+| # | Fix | Tests |
+|---|---|---|
+| 1 | **Poison-row isolation.** `reconcile()` handles each row on its own. An unexpected error on one row moves that row to `REVIEW_REQUIRED` (`ROW_ERROR`, with the error), and the run continues. `stats.row_failures` counts these. The heartbeat is `last_ok=false` only for a job-level failure, such as the database being unavailable. | `test_fix1_one_broken_row_never_stops_the_run` (tenant A's row is broken, tenant B issues, heartbeat stays fresh); `test_fix1_job_level_failure_marks_the_heartbeat_not_ok` |
+| 2 | **Refusal versus ambiguous.** `ProviderRefused` (validation, auth, unsupported; `ProviderRateLimited` is one) means `FAILED`. `ProviderAmbiguous` (5xx, a reset after sending; `ProviderTimeout` is one) and any unclassified error mean `UNCERTAIN`, settled by `transaction_state`. Both are in the contract and the conformance suite. | `test_fix2_*` (3); conformance `check_refusal_is_definite`, `check_ambiguous_errors_are_never_refusals` |
+| 3 | **Deadlines before commit.** A PENDING row, or an UNCERTAIN row whose state lookup says NOT_FOUND, is never committed after quote expiry. It becomes `CANCELLED` (final): the invoice unlocks as a DRAFT, the quote goes STALE, and Exceptions shows a re-quote item. An UNCERTAIN row still unresolved by the grace deadline becomes `REVIEW_REQUIRED` (`UNRESOLVED_COMMIT`). It stays locked, appears in Exceptions with owner and age, and reconciliation keeps checking its state. Resolved COMMITTED, it is finished; resolved NOT_FOUND, it is cancelled. It is never voided blindly. | `test_fix3_*` (5, including a multi-hour outage where the commit did and did not land) |
+| 4 | **Payload address.** The quote stores the place-of-supply address it was determined with (`tax_quotes.supply_address`), including the street lines and the role. Today the role is always `BILLING_FALLBACK`, because jurisdictions come from the billing address; ship-to and service-location precedence arrives with 4c. The payload sends exactly that address. `customer_tax_addresses` gains `line1` and `line2`, frozen like the other fields. The allowed-fields check stays. The registered-jurisdiction set is recorded in the plan for 4a-2. | `test_fix4_payload_sends_the_quoted_place_of_supply_address` |
+| 5 | **Send intent.** When "send by email" returns ISSUING, the intent is stored on the outbox row. Transaction 2 creates an `EMAIL` row in the same commit as SENT. The email is sent once, outside the transaction, and the result is audited. The row is claimed before sending, so an interrupted attempt is never resent automatically (`EMAIL_UNCERTAIN` review). | `test_send_intent_is_emailed_exactly_once_after_issue`, `test_interrupted_email_is_never_resent_automatically` |
+| 6 | **Unverified commit.** If the state lookup after a successful commit fails, the snapshot is stored as unverified (`verified_at` empty). Reconciliation verifies it, with the drift check, on the next run, whatever its age. A terminal row may record its verification and nothing else. | `test_fix6_unverified_commit_is_verified_regardless_of_the_drift_window` |
+
+**Also changed:**
+- **Locking:** a `REVIEW_REQUIRED` COMMIT row keeps the invoice locked, and
+  issuing it again is refused until a person settles it. `LOCKING_OUTBOX_STATES`
+  covers this.
+- **Exceptions:** lists `PROVIDER_REVIEW_REQUIRED` and `ISSUING_OVERDUE` items
+  with owner and age.
+- **Invoice tax summary:** has an `issuance` block ("Issuing — waiting on
+  provider"), and `can_issue` is false while a provider issue is open.
+
+**Migration `a8d3e6f1c9b2`:**
+- **New columns:**
+  - outbox `verified_at`, `review_kind`, `send_intent`;
+  - `tax_quotes.supply_address`;
+  - `customer_tax_addresses.line1` and `line2`.
+- **Postgres guards:**
+  - The terminal guard now covers `CANCELLED` and lets a terminal row change
+    only its verification fields.
+  - The quote and address guards are recreated with the new frozen columns.
+- **`CRITICAL_COLUMNS`** gains the new columns.
+
+**Postgres tests added:** the new columns exist; a DONE row can only record
+its verification; CANCELLED is final; the supply address and street lines are
+frozen.
+
+**CI result:** _see PR_.
+
 ## Open, carried to 4a-2 / 4d
 
 - **4a-2:**

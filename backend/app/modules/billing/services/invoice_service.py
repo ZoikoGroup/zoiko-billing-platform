@@ -978,14 +978,18 @@ class InvoiceService:
             if gate.is_remote(governed_quote):
                 # Provider tax: issue through the outbox first; no PDF or email
                 # until the invoice is SENT (Phase 4a-1).
-                inv = gate.provider_issuance().issue(inv, governed_quote, sent_by)
+                issuance = gate.provider_issuance()
+                inv = issuance.issue(inv, governed_quote, sent_by)
                 governed_quote = None
                 if inv.status != InvoiceStatus.SENT:
+                    # Recorded on the outbox row: emailed exactly once after
+                    # the invoice is issued (Phase 4a-1 fix 5).
+                    issuance.request_send(inv.id, sent_by)
                     return {
                         "invoice_id": inv.id, "invoice_number": inv.invoice_number, "status": "ISSUING",
                         "email_sent_to": None, "email_delivered": False, "sent_at": None,
-                        "message": "Issuing — waiting on the tax provider. Nothing was emailed; send it again "
-                                   "once the invoice is issued.",
+                        "message": "Issuing — waiting on the tax provider. The invoice will be emailed once, "
+                                   "as soon as it is issued.",
                     }
             else:
                 gate.apply(inv, governed_quote)      # rolled back with everything else if delivery fails

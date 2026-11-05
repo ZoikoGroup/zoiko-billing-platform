@@ -16,9 +16,16 @@ Native and tenant-config quotes keep the synchronous 3a gate.
               with the committed quote's tax date and currency.
   reconcile() the job: resolves PENDING / UNCERTAIN, finishes or compensates
               REMOTE_COMMITTED rows (retry within the grace window, then void
-              by reference if the invoice was never sent), links invoice
-              numbers (KEY_ONLY), drift-checks recent commits, writes a
-              heartbeat. A stale heartbeat blocks provider issuing.
+              by reference if the invoice was never sent), keeps checking
+              unresolved commits, sends recorded email intents once, links
+              invoice numbers (KEY_ONLY), verifies and drift-checks commits,
+              writes a heartbeat. One failing row never stops the run.
+              A stale heartbeat blocks provider issuing.
+
+Errors: a definite refusal (ProviderRefused) FAILS the row; anything else may
+have been acted on and is UNCERTAIN until transaction_state says otherwise.
+Nothing is committed after quote expiry, and an outcome that stays unknown
+past the grace deadline is REVIEW_REQUIRED, never voided blindly.
 
 Nothing here falls back to a native pack, a last-known rate or zero.
 """
@@ -34,9 +41,12 @@ from app.config import settings
 from app.core.exceptions import BadRequestException
 from app.modules.tax.enums import (
     ACTIVE_OUTBOX_STATES,
+    LOCKING_OUTBOX_STATES,
+    TERMINAL_OUTBOX_STATES,
     CircuitState,
     DocumentReferencePolicy,
     OutboxOperation,
+    OutboxReviewKind,
     OutboxState,
     RemoteCommitState,
     ReviewItemKind,
@@ -47,7 +57,7 @@ from app.modules.tax.provider_contract import (
     ProviderError,
     ProviderMode,
     ProviderRateLimited,
-    ProviderTimeout,
+    ProviderRefused,
     ProviderTransaction,
     RemoteTransactionState,
 )
@@ -155,9 +165,9 @@ def idempotency_key(quote: TaxQuote) -> str:
     return f"zb:{quote.organization_id}:{quote.document_id}:{quote.id}"
 
 
-def snapshot_of(txn: ProviderTransaction) -> dict:
+def snapshot_of(txn: ProviderTransaction, verified: bool = True) -> dict:
     return {
-        "state": txn.state.name, "transaction_id": txn.transaction_id, "currency": txn.currency,
+        "verified": verified, "state": txn.state.name, "transaction_id": txn.transaction_id, "currency": txn.currency,
         "tax_date": txn.tax_date.isoformat() if txn.tax_date else None,
         "total_tax": str(txn.total_tax) if txn.total_tax is not None else None,
         "total_amount": str(txn.total_amount) if txn.total_amount is not None else None,
@@ -187,20 +197,24 @@ def drift(quote: TaxQuote, txn: ProviderTransaction) -> list[str]:
     return problems
 
 
-def build_commit_payload(quote: TaxQuote, row: TaxProviderOutbox, facts: Optional[dict] = None) -> dict:
-    """The minimized commit payload (plan §6). No customer names, emails,
-    descriptions, notes or PDFs; the buyer is an address only."""
-    facts = facts or {}
-    seller = facts.get("seller_entity") or {}
-    billing = ((facts.get("buyer") or {}).get("addresses") or {}).get("BILLING") or {}
+def build_commit_payload(db: Session, quote: TaxQuote, row: TaxProviderOutbox) -> dict:
+    """The minimized commit payload (plan §6). The buyer is the
+    place-of-supply address the quote was determined with, exactly as stored
+    on the quote (fix 4); no names, emails, descriptions, notes or PDFs."""
+    from app.modules.tax.models import SellerLegalEntity
+
+    seller = db.get(SellerLegalEntity, quote.seller_entity_id) if quote.seller_entity_id else None
+    supply = dict(quote.supply_address or {})
+    supply.pop("address_id", None)
     return {
         "idempotency_key": row.idempotency_key,
         "document_reference": row.document_reference,
         "document_type": "invoice",
         "tax_date": quote.tax_date.isoformat() if quote.tax_date else None,
         "currency": quote.currency,
-        "seller": {"country_code": seller.get("country_code"), "subdivision_code": seller.get("subdivision_code")},
-        "buyer": {"address": {k: billing.get(k) for k in ("country_code", "subdivision_code", "postal_code", "city")}},
+        "seller": {"country_code": getattr(seller, "country_code", None),
+                   "subdivision_code": getattr(seller, "subdivision_code", None)},
+        "buyer": {"address": supply},
         "lines": [{
             "line_id": line.document_line_id, "quantity": str(line.quantity),
             "net_amount": str(line.taxable_base), "line_discount": str(line.line_discount_unrounded),
@@ -215,13 +229,15 @@ def build_commit_payload(quote: TaxQuote, row: TaxProviderOutbox, facts: Optiona
 
 class ProviderIssuanceService:
     def __init__(self, db: Session, provider_lookup: Optional[Callable] = None, now: Callable = _now,
-                 finalizer: Optional[Callable] = None, facts_loader: Optional[Callable] = None):
+                 finalizer: Optional[Callable] = None, mailer: Optional[Callable] = None,
+                 payload_builder: Optional[Callable] = None):
         self.db = db
         self.now = now
         self.provider_lookup = provider_lookup or default_provider_lookup
         self.health = ProviderHealth(db, now=now)
         self.finalizer = finalizer or self._default_finalizer
-        self.facts_loader = facts_loader or self._default_facts
+        self.mailer = mailer or self._default_mailer
+        self.payload_builder = payload_builder or build_commit_payload
 
     # ── helpers ──
     def _finalization_paused(self) -> Optional[str]:
@@ -237,20 +253,15 @@ class ProviderIssuanceService:
             return str(exc)
         return None
 
-    def _default_facts(self, quote: TaxQuote) -> dict:
-        from app.modules.tax.context_builder import TaxContextBuilder
-
-        try:
-            return TaxContextBuilder(self.db).build(quote.organization_id, "invoice", quote.document_id,
-                                                    now=self.now()).facts
-        except Exception:                               # payload facts are best-effort; amounts come from the quote
-            logger.exception("tax context unavailable for provider payload (quote %s)", quote.id)
-            return {}
-
     def _default_finalizer(self, invoice, quote: TaxQuote, actor_id: Optional[int]) -> None:
         from app.modules.billing.services.invoice_service import InvoiceService
 
         InvoiceService(self.db).complete_governed_issue(invoice, quote, actor_id, commit=False)
+
+    def _default_mailer(self, invoice_id: int, organization_id: int, actor_id: Optional[int]) -> dict:
+        from app.modules.billing.services.invoice_service import InvoiceService
+
+        return InvoiceService(self.db).send_invoice_via_email(invoice_id, organization_id, actor_id)
 
     def _policy(self) -> DocumentReferencePolicy:
         try:
@@ -258,10 +269,14 @@ class ProviderIssuanceService:
         except ValueError:
             return DocumentReferencePolicy.KEY_ONLY
 
-    def active_row(self, invoice_id: int) -> Optional[TaxProviderOutbox]:
+    def _past(self, moment: Optional[datetime]) -> bool:
+        return moment is not None and self.now() >= _aware(moment)
+
+    def locking_row(self, invoice_id: int) -> Optional[TaxProviderOutbox]:
+        """The COMMIT row that currently holds this invoice (active or awaiting review)."""
         return self.db.query(TaxProviderOutbox).filter(
             TaxProviderOutbox.invoice_id == invoice_id, TaxProviderOutbox.operation == OutboxOperation.COMMIT,
-            TaxProviderOutbox.state.in_(list(ACTIVE_OUTBOX_STATES))).first()
+            TaxProviderOutbox.state.in_(list(LOCKING_OUTBOX_STATES))).first()
 
     def _lock(self, row_id: int) -> Optional[TaxProviderOutbox]:
         """FOR UPDATE SKIP LOCKED on Postgres: two reconcilers never work the same row."""
@@ -277,13 +292,32 @@ class ProviderIssuanceService:
             self.db.commit()
         raise ProviderIssuanceBlocked(reason)
 
+    def _review(self, row: TaxProviderOutbox, kind: OutboxReviewKind, reason: str) -> None:
+        row.state = OutboxState.REVIEW_REQUIRED
+        row.review_kind = kind.name
+        row.review_reason = reason[:4000]
+        row.updated_at = self.now()
+
+    def _cancel(self, row: TaxProviderOutbox, quote: TaxQuote, reason: str) -> None:
+        """Never committed and too late to commit: release the invoice as a
+        DRAFT and send the user back to re-quote (Exceptions shows it)."""
+        now = self.now()
+        row.state, row.completed_at, row.updated_at, row.last_error = OutboxState.CANCELLED, now, now, reason
+        if quote.status in (TaxQuoteStatus.QUOTED, TaxQuoteStatus.VALIDATED):
+            quote.status = TaxQuoteStatus.STALE
+            quote.stale_reason = f"{reason} Request a new tax quote."
+
     # ── transaction 1 ──
     def begin(self, invoice, quote: TaxQuote, actor_id: Optional[int]) -> TaxProviderOutbox:
         paused = self._finalization_paused()
         if paused:
             raise BadRequestException(paused)                     # nothing sent, quote untouched
-        existing = self.active_row(invoice.id)
+        existing = self.locking_row(invoice.id)
         if existing is not None:
+            if existing.state == OutboxState.REVIEW_REQUIRED:
+                raise ProviderIssuanceBlocked(
+                    "This invoice's provider transaction needs review before it can be issued "
+                    f"({existing.review_reason or existing.review_kind}).")
             return existing
         adapter = self.provider_lookup(quote.provider_name)
         if adapter is None:
@@ -314,6 +348,17 @@ class ProviderIssuanceService:
         self.db.commit()
         return row
 
+    def request_send(self, invoice_id: int, actor_id: Optional[int], channel: str = "email") -> Optional[TaxProviderOutbox]:
+        """Record that the user asked to send the invoice; delivered exactly
+        once after transaction 2 commits (fix 5)."""
+        row = self.locking_row(invoice_id)
+        if row is None or row.send_intent is not None:
+            return row
+        row.send_intent = {"channel": channel, "requested_by": actor_id, "requested_at": self.now().isoformat()}
+        row.updated_at = self.now()
+        self.db.commit()
+        return row
+
     # ── deliver (one attempt) ──
     def deliver(self, row_id: int) -> Optional[TaxProviderOutbox]:
         row = self._lock(row_id)
@@ -330,21 +375,14 @@ class ProviderIssuanceService:
             return row
 
         if row.state == OutboxState.UNCERTAIN:
-            # Never retry a timed-out commit: ask the provider what it holds.
-            try:
-                txn = adapter.transaction_state(idempotency_key=row.idempotency_key)
-            except ProviderError as exc:
-                return self._retry_later(row, adapter, f"state lookup failed: {exc}")
-            if txn.state == RemoteTransactionState.COMMITTED:
-                self.health.record_success(row.provider_name)
-                self._remote_committed(row, quote, txn)
-                self.db.commit()
+            # Never retry an ambiguous commit: ask the provider what it holds.
+            if not self._resolve_uncertain(row, quote, adapter):
                 return row
-            if txn.state == RemoteTransactionState.VOIDED:
-                self._review(row, "The provider reports this transaction as voided, but we never voided it.")
-                self.db.commit()
-                return row
-            # NOT_FOUND: the timed-out attempt never landed; commit with the same key.
+            # NOT_FOUND within the deadlines: commit again with the same key.
+        elif self._past(quote.expires_at):
+            self._cancel(row, quote, "The tax quote expired before it was sent to the provider.")
+            self.db.commit()
+            return row
 
         if self.health.circuit_problem(row.provider_name):
             row.next_attempt_at = now + timedelta(seconds=settings.TAX_PROVIDER_CB_COOLDOWN_SECONDS)
@@ -352,19 +390,16 @@ class ProviderIssuanceService:
             self.db.commit()
             return row
 
+        payload = self.payload_builder(self.db, quote, row)     # our errors here are not provider errors
         row.attempts += 1
         try:
-            transaction_id = adapter.commit(idempotency_key=row.idempotency_key,
-                                            payload=build_commit_payload(quote, row, self.facts_loader(quote)))
-        except ProviderTimeout as exc:
-            row.state = OutboxState.UNCERTAIN
-            return self._retry_later(row, adapter, f"commit timed out: {exc}", immediate=True)
+            transaction_id = adapter.commit(idempotency_key=row.idempotency_key, payload=payload)
         except ProviderRateLimited as exc:
             row.last_error = f"rate limited: {exc}"
             row.next_attempt_at = now + timedelta(seconds=exc.retry_after_seconds)
             self.db.commit()
             return row
-        except ProviderError as exc:
+        except ProviderRefused as exc:
             row.state = OutboxState.FAILED
             row.last_error = f"provider refused the commit: {exc}"
             row.completed_at = now
@@ -373,18 +408,53 @@ class ProviderIssuanceService:
             quote.stale_reason = row.last_error
             self.db.commit()
             return row
+        except Exception as exc:                                  # ambiguous: may have been acted on (fix 2)
+            row.state = OutboxState.UNCERTAIN
+            return self._retry_later(row, f"commit outcome unknown ({type(exc).__name__}: {exc})", immediate=True)
         self.health.record_success(row.provider_name)
         try:
-            txn = adapter.transaction_state(idempotency_key=row.idempotency_key)
-        except ProviderError:
-            txn = ProviderTransaction(state=RemoteTransactionState.COMMITTED, transaction_id=transaction_id)
+            txn, verified = adapter.transaction_state(idempotency_key=row.idempotency_key), True
+        except Exception:                                         # committed, but not yet confirmed (fix 6)
+            txn, verified = ProviderTransaction(state=RemoteTransactionState.COMMITTED, transaction_id=transaction_id), False
         if txn.transaction_id is None:
             txn = ProviderTransaction(**{**txn.__dict__, "transaction_id": transaction_id})
-        self._remote_committed(row, quote, txn)
+        self._remote_committed(row, quote, txn, verified)
         self.db.commit()
         return row
 
-    def _retry_later(self, row, adapter, error: str, immediate: bool = False):
+    def _resolve_uncertain(self, row, quote: TaxQuote, adapter) -> bool:
+        """Settle an UNCERTAIN row by state lookup. Returns True only when the
+        provider definitely holds nothing and a re-commit is still allowed."""
+        try:
+            txn = adapter.transaction_state(idempotency_key=row.idempotency_key)
+        except Exception as exc:
+            row.last_error = f"state lookup failed: {exc}"
+            self.health.record_failure(row.provider_name)
+            if self._past(row.grace_deadline):
+                self._review(row, OutboxReviewKind.UNRESOLVED_COMMIT,
+                             "The provider's state could not be confirmed by the grace deadline; reconciliation "
+                             "keeps checking. Never voided blindly.")
+            row.next_attempt_at = self.now() + timedelta(seconds=settings.TAX_PROVIDER_RECONCILIATION_INTERVAL_SECONDS)
+            self.db.commit()
+            return False
+        if txn.state == RemoteTransactionState.COMMITTED:
+            self.health.record_success(row.provider_name)
+            self._remote_committed(row, quote, txn, True)
+            self.db.commit()
+            return False
+        if txn.state == RemoteTransactionState.VOIDED:
+            self._review(row, OutboxReviewKind.PROVIDER_VOIDED,
+                         "The provider reports this transaction as voided, but we never voided it.")
+            self.db.commit()
+            return False
+        # NOT_FOUND: definitely not committed.
+        if self._past(quote.expires_at) or self._past(row.grace_deadline):
+            self._cancel(row, quote, "The provider holds no transaction and the quote is past its deadline.")
+            self.db.commit()
+            return False
+        return True
+
+    def _retry_later(self, row, error: str, immediate: bool = False):
         row.last_error = error
         self.health.record_failure(row.provider_name)
         row.next_attempt_at = self.now() if immediate else \
@@ -392,21 +462,47 @@ class ProviderIssuanceService:
         self.db.commit()
         return row
 
-    def _remote_committed(self, row, quote: TaxQuote, txn: ProviderTransaction) -> None:
+    def _remote_committed(self, row, quote: TaxQuote, txn: ProviderTransaction, verified: bool) -> None:
         row.state = OutboxState.REMOTE_COMMITTED
+        row.review_kind = row.review_reason = None
         row.provider_transaction_id = txn.transaction_id
-        row.remote_snapshot = snapshot_of(txn)
+        row.remote_snapshot = snapshot_of(txn, verified)
+        row.verified_at = self.now() if verified else None
         row.last_error = None
         quote.provider_correlation_id = txn.transaction_id
         quote.remote_commit_state = RemoteCommitState.COMMITTED
-        problems = drift(quote, txn)
+        problems = drift(quote, txn) if verified else []
         if problems:
-            self._review(row, "The provider's record differs from our quote: " + "; ".join(problems))
+            self._review(row, OutboxReviewKind.DRIFT, "The provider's record differs from our quote: " + "; ".join(problems))
 
-    def _review(self, row, reason: str) -> None:
-        row.state = OutboxState.REVIEW_REQUIRED
-        row.review_reason = reason
-        row.updated_at = self.now()
+    def recheck_unresolved(self, row_id: int) -> Optional[TaxProviderOutbox]:
+        """Keep checking a commit whose outcome was unknown past the grace
+        deadline. Resolved COMMITTED: finish it; NOT_FOUND: cancel. Never void."""
+        row = self._lock(row_id)
+        if row is None or row.state != OutboxState.REVIEW_REQUIRED \
+                or row.review_kind != OutboxReviewKind.UNRESOLVED_COMMIT.name:
+            return row
+        adapter = self.provider_lookup(row.provider_name)
+        if adapter is None:
+            return row
+        quote = self.db.get(TaxQuote, row.tax_quote_id)
+        try:
+            txn = adapter.transaction_state(idempotency_key=row.idempotency_key)
+        except Exception as exc:
+            row.last_error, row.updated_at = f"state lookup failed: {exc}", self.now()
+            self.db.commit()
+            return row
+        if txn.state == RemoteTransactionState.COMMITTED:
+            self._remote_committed(row, quote, txn, True)
+            self.db.commit()
+            return self.finalize(row_id) if row.state == OutboxState.REMOTE_COMMITTED else row
+        if txn.state == RemoteTransactionState.VOIDED:
+            self._review(row, OutboxReviewKind.PROVIDER_VOIDED,
+                         "The provider reports this transaction as voided, but we never voided it.")
+        else:
+            self._cancel(row, quote, "The provider holds no transaction for this invoice.")
+        self.db.commit()
+        return row
 
     # ── transaction 2 ──
     def finalize(self, row_id: int, actor_id: Optional[int] = None) -> Optional[TaxProviderOutbox]:
@@ -419,13 +515,16 @@ class ProviderIssuanceService:
         invoice = self.db.get(Invoice, row.invoice_id)
         paused = self._finalization_paused()
         error = paused and f"finalization paused: {paused}"
+        email_row_id = None
         if not error:
             self.db.info[FINALIZING_FLAG] = True
             try:
                 self.finalizer(invoice, quote, actor_id or row.created_by)
                 row.state = OutboxState.DONE
                 row.completed_at = row.updated_at = self.now()
+                email_row = self._email_row(row)               # same commit as SENT (fix 5)
                 self.db.commit()
+                email_row_id = email_row.id if email_row is not None else None
             except Exception as exc:                          # rolled back; retried within the grace window
                 self.db.rollback()
                 error = f"local finalize failed: {exc}"
@@ -434,11 +533,61 @@ class ProviderIssuanceService:
                 self.db.info.pop(FINALIZING_FLAG, None)
             if not error:
                 self._enqueue_link(row)
-                return row
+                if email_row_id is not None:
+                    self.send_email(email_row_id)              # outside the transaction, exactly once
+                return self.db.get(TaxProviderOutbox, row_id)
         row = self.db.get(TaxProviderOutbox, row_id)
         row.last_error, row.updated_at = error, self.now()
-        if self.now() >= _aware(row.grace_deadline):
+        if self._past(row.grace_deadline):
             self._compensate(row, error)
+        self.db.commit()
+        return row
+
+    def _email_row(self, row: TaxProviderOutbox) -> Optional[TaxProviderOutbox]:
+        if not row.send_intent:
+            return None
+        now = self.now()
+        email = TaxProviderOutbox(
+            organization_id=row.organization_id, invoice_id=row.invoice_id, tax_quote_id=row.tax_quote_id,
+            operation=OutboxOperation.EMAIL, provider_name=row.provider_name,
+            idempotency_key=f"{row.idempotency_key}:email", state=OutboxState.PENDING, attempts=0,
+            send_intent=row.send_intent, next_attempt_at=now,
+            created_by=(row.send_intent or {}).get("requested_by") or row.created_by, created_at=now, updated_at=now,
+        )
+        self.db.add(email)
+        self.db.flush()
+        return email
+
+    def send_email(self, row_id: int) -> Optional[TaxProviderOutbox]:
+        """Deliver a send-by-email intent exactly once. The row is claimed
+        (UNCERTAIN) and committed before sending; an interrupted attempt is
+        never retried automatically (EMAIL_UNCERTAIN review)."""
+        from app.modules.billing.models import BillingAuditAction
+        from app.modules.billing.services.audit_service import BillingAuditService
+
+        row = self._lock(row_id)
+        if row is None or row.operation != OutboxOperation.EMAIL or row.state != OutboxState.PENDING:
+            return row
+        row.state, row.attempts, row.updated_at = OutboxState.UNCERTAIN, row.attempts + 1, self.now()
+        self.db.commit()                                      # claimed: a second worker skips it
+        org_id, invoice_id, actor = row.organization_id, row.invoice_id, row.created_by
+        delivered, error = False, None
+        try:
+            result = self.mailer(invoice_id, org_id, actor) or {}
+            delivered = bool(result.get("email_delivered"))
+            error = None if delivered else (result.get("message") or "not delivered")
+        except Exception as exc:
+            self.db.rollback()
+            error = f"{type(exc).__name__}: {exc}"
+        row = self.db.get(TaxProviderOutbox, row_id)
+        now = self.now()
+        row.state = OutboxState.DONE if delivered else OutboxState.FAILED
+        row.completed_at = row.updated_at = now
+        row.last_error = error
+        BillingAuditService(self.db).log_no_commit(
+            org_id, actor, BillingAuditAction.SEND, "Invoice", invoice_id,
+            new_values={"provider_issue_email": "delivered" if delivered else "failed",
+                        "error": error, "outbox_id": row.id})
         self.db.commit()
         return row
 
@@ -469,7 +618,7 @@ class ProviderIssuanceService:
         invoice = self.db.get(Invoice, row.invoice_id)
         quote = self.db.get(TaxQuote, row.tax_quote_id)
         if invoice.status != InvoiceStatus.DRAFT or invoice.sent_at is not None:
-            self._review(row, f"Not voided: the invoice may have been sent ({reason}).")
+            self._review(row, OutboxReviewKind.VOID_FAILED, f"Not voided: the invoice may have been sent ({reason}).")
             return
         adapter = self.provider_lookup(row.provider_name)
         try:
@@ -477,8 +626,8 @@ class ProviderIssuanceService:
                 raise ProviderError("provider not configured")
             adapter.void(transaction_id=row.provider_transaction_id, idempotency_key=f"{row.idempotency_key}:void",
                          reason=reason[:200])
-        except ProviderError as exc:
-            self._review(row, f"Void by reference failed after the grace window: {exc}")
+        except Exception as exc:
+            self._review(row, OutboxReviewKind.VOID_FAILED, f"Void by reference failed after the grace window: {exc}")
             return
         now = self.now()
         row.state, row.completed_at, row.updated_at = OutboxState.VOIDED, now, now
@@ -499,93 +648,132 @@ class ProviderIssuanceService:
         return invoice
 
     # ── reconciliation job ──
+    def _ids(self, *criteria) -> list:
+        return [i for (i,) in self.db.query(TaxProviderOutbox.id).filter(*criteria).order_by(TaxProviderOutbox.id)]
+
+    def _safely(self, step: Callable, row_id: int, stats: dict) -> Optional[TaxProviderOutbox]:
+        """Poison-row isolation (fix 1): an unexpected error on one row moves
+        that row to REVIEW_REQUIRED and the run carries on."""
+        try:
+            return step(row_id)
+        except Exception as exc:
+            self.db.rollback()
+            self.db.info.pop(FINALIZING_FLAG, None)
+            logger.exception("tax provider reconciliation: row %s failed", row_id)
+            stats["row_failures"] += 1
+            row = self.db.get(TaxProviderOutbox, row_id)
+            if row is not None and row.state not in TERMINAL_OUTBOX_STATES:
+                self._review(row, OutboxReviewKind.ROW_ERROR, f"{type(exc).__name__}: {exc}")
+                self.db.commit()
+            return None
+
     def reconcile(self) -> dict:
         now = self.now()
         hb = self.db.get(TaxJobHeartbeat, RECONCILIATION_JOB) or TaxJobHeartbeat(job_name=RECONCILIATION_JOB)
         hb.last_started_at = now
         self.db.add(hb)
         self.db.commit()
-        stats = {"delivered": 0, "finalized": 0, "voided": 0, "linked": 0, "review": 0, "drift": 0}
+        stats = {"delivered": 0, "finalized": 0, "voided": 0, "cancelled": 0, "review": 0, "linked": 0,
+                 "emailed": 0, "drift": 0, "verified": 0, "row_failures": 0}
         ok = True
         try:
-            due = self.db.query(TaxProviderOutbox.id).filter(
-                TaxProviderOutbox.operation == OutboxOperation.COMMIT,
-                TaxProviderOutbox.state.in_([OutboxState.PENDING, OutboxState.UNCERTAIN]),
-                (TaxProviderOutbox.next_attempt_at.is_(None)) | (TaxProviderOutbox.next_attempt_at <= now),
-            ).order_by(TaxProviderOutbox.id).all()
-            for (row_id,) in due:
-                self.deliver(row_id)
-                stats["delivered"] += 1
-            committed = self.db.query(TaxProviderOutbox.id).filter(
-                TaxProviderOutbox.operation == OutboxOperation.COMMIT,
-                TaxProviderOutbox.state == OutboxState.REMOTE_COMMITTED).order_by(TaxProviderOutbox.id).all()
-            for (row_id,) in committed:
-                row = self.finalize(row_id)
+            commit = TaxProviderOutbox.operation == OutboxOperation.COMMIT
+            due = self._ids(commit, TaxProviderOutbox.state.in_([OutboxState.PENDING, OutboxState.UNCERTAIN]),
+                            (TaxProviderOutbox.next_attempt_at.is_(None)) | (TaxProviderOutbox.next_attempt_at <= now))
+            for row_id in due:
+                if self._safely(self.deliver, row_id, stats) is not None:
+                    stats["delivered"] += 1
+            for row_id in self._ids(commit, TaxProviderOutbox.state == OutboxState.REVIEW_REQUIRED,
+                                    TaxProviderOutbox.review_kind == OutboxReviewKind.UNRESOLVED_COMMIT.name):
+                self._safely(self.recheck_unresolved, row_id, stats)
+            for row_id in self._ids(commit, TaxProviderOutbox.state == OutboxState.REMOTE_COMMITTED):
+                row = self._safely(self.finalize, row_id, stats)
+                if row is not None:
+                    key = {OutboxState.DONE: "finalized", OutboxState.VOIDED: "voided",
+                           OutboxState.REVIEW_REQUIRED: "review"}.get(row.state)
+                    if key:
+                        stats[key] += 1
+            for row_id in self._ids(TaxProviderOutbox.operation == OutboxOperation.EMAIL,
+                                    TaxProviderOutbox.state == OutboxState.UNCERTAIN):
+                self._safely(self._email_interrupted, row_id, stats)
+            for row_id in self._ids(TaxProviderOutbox.operation == OutboxOperation.EMAIL,
+                                    TaxProviderOutbox.state == OutboxState.PENDING):
+                row = self._safely(self.send_email, row_id, stats)
                 if row is not None and row.state == OutboxState.DONE:
-                    stats["finalized"] += 1
-                elif row is not None and row.state == OutboxState.VOIDED:
-                    stats["voided"] += 1
-                elif row is not None and row.state == OutboxState.REVIEW_REQUIRED:
-                    stats["review"] += 1
-            stats["linked"] = self._process_links()
-            stats["drift"] = self._drift_check()
-        except Exception:
+                    stats["emailed"] += 1
+            for row_id in self._ids(TaxProviderOutbox.operation == OutboxOperation.LINK,
+                                    TaxProviderOutbox.state.in_([OutboxState.PENDING, OutboxState.UNCERTAIN])):
+                row = self._safely(self._link, row_id, stats)
+                if row is not None and row.state == OutboxState.DONE:
+                    stats["linked"] += 1
+            since = now - timedelta(hours=settings.TAX_PROVIDER_DRIFT_WINDOW_HOURS)
+            for row_id in self._ids(commit, TaxProviderOutbox.state == OutboxState.DONE,
+                                    (TaxProviderOutbox.completed_at >= since) | TaxProviderOutbox.verified_at.is_(None)):
+                self._safely(lambda rid: self._verify(rid, stats), row_id, stats)
+            stats["cancelled"] = self.db.query(TaxProviderOutbox).filter(
+                TaxProviderOutbox.state == OutboxState.CANCELLED, TaxProviderOutbox.completed_at >= now).count()
+        except Exception:                                     # job-level: the database itself, not a row
             ok = False
             self.db.rollback()
             logger.exception("tax provider reconciliation failed")
-        hb = self.db.get(TaxJobHeartbeat, RECONCILIATION_JOB)
-        hb.last_finished_at = self.now()
-        hb.last_ok = ok
-        hb.stats = stats
-        self.db.commit()
+        try:
+            hb = self.db.get(TaxJobHeartbeat, RECONCILIATION_JOB)
+            hb.last_finished_at = self.now()
+            hb.last_ok = ok
+            hb.stats = stats
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            logger.exception("tax provider reconciliation could not record its heartbeat")
         return stats
 
-    def _process_links(self) -> int:
-        done = 0
-        rows = self.db.query(TaxProviderOutbox.id).filter(
-            TaxProviderOutbox.operation == OutboxOperation.LINK,
-            TaxProviderOutbox.state.in_([OutboxState.PENDING, OutboxState.UNCERTAIN])).all()
-        for (row_id,) in rows:
-            row = self._lock(row_id)
-            if row is None:
-                continue
-            adapter = self.provider_lookup(row.provider_name)
-            row.attempts += 1
-            try:
-                if adapter is None:
-                    raise ProviderError("provider not configured")
-                adapter.link_reference(transaction_id=row.provider_transaction_id,
-                                       document_reference=row.document_reference)
-                row.state, row.completed_at = OutboxState.DONE, self.now()
-                done += 1
-            except ProviderError as exc:
-                row.last_error = str(exc)
-            row.updated_at = self.now()
+    def _email_interrupted(self, row_id: int):
+        row = self._lock(row_id)
+        if row is not None and row.state == OutboxState.UNCERTAIN:
+            self._review(row, OutboxReviewKind.EMAIL_UNCERTAIN,
+                         "An email attempt was interrupted; it is not resent automatically to avoid a duplicate.")
             self.db.commit()
-        return done
+        return row
 
-    def _drift_check(self) -> int:
-        """Recently committed transactions: our snapshot against the provider's record."""
+    def _link(self, row_id: int):
+        row = self._lock(row_id)
+        if row is None:
+            return None
+        adapter = self.provider_lookup(row.provider_name)
+        row.attempts += 1
+        try:
+            if adapter is None:
+                raise ProviderError("provider not configured")
+            adapter.link_reference(transaction_id=row.provider_transaction_id,
+                                   document_reference=row.document_reference)
+            row.state, row.completed_at = OutboxState.DONE, self.now()
+        except ProviderError as exc:
+            row.last_error = str(exc)
+        row.updated_at = self.now()
+        self.db.commit()
+        return row
+
+    def _verify(self, row_id: int, stats: dict):
+        """Drift check; also confirms snapshots left unverified at commit (fix 6),
+        whatever their age."""
         from app.modules.tax.models import TaxReviewItem
 
-        since = self.now() - timedelta(hours=settings.TAX_PROVIDER_DRIFT_WINDOW_HOURS)
-        found = 0
-        rows = self.db.query(TaxProviderOutbox).filter(
-            TaxProviderOutbox.operation == OutboxOperation.COMMIT, TaxProviderOutbox.state == OutboxState.DONE,
-            TaxProviderOutbox.completed_at >= since).all()
-        for row in rows:
-            adapter = self.provider_lookup(row.provider_name)
-            if adapter is None:
-                continue
-            try:
-                txn = adapter.transaction_state(idempotency_key=row.idempotency_key)
-            except ProviderError:
-                continue
-            quote = self.db.get(TaxQuote, row.tax_quote_id)
-            problems = drift(quote, txn) if txn.state == RemoteTransactionState.COMMITTED else \
-                [f"provider reports {txn.state.name}"]
-            if not problems:
-                continue
+        row = self.db.get(TaxProviderOutbox, row_id)
+        adapter = self.provider_lookup(row.provider_name)
+        if adapter is None:
+            return row
+        try:
+            txn = adapter.transaction_state(idempotency_key=row.idempotency_key)
+        except ProviderError:
+            return row
+        quote = self.db.get(TaxQuote, row.tax_quote_id)
+        problems = drift(quote, txn) if txn.state == RemoteTransactionState.COMMITTED else \
+            [f"provider reports {txn.state.name}"]
+        if row.verified_at is None:
+            row.verified_at = self.now()
+            row.remote_snapshot = snapshot_of(txn, True)
+            stats["verified"] += 1
+        if problems:
             open_item = self.db.query(TaxReviewItem).filter(
                 TaxReviewItem.organization_id == row.organization_id,
                 TaxReviewItem.kind == ReviewItemKind.PROVIDER_DRIFT, TaxReviewItem.subject_type == "TaxProviderOutbox",
@@ -594,9 +782,9 @@ class ProviderIssuanceService:
                 self.db.add(TaxReviewItem(organization_id=row.organization_id, kind=ReviewItemKind.PROVIDER_DRIFT,
                                           subject_type="TaxProviderOutbox", subject_id=row.id,
                                           detail="; ".join(problems)[:2000], created_at=self.now()))
-                found += 1
+                stats["drift"] += 1
         self.db.commit()
-        return found
+        return row
 
 
 # ── platform view: aggregates only (T13) ─────────────────────────────────
@@ -652,7 +840,7 @@ def _guard_issuing_invoices(session, flush_context, instances):
     with session.no_autoflush:
         locked = session.query(TaxProviderOutbox.invoice_id).filter(
             TaxProviderOutbox.invoice_id.in_(ids), TaxProviderOutbox.operation == OutboxOperation.COMMIT,
-            TaxProviderOutbox.state.in_(list(ACTIVE_OUTBOX_STATES))).first()
+            TaxProviderOutbox.state.in_(list(LOCKING_OUTBOX_STATES))).first()
     if locked is not None:
         raise ProviderIssuanceBlocked(
             f"Invoice {locked[0]} is being issued (waiting on the tax provider) and cannot be changed.")

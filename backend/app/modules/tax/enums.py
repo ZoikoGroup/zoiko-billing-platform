@@ -433,6 +433,7 @@ class OutboxOperation(str, enum.Enum):
     COMMIT = "commit"
     VOID   = "void"
     LINK   = "link"       # attach our invoice number after commit (KEY_ONLY)
+    EMAIL  = "email"      # deliver a send-by-email intent once the invoice is SENT
 
 
 class OutboxState(str, enum.Enum):
@@ -445,13 +446,35 @@ class OutboxState(str, enum.Enum):
     DONE             = "done"
     FAILED           = "failed"           # provider refused: nothing committed remotely
     VOIDED           = "voided"           # committed remotely, then voided by reference
-    REVIEW_REQUIRED  = "review_required"  # needs a person (drift, void not possible, ...)
+    CANCELLED        = "cancelled"        # never committed and now past quote expiry or grace: re-quote
+    REVIEW_REQUIRED  = "review_required"  # needs a person (drift, unresolved state, void not possible, ...)
 
 
 #: States in which the invoice is locked and the row still has work to do.
 ACTIVE_OUTBOX_STATES = frozenset({OutboxState.PENDING, OutboxState.UNCERTAIN, OutboxState.REMOTE_COMMITTED})
-#: Final states: the row never changes again.
-TERMINAL_OUTBOX_STATES = frozenset({OutboxState.DONE, OutboxState.FAILED, OutboxState.VOIDED})
+#: Final states: the row never changes again (apart from post-commit
+#: verification fields, see provider_models.TERMINAL_MUTABLE_FIELDS).
+TERMINAL_OUTBOX_STATES = frozenset({OutboxState.DONE, OutboxState.FAILED, OutboxState.VOIDED, OutboxState.CANCELLED})
+#: States in which a COMMIT row keeps the invoice locked (a person may still
+#: need to settle what the provider holds).
+LOCKING_OUTBOX_STATES = ACTIVE_OUTBOX_STATES | {OutboxState.REVIEW_REQUIRED}
+
+
+class OutboxReviewKind(str, enum.Enum):
+    """Why a row needs a person."""
+    UNRESOLVED_COMMIT = "unresolved_commit"   # outcome unknown past the grace deadline; still polled
+    DRIFT             = "drift"               # provider record differs from our quote
+    ROW_ERROR         = "row_error"           # unexpected error processing this row (poison row)
+    VOID_FAILED       = "void_failed"         # compensation could not void by reference
+    PROVIDER_VOIDED   = "provider_voided"     # the provider shows a void we never asked for
+    EMAIL_UNCERTAIN   = "email_uncertain"     # an email attempt was interrupted: never resent automatically
+
+
+class PlaceOfSupplyRole(str, enum.Enum):
+    """Which buyer address a quote was determined with."""
+    SHIP_TO          = "ship_to"
+    SERVICE_LOCATION = "service_location"
+    BILLING_FALLBACK = "billing_fallback"
 
 
 class CircuitState(str, enum.Enum):

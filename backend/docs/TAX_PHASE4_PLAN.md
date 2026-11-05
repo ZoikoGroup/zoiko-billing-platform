@@ -217,6 +217,14 @@ rotation procedure.
 **Also for the DPO:** response storage; residency; retention versus erasure
 (still open from Phase 2).
 
+**Payload additions (4a-2).**
+- The commit payload already carries the quote's place-of-supply address,
+  with street lines and role (4a-1 fix 4).
+- 4a-2 adds the **registered-jurisdiction set**: the jurisdictions where the
+  entity holds a recorded registration or obligation. The provider can then
+  only apply tax inside that set, and anything outside it stays
+  REVIEW_REQUIRED.
+
 ## Exemption certificates (model 4a-2, used 4c)
 
 - **Ours is the source of truth** (Q6). A provider's certificate store, if
