@@ -29,7 +29,7 @@ UK or Australian compliance either: everything outside the two packs'
 declared coverage is NOT_DETERMINED.
 
 **Branch:** `feature/global-tax`, the single branch used for all global-tax
-work. It is merged only after review.
+work. **PR #131**, merged only after review.
 
 ## 3a follow-ups
 
@@ -205,9 +205,9 @@ take no exemption certificates, so it applies with Phase 4 provider markets.
 
 | Suite | Before (3a) | After |
 |---|---|---|
-| Backend local (venv, SQLite) | 1854 passed, 2 failed*, 39 skipped | _see PR_ |
-| Backend CI (postgres:16, tax step incl. `test_tax_phase3b_pg.py`) | passed | _see PR_ |
-| Frontend (vitest) | 1242 passed | _see PR_ |
+| Backend local (venv, SQLite) | 1854 passed, 2 failed*, 39 skipped | 4881 passed, 2 failed*, 44 skipped |
+| Backend CI (postgres:16, tax step incl. `test_tax_phase3b_pg.py`) | passed | passed on `c0c7005` (push and PR #131) |
+| Frontend (vitest) | 1242 passed | 1255 passed; CI passed on `c0c7005` (push and PR #131) |
 
 **New tests:**
 - `tests/test_tax_phase3b_packs.py`: pack scope and declarations, two-person
@@ -226,7 +226,10 @@ take no exemption certificates, so it applies with Phase 4 provider markets.
 - The 3a Postgres rule-pack insert now supplies `rounding_mode`.
 
 \* `test_aggregate_cache.py`, pre-existing and order-dependent (Phase 1
-finding 7).
+finding 7); it passes 22/22 run alone on this tree.
+
+The first push (`16d92ce`) failed one CI check: the 3a Postgres test inserted
+a rule-pack row without the now-required `rounding_mode`. Fixed in `c0c7005`.
 
 ## Draft-pack sign-off checklist (tax lead)
 
