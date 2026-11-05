@@ -133,8 +133,18 @@ external provider".
     reports; platform roles get 403 (T13).
 - **Verify:** QA walkthrough of the Tax Control Center screens; the
   privacy/T13 test suite.
-- **Status:** ◐ **Backend done.** The Tax Control Center frontend is being
-  built in a separate session; QA sign-off is open.
+- **Status:** ◐ **Platform sign-off console built (Phase 5a, `TAX_PHASE5A.md`).**
+  - Built: the Tax Control Center sign-off screens (source register, rates
+    and change review, market availability, rule packs, approvals inbox) at
+    `/super-admin/tax`.
+  - Correction: an earlier version of this file said the frontend was
+    "being built in a separate session". No such work existed on any
+    branch; Phase 5a is the first frontend for the platform console.
+  - Still open:
+    - the tenant Settings → Taxes screens (T1–T10);
+    - audit-evidence export for platform registry changes (gap in
+      `TAX_PHASE5A.md`);
+    - QA sign-off.
 
 ### Gate 07: availability registry and visibility
 - **Evidence:**
@@ -240,7 +250,9 @@ NOT_APPLICABLE (G1, fixed).
   - the address-resolution prompts (`ADDRESS_NOT_RESOLVED`, `_AMBIGUOUS`,
     `_RESOLUTION_STALE`);
   - certificate evidence upload.
-- **Status:** ◐ **Backend done.** Frontend and QA are open.
+- **Status:** ◐ **Platform sign-off console built (Phase 5a).** The
+  tenant-side screens (provider connections, stuck transactions, address
+  resolution, certificate evidence) and QA are open.
 
 ### Gate 07: availability registry and visibility
 - **Evidence:**
@@ -278,7 +290,7 @@ NOT_APPLICABLE (G1, fixed).
 | 03 Resolution and determination tests | ◐ CI | ◐ CI | ◐ fake only | ◐ fake only |
 | 04 Golden tests signed off | ☐ | ☐ | ☐ | ☐ |
 | 05 Provider contract, SLA, recovery | N/A (note) | N/A (note) | ☐ (must PASS) | ☐ (must PASS) |
-| 06 UI and audit evidence | ◐ backend | ◐ backend | ◐ backend | ◐ backend |
+| 06 UI and audit evidence | ◐ console built | ◐ console built | ◐ console built | ◐ console built |
 | 07 Availability and visibility | ☐ | ☐ | ☐ | ☐ |
 
 ☐ open · ◐ partly done (built, evidence or sign-off pending) · N/A only with a note

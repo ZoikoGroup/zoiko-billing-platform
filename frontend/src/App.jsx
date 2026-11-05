@@ -155,6 +155,8 @@ const EmailDeliveryPage = lazyRoute(() => import("./modules/super-admin/EmailDel
 const TriagePage = lazyRoute(() => import("./modules/super-admin/TriagePage"));
 const CommandCenterHubPage = lazyRoute(() => import("./modules/super-admin/CommandCenterHubPage"));
 const FinancialOperationsPage = lazyRoute(() => import("./modules/super-admin/FinancialOperationsPage"));
+// ZB-TAX-ARCH-001 Phase 5a: platform tax registry sign-off console (tax roles only).
+const TaxControlCenterPage = lazyRoute(() => import("./modules/tax-control-center/TaxControlCenterPage"));
 const OrgAdminPrivilegedAccessLogPage = lazyRoute(() => import("./modules/organization-admin/PrivilegedAccessLogPage"));
 const OrgAdminNotificationsPage = lazyRoute(() => import("./modules/organization-admin/NotificationsPage"));
 
@@ -287,6 +289,8 @@ const SUPER_ADMIN_ROUTES = [
   { path: "/super-admin/production-readiness", element: <ProductionAcceptancePage /> },
   { path: "/super-admin/triage", element: <TriagePage /> },
   { path: "/super-admin/launch-readiness", element: <LaunchReadinessPage /> },
+  { path: "/super-admin/tax", element: <Navigate to="/super-admin/tax/inbox" replace /> },
+  { path: "/super-admin/tax/:section", element: <TaxControlCenterPage /> },
 ];
 
 // Legacy Super Admin paths that must keep working (bookmarks, old links)
