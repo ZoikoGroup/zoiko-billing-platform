@@ -653,6 +653,34 @@ class TaxRegistryPipeline:
                     errors.append(f"Duplicates staged proposal {other.id}.")
         return errors, conflicts, warnings
 
+    def comparison(self, row: TaxRateStaging) -> dict:
+        """What a reviewer needs beside the staged rate (P3): the component
+        and jurisdiction it belongs to, the version it declares superseded,
+        the other ACTIVE versions for the same key that its period overlaps,
+        and the current checks (errors, conflicts, warnings). Pure."""
+        component = self._component(row.component_id)
+        superseded = self.db.get(TaxRateVersion, row.supersedes_rate_version_id) \
+            if row.supersedes_rate_version_id else None
+        active = self.db.query(TaxRateVersion).filter(
+            TaxRateVersion.component_id == row.component_id, TaxRateVersion.tax_code == row.tax_code,
+            TaxRateVersion.product_scope == row.product_scope, TaxRateVersion.status == RateVersionStatus.ACTIVE,
+        ).order_by(TaxRateVersion.valid_from).all()
+        overlapping = [v for v in active if (superseded is None or v.id != superseded.id) and row.valid_from is not None
+                       and _intervals_overlap(row.valid_from, row.valid_to, v.valid_from, v.valid_to)]
+        errors, conflicts, warnings = self._check(row)
+        jurisdiction = component.jurisdiction
+        return {
+            "component": {"id": component.id, "code": component.code, "name": component.name,
+                          "tax_type": component.tax_type.code if component.tax_type else None,
+                          "jurisdiction_code": jurisdiction.code if jurisdiction else None,
+                          "jurisdiction_name": jurisdiction.name if jurisdiction else None,
+                          "is_cumulative": component.is_cumulative},
+            "superseded": RegistryReadService._version_view(superseded) if superseded else None,
+            "overlapping_active": [RegistryReadService._version_view(v) for v in overlapping],
+            "active_for_key": [RegistryReadService._version_view(v) for v in active],
+            "errors": errors, "conflicts": conflicts, "warnings": warnings,
+        }
+
     def validate(self, *, actor_id: Optional[int], staged_id: int) -> TaxRateStaging:
         row = self.get_staged(staged_id)
         if row.status not in AMENDABLE_STAGED_STATUSES:
