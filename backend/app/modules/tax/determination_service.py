@@ -48,11 +48,12 @@ from app.modules.tax.engines import (
     LineInput,
     LineResult,
 )
-from app.modules.tax.provider_contract import REASON_CODES, ProviderError
+from app.modules.tax.provider_contract import REASON_CODES
 from app.modules.tax.enums import (
     EngineKind,
     EntityTaxRegime,
     RemoteCommitState,
+    PlaceOfSupplyRole,
     RoundingMode,
     RoundingRule,
     SupplyCategory,
@@ -387,7 +388,9 @@ class TaxDeterminationService:
                                     activations=acts, business_buyer=True if business else None)
             try:
                 result = engine.determine(request)
-            except ProviderError as exc:
+            except Exception as exc:                      # any provider failure fails closed
+                if not engine.is_remote:
+                    raise
                 if health is not None:
                     health.record_failure(engine.name)
                 raise _Refusal(TaxQuoteStatus.PROVIDER_UNAVAILABLE, "PROVIDER_UNAVAILABLE",
@@ -403,6 +406,7 @@ class TaxDeterminationService:
         if health is not None:
             health.record_success(engine.name)
 
+        quote.supply_address = place_of_supply(facts)
         if engine.rounding_mode is None:
             raise _Refusal(TaxQuoteStatus.UNSUPPORTED, "ROUNDING_MODE_UNDECLARED",
                            f"Engine {engine.name} {engine.version} does not declare a rounding mode.",
@@ -486,6 +490,20 @@ class TaxDeterminationService:
                     is_reverse_charge=comp.is_reverse_charge,
                 ))
         self.db.flush()
+
+
+def place_of_supply(facts: dict) -> Optional[dict]:
+    """The buyer address this quote was determined with, and its role.
+
+    Jurisdictions are resolved from the billing address today (context
+    builder), so the role is BILLING_FALLBACK. Ship-to and service-location
+    precedence arrives with address resolution (4c); the stored role then
+    says which one applied."""
+    billing = ((facts.get("buyer") or {}).get("addresses") or {}).get("BILLING")
+    if not billing:
+        return None
+    return {"role": PlaceOfSupplyRole.BILLING_FALLBACK.name, "address_id": billing.get("id"),
+            **{k: billing.get(k) for k in ("line1", "line2", "city", "subdivision_code", "postal_code", "country_code")}}
 
 
 def _check_provider_line(engine, line_number: int, activations, result: LineResult, tax_date, currency,

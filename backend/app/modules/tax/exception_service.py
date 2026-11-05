@@ -22,7 +22,15 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import NotFoundException
 from app.modules.billing.models import Invoice, InvoiceStatus
 from app.modules.tax.determination_service import TaxDeterminationService, view_quote
-from app.modules.tax.enums import COMMITTABLE_QUOTE_STATUSES, EngineKind, EntityTaxRegime, TaxQuoteStatus
+from app.modules.tax.enums import (
+    COMMITTABLE_QUOTE_STATUSES,
+    LOCKING_OUTBOX_STATES,
+    EngineKind,
+    EntityTaxRegime,
+    OutboxOperation,
+    OutboxState,
+    TaxQuoteStatus,
+)
 from app.modules.tax.issuance_gate import is_governed
 from app.modules.tax.models import SellerLegalEntity
 from app.modules.tax.quote_models import TaxQuote
@@ -61,7 +69,16 @@ OWNERS = {
     "NO_TAX_QUOTE": ("billing_admin", "Request a tax quote."),
     "QUOTE_STALE": ("billing_admin", "The invoice or its tax facts changed: request a new tax quote."),
     "QUOTE_EXPIRED": ("billing_admin", "The tax quote expired: request a new tax quote."),
+    "PROVIDER_UNAVAILABLE": ("org_admin", "The tax provider is unavailable; issuing resumes when it recovers."),
+    "PROVIDER_CONTRADICTS_CONTEXT": ("org_admin", "The provider's result contradicts this entity's registrations "
+                                                  "or the invoice; review the facts, then re-quote."),
+    "ISSUING_OVERDUE": ("org_admin", "Still waiting on the tax provider past the grace window; reconciliation "
+                                     "keeps trying."),
+    "PROVIDER_REVIEW_REQUIRED": ("org_admin", "A provider transaction needs a person: check what the provider "
+                                              "holds before anything else is done with this invoice."),
 }
+
+ISSUING, ISSUING_OVERDUE, PROVIDER_REVIEW = "ISSUING", "ISSUING_OVERDUE", "PROVIDER_REVIEW"
 
 
 def _aware(value: Optional[datetime]) -> Optional[datetime]:
@@ -122,6 +139,27 @@ class TaxExceptionService:
                     "reasons": ["The invoice lines, prices, discounts, currency or tax date changed since the quote."]}
         return {"status": FRESH, "code": None, "reasons": []}
 
+    def provider_issuance(self, invoice_id: int) -> Optional[dict]:
+        """The provider issue holding this invoice, if any (Phase 4a-1)."""
+        from app.modules.tax.provider_models import TaxProviderOutbox
+
+        row = self.db.query(TaxProviderOutbox).filter(
+            TaxProviderOutbox.invoice_id == invoice_id, TaxProviderOutbox.operation == OutboxOperation.COMMIT,
+            TaxProviderOutbox.state.in_(list(LOCKING_OUTBOX_STATES))).first()
+        if row is None:
+            return None
+        now = self.now()
+        if row.state == OutboxState.REVIEW_REQUIRED:
+            status, code = PROVIDER_REVIEW, "PROVIDER_REVIEW_REQUIRED"
+        elif row.grace_deadline is not None and now >= _aware(row.grace_deadline):
+            status, code = ISSUING_OVERDUE, "ISSUING_OVERDUE"
+        else:
+            status, code = ISSUING, None
+        return {"status": status, "code": code, "state": row.state.name, "review_kind": row.review_kind,
+                "reason": row.review_reason or row.last_error,
+                "age_seconds": int((now - _aware(row.created_at)).total_seconds()),
+                "grace_deadline": row.grace_deadline, "send_requested": bool(row.send_intent)}
+
     def _sources(self, quote: TaxQuote) -> dict:
         ids = {c.rate_version_id for line in quote.lines for c in line.components if c.rate_version_id}
         out = {}
@@ -147,6 +185,7 @@ class TaxExceptionService:
         quote = (self.db.get(TaxQuote, invoice.tax_quote_id) if invoice.tax_quote_id
                  else self._latest_quote(organization_id, invoice.id))
         fresh = self.freshness(invoice, quote)
+        issuing = self.provider_issuance(invoice.id)
         blocking = [] if fresh["status"] in (FRESH, COMMITTED) else [
             {"code": fresh["code"], "reason": r, **_owner(fresh["code"])} for r in fresh["reasons"]]
         if quote is not None and fresh["status"] == REFUSED:
@@ -169,8 +208,10 @@ class TaxExceptionService:
             "totals": view["totals"] if view else None,
             "lines": view["lines"] if view else [],
             "warnings": (quote.warnings or []) if quote else [],
-            "blocking_reasons": blocking,
-            "can_issue": fresh["status"] == FRESH and invoice.status == InvoiceStatus.DRAFT,
+            "blocking_reasons": blocking + ([{"code": issuing["code"], "reason": issuing["reason"],
+                                               **_owner(issuing["code"])}] if issuing and issuing["code"] else []),
+            "issuance": issuing,            # "Issuing — waiting on provider" while a provider issue is open
+            "can_issue": fresh["status"] == FRESH and invoice.status == InvoiceStatus.DRAFT and issuing is None,
         }
 
     # ── Taxes → Exceptions ──
@@ -185,6 +226,18 @@ class TaxExceptionService:
         items = []
         for invoice in drafts:
             quote = self._latest_quote(organization_id, invoice.id)
+            issuing = self.provider_issuance(invoice.id)
+            if issuing is not None:
+                if issuing["code"] is not None:              # within the grace window it is not an exception
+                    items.append({
+                        "invoice_id": invoice.id, "invoice_number": invoice.invoice_number,
+                        "customer_id": invoice.customer_id, "currency": invoice.currency, "tax_date": invoice.tax_date,
+                        "quote_id": quote.id if quote else None, "quote_status": quote.status.name if quote else None,
+                        "freshness": issuing["status"], "code": issuing["code"], "reason": issuing["reason"] or "",
+                        "age_seconds": issuing["age_seconds"], "missing": [], **_owner(issuing["code"]),
+                        "requote": None,
+                    })
+                continue
             fresh = self.freshness(invoice, quote)
             if fresh["status"] == FRESH:
                 continue

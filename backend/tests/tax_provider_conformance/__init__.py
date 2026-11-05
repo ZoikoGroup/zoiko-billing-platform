@@ -19,8 +19,10 @@ from app.modules.tax.provider_contract import (
     ALLOWED_LINE_FIELDS,
     ProviderAdapter,
     ProviderCapabilities,
+    ProviderAmbiguous,
     ProviderError,
     ProviderRateLimited,
+    ProviderRefused,
     ProviderTimeout,
     ProviderTransaction,
     RemoteTransactionState,
@@ -34,8 +36,9 @@ def sample_payload(key: str, tax: str = "12.34", net: str = "123.40", currency: 
         "idempotency_key": key, "document_reference": key, "document_type": "invoice",
         "tax_date": tax_date.isoformat(), "currency": currency,
         "seller": {"country_code": "GB", "subdivision_code": None},
-        "buyer": {"address": {"country_code": "GB", "subdivision_code": None, "postal_code": "SW1A 1AA",
-                              "city": "London"}},
+        "buyer": {"address": {"role": "BILLING_FALLBACK", "line1": "1 Example Street", "line2": None,
+                              "city": "London", "subdivision_code": None, "postal_code": "SW1A 1AA",
+                              "country_code": "GB"}},
         "lines": [{"line_id": 1, "quantity": "1", "net_amount": net, "line_discount": "0", "document_discount": "0",
                    "tax_code": "SVC", "is_tax_inclusive": False,
                    "components": [{"component_code": "C1", "tax_amount": tax}]}],
@@ -111,6 +114,41 @@ def check_rate_limit_is_retryable(make_adapter):
     assert adapter.transaction_state(idempotency_key="conf-6").state == RemoteTransactionState.NOT_FOUND
 
 
+def check_refusal_is_definite(make_adapter):
+    """A definite refusal (validation, auth, unsupported) left nothing behind."""
+    try:
+        adapter = make_adapter(fail="commit_error")
+    except TypeError:
+        raise Skip("adapter cannot simulate a refusal")
+    try:
+        adapter.commit(idempotency_key="conf-10", payload=sample_payload("conf-10"))
+    except ProviderRefused:
+        pass
+    else:
+        raise AssertionError("a refusal must surface as ProviderRefused")
+    assert adapter.transaction_state(idempotency_key="conf-10").state == RemoteTransactionState.NOT_FOUND
+
+
+def check_ambiguous_errors_are_never_refusals(make_adapter):
+    """5xx or a reset after sending is ProviderAmbiguous (never ProviderRefused);
+    the outcome is then settled by transaction_state, whichever way it went."""
+    for fault, expected in (("ambiguous_after_success", RemoteTransactionState.COMMITTED),
+                            ("server_error", RemoteTransactionState.NOT_FOUND)):
+        try:
+            adapter = make_adapter(fail=fault)
+        except TypeError:
+            raise Skip("adapter cannot simulate an ambiguous failure")
+        try:
+            adapter.commit(idempotency_key=f"conf-11-{fault}", payload=sample_payload(f"conf-11-{fault}"))
+        except ProviderRefused:
+            raise AssertionError(f"{fault}: an ambiguous failure must not be reported as a refusal")
+        except ProviderAmbiguous:
+            pass
+        else:
+            raise AssertionError(f"{fault}: an ambiguous failure must not be reported as success")
+        assert adapter.transaction_state(idempotency_key=f"conf-11-{fault}").state == expected
+
+
 def check_money_is_decimal_exact_and_signed(make_adapter):
     adapter = make_adapter()
     adapter.commit(idempotency_key="conf-7", payload=sample_payload("conf-7", tax="-0.01", net="-0.10"))
@@ -140,4 +178,5 @@ def check_credentials_never_leak(make_adapter, secret: str, caplog):
 
 CHECKS = [check_contract_shape, check_idempotent_commit, check_transaction_state_reports_totals,
           check_void_by_reference, check_timeout_is_never_success, check_rate_limit_is_retryable,
+          check_refusal_is_definite, check_ambiguous_errors_are_never_refusals,
           check_money_is_decimal_exact_and_signed]

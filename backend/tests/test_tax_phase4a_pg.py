@@ -125,3 +125,36 @@ def test_rows_are_claimed_with_skip_locked(pg):
     sql = str(query.statement.compile(dialect=postgresql.dialect()))
     assert "FOR UPDATE SKIP LOCKED" in sql
     assert svc._lock(-1) is None                                    # the real query runs on Postgres
+
+
+# ── 4a-1 fixes ──────────────────────────────────────────────────────────
+
+def test_fix_columns_exist(pg):
+    cols = set(pg.execute(text(
+        "SELECT table_name || '.' || column_name FROM information_schema.columns WHERE table_name IN "
+        "('tax_provider_outbox', 'tax_quotes', 'customer_tax_addresses')")).scalars())
+    assert {"tax_provider_outbox.verified_at", "tax_provider_outbox.review_kind", "tax_provider_outbox.send_intent",
+            "tax_quotes.supply_address", "customer_tax_addresses.line1", "customer_tax_addresses.line2"} <= cols
+
+
+def test_done_row_can_only_record_its_verification(pg, issued):
+    rid = issued["row"].id
+    _accepts(pg, "UPDATE tax_provider_outbox SET verified_at = now(), remote_snapshot = '{\"verified\": true}' "
+                 "WHERE id = :id", {"id": rid})
+    _rejects(pg, "UPDATE tax_provider_outbox SET review_kind = 'DRIFT' WHERE id = :id", {"id": rid})
+    _rejects(pg, "UPDATE tax_provider_outbox SET send_intent = '{}' WHERE id = :id", {"id": rid})
+
+
+def test_cancelled_rows_are_final(pg, issued):
+    w = issued["w"]
+    inv = draft(w, [(w["dig_product"], 100, 1, False)])
+    q = quote(w, inv)
+    row = ProviderIssuanceService(pg, provider_lookup=lambda name: w["provider"]).begin(inv, q, w["maker"].id)
+    _accepts(pg, "UPDATE tax_provider_outbox SET state = 'CANCELLED' WHERE id = :id", {"id": row.id})
+    _rejects(pg, "UPDATE tax_provider_outbox SET state = 'PENDING' WHERE id = :id", {"id": row.id})
+
+
+def test_supply_address_and_street_lines_are_frozen(pg, issued):
+    _rejects(pg, "UPDATE tax_quotes SET supply_address = '{}' WHERE id = :id", {"id": issued["quote"].id})
+    _rejects(pg, "UPDATE customer_tax_addresses SET line1 = 'elsewhere' WHERE customer_id = :c",
+             {"c": issued["w"]["customer"].id})

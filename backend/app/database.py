@@ -493,6 +493,21 @@ CRITICAL_COLUMNS: list[tuple[str, str, str, str]] = [
         "alembic/versions/f2c7a9e1b4d3_tax_phase4a_provider_outbox.py",
         "ZB-TAX-ARCH-001 Phase 4a-1: provider issuance runs through the transactional outbox",
     ),
+    (
+        "tax_provider_outbox", "verified_at",
+        "alembic/versions/a8d3e6f1c9b2_tax_phase4a_fixes.py",
+        "ZB-TAX-ARCH-001 Phase 4a-1 fixes: unverified commits are verified by reconciliation",
+    ),
+    (
+        "tax_quotes", "supply_address",
+        "alembic/versions/a8d3e6f1c9b2_tax_phase4a_fixes.py",
+        "ZB-TAX-ARCH-001 Phase 4a-1 fixes: the quote records its place-of-supply address",
+    ),
+    (
+        "customer_tax_addresses", "line1",
+        "alembic/versions/a8d3e6f1c9b2_tax_phase4a_fixes.py",
+        "ZB-TAX-ARCH-001 Phase 4a-1 fixes: street line of the buyer's tax address",
+    ),
 ]
 
 

@@ -244,7 +244,8 @@ class TaxContextBuilder:
             a = by_role.get(role)
             address_facts[role.name] = None if a is None else {
                 "id": a.id, "country_code": a.country_code, "subdivision_code": a.subdivision_code,
-                "postal_code": a.postal_code, "city": a.city, "confidence": a.confidence, "source": a.source}
+                "postal_code": a.postal_code, "city": a.city, "line1": a.line1, "line2": a.line2,
+                "confidence": a.confidence, "source": a.source}
         billing = by_role.get(AddressRole.BILLING)
         if billing is None or not billing.country_code:
             issue(ContextIssueKind.MISSING, "BUYER_COUNTRY_MISSING", "buyer.addresses.BILLING.country_code",

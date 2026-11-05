@@ -302,6 +302,8 @@ class CustomerTaxAddress(Base):
     subdivision_code = Column(String(6), nullable=True)       # ISO 3166-2 suffix
     postal_code      = Column(String(20), nullable=True)
     city             = Column(String(100), nullable=True)
+    line1            = Column(String(255), nullable=True)      # street line (Phase 4a-1: provider place of supply)
+    line2            = Column(String(255), nullable=True)
     confidence       = Column(CaseInsensitiveEnum(AddressConfidence), nullable=False)
     source           = Column(CaseInsensitiveEnum(EvidenceSource), nullable=False)
     source_field     = Column(String(50), nullable=True)      # e.g. "billing_country" for the backfill
@@ -409,7 +411,7 @@ TENANT_RECORD_GUARDS = (
      "APPROVED,SUPERSEDED,REJECTED"),
     ("customer_tax_addresses",
      ("organization_id", "customer_id", "role", "country_code", "subdivision_code", "postal_code", "city",
-      "confidence", "source", "source_field", "validated_at", "created_by", "created_at"), "*"),
+      "line1", "line2", "confidence", "source", "source_field", "validated_at", "created_by", "created_at"), "*"),
     ("customer_tax_ids",
      ("organization_id", "customer_id", "value_raw", "value_normalized", "id_type", "country_code", "source",
       "source_field", "created_by", "created_at"), "*"),

@@ -90,6 +90,7 @@ class BuyerEvidenceService:
     def record_address(self, organization_id: int, actor_id: int, customer_id: int, *, role: AddressRole,
                        country_code: Optional[str], subdivision_code: Optional[str] = None,
                        postal_code: Optional[str] = None, city: Optional[str] = None,
+                       line1: Optional[str] = None, line2: Optional[str] = None,
                        confidence: AddressConfidence = AddressConfidence.ENTERED) -> CustomerTaxAddress:
         self._customer(customer_id, organization_id)
         country = (country_code or "").strip().upper() or None
@@ -111,7 +112,8 @@ class BuyerEvidenceService:
         row = CustomerTaxAddress(
             organization_id=organization_id, customer_id=customer_id, role=role, country_code=country,
             subdivision_code=subdivision, postal_code=(postal_code or "").strip() or None,
-            city=(city or "").strip() or None, confidence=confidence, source=EvidenceSource.TENANT_ENTERED,
+            city=(city or "").strip() or None, line1=(line1 or "").strip() or None,
+            line2=(line2 or "").strip() or None, confidence=confidence, source=EvidenceSource.TENANT_ENTERED,
             validated_at=now if confidence == AddressConfidence.VALIDATED else None,
             created_by=actor_id, created_at=now,
         )
@@ -216,7 +218,8 @@ class BuyerEvidenceService:
 
 def view_address(a: CustomerTaxAddress) -> dict:
     return {"id": a.id, "role": a.role.name, "country_code": a.country_code, "subdivision_code": a.subdivision_code,
-            "postal_code": a.postal_code, "city": a.city, "confidence": a.confidence.name, "source": a.source.name,
+            "postal_code": a.postal_code, "city": a.city, "line1": a.line1, "line2": a.line2,
+            "confidence": a.confidence.name, "source": a.source.name,
             "source_field": a.source_field, "validated_at": a.validated_at, "created_at": a.created_at,
             "superseded_at": a.superseded_at}
 
