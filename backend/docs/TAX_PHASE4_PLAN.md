@@ -352,9 +352,9 @@ are refused (T13).
 
 | Gap | Size |
 |---|---|
-| **B1** Combined approvals-inbox endpoint (IN_APPROVAL across version types, maker flagged); optional, since the console can merge the lists | ≈ 0.5 d |
-| **B2** Jurisdictions, authorities and components have no create or amend API (seed script only). New markets need either an admin API with maker-checker or a reviewed seed. Not needed for the GB/AU sign-off. | ≈ 2 d (if wanted) |
-| **B3** List endpoints have no pagination (fine at today's volumes) | ≈ 0.5 d |
+| **B1** Combined approvals-inbox endpoint | **Done** (see `TAX_CONTROL_CENTER_API.md`) |
+| **B2** Admin API for jurisdictions, authorities and components | **Deferred** (decision 2026-11-05): jurisdictions stay seed- or migration-only, with review |
+| **B3** Additive cursor pagination on the list endpoints the screens use | **Done** (see `TAX_CONTROL_CENTER_API.md`) |
 
 ### Sign-off subset: schedule early
 

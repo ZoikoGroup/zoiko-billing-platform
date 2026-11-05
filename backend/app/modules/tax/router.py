@@ -35,6 +35,7 @@ from app.modules.tax.context_builder import DOCUMENT_TYPES, build_tax_context
 from app.modules.tax.determination_service import TaxDeterminationService, view_quote
 from app.modules.tax.enums import ReviewItemStatus
 from app.modules.tax.governed_credit_service import GovernedCreditService, view_credit_lines
+from app.modules.tax.pagination import PageParams, decode_cursor, paginate
 from app.modules.tax.quote_models import TaxQuote
 from app.modules.tax.report_service import TaxFindingsReportService
 from app.modules.tax.models import EntityTaxActivation, EntityTaxLegalBasis, ProductTaxClassification
@@ -80,6 +81,7 @@ router = APIRouter(
 @router.get("/legal-entities", response_model=SellerLegalEntityListResponse, summary="List seller legal entities")
 def list_legal_entities(
     include_inactive: bool = Query(False),
+    page: PageParams = Depends(),
     db: Session = Depends(get_db),
     organization_id: int = Depends(get_organization_id),
 ):
@@ -89,7 +91,8 @@ def list_legal_entities(
     if svc.get_default_entity(organization_id) is None:
         svc.ensure_default_entity(organization_id)
         db.commit()
-    return {"items": svc.list_entities(organization_id, include_inactive=include_inactive)}
+    items, next_cursor = paginate(svc.list_entities(organization_id, include_inactive=include_inactive), page)
+    return {"items": items, "next_cursor": next_cursor}
 
 
 @router.get("/legal-entities/{entity_id}", response_model=SellerLegalEntityResponse, summary="Get a seller legal entity")
@@ -195,10 +198,12 @@ def request_regime(
 @router.get("/registrations", summary="List tax registrations")
 def list_registrations(
     seller_entity_id: Optional[int] = Query(None),
+    page: PageParams = Depends(),
     db: Session = Depends(get_db),
     organization_id: int = Depends(get_organization_id),
 ):
-    return {"items": [view_registration(r) for r in TenantTaxService(db).list_registrations(organization_id, seller_entity_id)]}
+    rows, next_cursor = paginate(TenantTaxService(db).list_registrations(organization_id, seller_entity_id), page)
+    return {"items": [view_registration(r) for r in rows], "next_cursor": next_cursor}
 
 
 @router.post("/registrations", status_code=status.HTTP_201_CREATED, summary="Record a tax registration",
@@ -228,8 +233,10 @@ def update_registration(
 # ── Legal bases (collecting without a registration) ─────────────────────
 
 @router.get("/legal-bases", summary="List legal bases for collecting without registration")
-def list_legal_bases(db: Session = Depends(get_db), organization_id: int = Depends(get_organization_id)):
-    return {"items": [view_legal_basis(r) for r in TenantTaxService(db).list_legal_bases(organization_id)]}
+def list_legal_bases(page: PageParams = Depends(), db: Session = Depends(get_db),
+                     organization_id: int = Depends(get_organization_id)):
+    rows, next_cursor = paginate(TenantTaxService(db).list_legal_bases(organization_id), page)
+    return {"items": [view_legal_basis(r) for r in rows], "next_cursor": next_cursor}
 
 
 @router.post("/legal-bases", status_code=status.HTTP_201_CREATED, summary="Propose a legal basis",
@@ -272,10 +279,12 @@ def withdraw_legal_basis(basis_id: int, db: Session = Depends(get_db),
 @router.get("/activations", summary="List tax activations")
 def list_activations(
     seller_entity_id: Optional[int] = Query(None),
+    page: PageParams = Depends(),
     db: Session = Depends(get_db),
     organization_id: int = Depends(get_organization_id),
 ):
-    return {"items": [view_activation(a) for a in TenantTaxService(db).list_activations(organization_id, seller_entity_id)]}
+    rows, next_cursor = paginate(TenantTaxService(db).list_activations(organization_id, seller_entity_id), page)
+    return {"items": [view_activation(a) for a in rows], "next_cursor": next_cursor}
 
 
 @router.post("/activations", status_code=status.HTTP_201_CREATED, summary="Propose a tax activation",
@@ -341,10 +350,12 @@ def list_tax_codes(db: Session = Depends(get_db), organization_id: int = Depends
 @router.get("/product-classifications", summary="Product tax classifications and history")
 def list_classifications(
     product_id: Optional[int] = Query(None),
+    page: PageParams = Depends(),
     db: Session = Depends(get_db),
     organization_id: int = Depends(get_organization_id),
 ):
-    return {"items": [view_classification(c) for c in ClassificationService(db).list_classifications(organization_id, product_id)]}
+    rows, next_cursor = paginate(ClassificationService(db).list_classifications(organization_id, product_id), page)
+    return {"items": [view_classification(c) for c in rows], "next_cursor": next_cursor}
 
 
 @router.post("/product-classifications", status_code=status.HTTP_201_CREATED, summary="Propose a classification",
@@ -440,10 +451,11 @@ def revoke_exemption_certificate(certificate_id: int, db: Session = Depends(get_
 # ── Review items (T14) and tax context ──────────────────────────────────
 
 @router.get("/review-items", summary="Tax evidence review queue")
-def list_review_items(include_resolved: bool = Query(False), db: Session = Depends(get_db),
-                      organization_id: int = Depends(get_organization_id)):
+def list_review_items(include_resolved: bool = Query(False), page: PageParams = Depends(),
+                      db: Session = Depends(get_db), organization_id: int = Depends(get_organization_id)):
     items = TaxReviewService(db).list_items(organization_id, None if include_resolved else ReviewItemStatus.OPEN)
-    return {"items": [view_review_item(i) for i in items]}
+    rows, next_cursor = paginate(items, page)
+    return {"items": [view_review_item(i) for i in rows], "next_cursor": next_cursor}
 
 
 @router.post("/review-items/{item_id}/resolve", summary="Resolve a review item",
@@ -518,11 +530,14 @@ def invoice_tax_summary(invoice_id: int, db: Session = Depends(get_db),
 
 
 @router.get("/exceptions", summary="Governed drafts that cannot be issued, with reason, owner and re-quote")
-def list_tax_exceptions(limit: int = Query(200, ge=1, le=500), db: Session = Depends(get_db),
-                        organization_id: int = Depends(get_organization_id)):
+def list_tax_exceptions(limit: int = Query(200, ge=1, le=500),
+                        cursor: Optional[str] = Query(None, max_length=512,
+                                                      description="next_cursor of the previous page"),
+                        db: Session = Depends(get_db), organization_id: int = Depends(get_organization_id)):
+    # Keeps its existing limit (drafts checked per page; default 200, max 500).
     from app.modules.tax.exception_service import TaxExceptionService
 
-    return TaxExceptionService(db).list_exceptions(organization_id, limit=limit)
+    return TaxExceptionService(db).list_exceptions(organization_id, limit=limit, after_invoice_id=decode_cursor(cursor))
 
 
 @router.post("/invoices/{invoice_id}/credit-notes", status_code=status.HTTP_201_CREATED,
