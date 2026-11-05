@@ -21,7 +21,14 @@ from sqlalchemy.orm import Session
 
 from app.core.db_types import CaseInsensitiveEnum
 from app.database import Base
-from app.modules.tax.enums import CircuitState, OutboxOperation, OutboxState, TERMINAL_OUTBOX_STATES
+from app.modules.tax.enums import (
+    TERMINAL_OUTBOX_STATES,
+    CircuitState,
+    ConnectionStatus,
+    OutboxOperation,
+    OutboxState,
+    ProviderEnvironment,
+)
 from app.modules.tax.models import register_tenant_record_guard
 
 _ACTIVE_SQL = "operation = 'COMMIT' AND state IN ('PENDING', 'UNCERTAIN', 'REMOTE_COMMITTED')"
@@ -49,6 +56,14 @@ class TaxProviderOutbox(Base):
     review_kind             = Column(String(40), nullable=True)      # OutboxReviewKind name
     review_reason           = Column(Text, nullable=True)
     send_intent             = Column(JSON, nullable=True)            # {"channel": "email", ...} once SENT
+    # Phase 4a-2
+    provider_connection_id  = Column(Integer, ForeignKey("tax_provider_connections.id", ondelete="RESTRICT"),
+                                     nullable=True)
+    reference_transaction_id = Column(String(255), nullable=True)    # ADJUST / VOID: the original provider transaction
+    credit_note_id          = Column(Integer, ForeignKey("credit_notes.id", ondelete="RESTRICT"), nullable=True)
+    request_payload         = Column(JSON, nullable=True)            # ADJUST: the minimized adjustment payload
+    void_requested_by       = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    void_requested_at       = Column(DateTime(timezone=True), nullable=True)
     created_by              = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at              = Column(DateTime(timezone=True), nullable=False)
     updated_at              = Column(DateTime(timezone=True), nullable=True)
@@ -61,7 +76,8 @@ class TaxProviderOutbox(Base):
 
 
 OUTBOX_FROZEN_FIELDS = ("organization_id", "invoice_id", "tax_quote_id", "operation", "provider_name",
-                        "idempotency_key", "created_by", "created_at")
+                        "idempotency_key", "created_by", "created_at", "provider_connection_id",
+                        "reference_transaction_id", "credit_note_id", "request_payload")
 register_tenant_record_guard(TaxProviderOutbox.__table__, OUTBOX_FROZEN_FIELDS)
 
 #: The only columns a terminal row may still change: a committed snapshot is
@@ -108,6 +124,59 @@ def _guard_outbox_terminal(session, flush_context, instances):
         changed = {a.key for a in state.mapper.column_attrs if state.attrs[a.key].history.has_changes()}
         if changed - set(TERMINAL_MUTABLE_FIELDS):
             raise TaxRecordFrozenError(f"Provider outbox row {obj.id} is {old.name} and final.")
+
+
+class TaxProviderConnection(Base):
+    """A tenant's connection to a provider for one seller entity (Phase 4a-2).
+
+    The endpoint is never stored or supplied: it comes from the code-defined
+    allowlist for (provider, environment). Credentials live in the
+    SecretStore and are write-only; only presence, last rotation and the
+    masked last 4 characters are kept here. Proposed by a billing admin,
+    approved by a different finance approver."""
+    __tablename__ = "tax_provider_connections"
+
+    id                    = Column(Integer, primary_key=True, index=True)
+    organization_id       = Column(Integer, ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False, index=True)
+    seller_entity_id      = Column(Integer, ForeignKey("seller_legal_entities.id", ondelete="RESTRICT"), nullable=False,
+                                   index=True)
+    provider_name         = Column(String(100), nullable=False)
+    environment           = Column(CaseInsensitiveEnum(ProviderEnvironment), nullable=False)
+    mode                  = Column(String(20), nullable=False)          # ProviderMode name
+    status                = Column(CaseInsensitiveEnum(ConnectionStatus), nullable=False, index=True)
+    proposed_by           = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    approved_by           = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    approved_at           = Column(DateTime(timezone=True), nullable=True)
+    decision_reason       = Column(Text, nullable=True)
+    suspended_reason      = Column(Text, nullable=True)
+    resume_requested_by   = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    credential_ref        = Column(Integer, nullable=True)              # SecretStore reference
+    credential_last4      = Column(String(4), nullable=True)
+    credential_rotated_at = Column(DateTime(timezone=True), nullable=True)
+    credential_set_by     = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    health_ok             = Column(Boolean, nullable=True)
+    health_checked_at     = Column(DateTime(timezone=True), nullable=True)
+    health_detail         = Column(Text, nullable=True)
+    created_at            = Column(DateTime(timezone=True), nullable=False)
+    updated_at            = Column(DateTime(timezone=True), nullable=True)
+
+
+CONNECTION_FROZEN_FIELDS = ("organization_id", "seller_entity_id", "provider_name", "environment", "mode",
+                            "proposed_by", "created_at")
+register_tenant_record_guard(TaxProviderConnection.__table__, CONNECTION_FROZEN_FIELDS)
+
+
+class TaxProviderSecret(Base):
+    """Encrypted provider credentials (interim Fernet envelope, dedicated key).
+    Never logged or returned. Replaced on rotation and deleted on revocation:
+    secret material is not retained evidence."""
+    __tablename__ = "tax_provider_secrets"
+
+    id              = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False, index=True)
+    ciphertext      = Column(Text, nullable=False)
+    key_version     = Column(String(20), nullable=False)
+    created_at      = Column(DateTime(timezone=True), nullable=False)
 
 
 class TaxProviderCircuit(Base):

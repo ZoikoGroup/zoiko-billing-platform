@@ -508,14 +508,23 @@ def second_tenant(w, code):
     t = {**w, "org": org, "entity": entity,
          "maker": g._user(db, f"maker@{code.lower()}.example", UserRole.BILLING_ADMIN, org.id),
          "checker": g._user(db, f"checker@{code.lower()}.example", UserRole.FINANCE_APPROVER, org.id)}
+    from app.modules.tax.connection_service import ProviderConnectionService
+    from app.modules.tax.enums import ProviderEnvironment
+    from app.modules.tax.provider_contract import ProviderMode
+
     tenant = TenantTaxService(db)
     reg = tenant.create_registration(org.id, t["maker"].id, seller_entity_id=entity.id, jurisdiction_id=w["gb"].id,
                                      tax_type_id=w["vat"].id, registration_number=f"GB-{code}",
                                      valid_from=date(2020, 1, 1))
+    connections = ProviderConnectionService(db)
+    conn = connections.propose(org.id, t["maker"].id, seller_entity_id=entity.id, provider_name="fake-provider",
+                               environment=ProviderEnvironment.SANDBOX, mode=ProviderMode.COMMIT)
+    connections.set_credentials(org.id, t["maker"].id, conn.id, f"fake-credential-{code}")
+    connections.decide(org.id, t["checker"].id, conn.id, approve=True)
     act = tenant.propose_activation(org.id, t["maker"].id, seller_entity_id=entity.id, jurisdiction_id=w["gb"].id,
                                     tax_type_id=w["vat"].id, transaction_class=TransactionClass.B2B_DIGITAL,
                                     mode=TaxOperatingMode.PROVIDER_APPROVED, effective_from=date(2025, 1, 1),
-                                    registration_id=reg.id)
+                                    registration_id=reg.id, provider_connection_id=conn.id)
     tenant.decide_activation(org.id, t["checker"].id, act.id, approve=True)
     t["dig_product"] = g.product(t, f"DIG{code}", "DIG")
     t["customer"] = g.buyer(t, verified=True, code=f"{code}C")

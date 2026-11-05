@@ -138,6 +138,16 @@ class ProviderAdapter(ABC):
     def void(self, *, transaction_id: str, idempotency_key: str, reason: str) -> None:
         """Void a committed transaction by reference (compensation)."""
 
+    def adjust(self, *, transaction_id: str, idempotency_key: str, payload: dict) -> str:
+        """Credit or return against a committed transaction, by reference
+        (T15/T18). Idempotent on the key; same error contract as commit()."""
+        raise ProviderRefused(f"{self.name} does not support adjustments.")
+
+    def test_connection(self) -> dict:
+        """Check the configured endpoint and credentials. Returns
+        {"ok": bool, "detail": str}; never echoes credentials."""
+        return {"ok": True, "detail": "not implemented by this adapter"}
+
     def link_reference(self, *, transaction_id: str, document_reference: str) -> None:
         """Attach our invoice number after commit (option B, KEY_ONLY)."""
         raise ProviderError(f"{self.name} cannot link a document reference.")
@@ -146,12 +156,39 @@ class ProviderAdapter(ABC):
         return {"ok": True}
 
 
-#: Every field a commit payload may carry (§6 of the Phase 4 plan). Nothing
-#: else leaves the platform: no names, emails, descriptions, notes or PDFs.
+#: Every field a commit / adjust payload may carry (§6 of the Phase 4 plan).
+#: Nothing else leaves the platform: no names, emails, descriptions, notes or PDFs.
 ALLOWED_COMMIT_FIELDS = frozenset({
     "idempotency_key", "document_reference", "document_type", "tax_date", "currency",
-    "seller", "buyer", "lines", "totals",
+    "seller", "buyer", "lines", "totals", "original_transaction_id",
 })
+
+
+# ── the provider registry: code-defined, never tenant-supplied ───────────
+
+@dataclass(frozen=True)
+class ProviderDefinition:
+    """A provider Zoiko can talk to. Endpoints are fixed in code per
+    environment: a tenant never supplies a URL (no SSRF), and
+    test_connection / every call goes only to these hosts."""
+    name: str
+    factory: object                   # callable(endpoint: str, credentials: str, mode: ProviderMode) -> ProviderAdapter
+    endpoints: dict                   # {"SANDBOX": "https://...", "PRODUCTION": "https://..."}
+
+    def endpoint(self, environment: str) -> str:
+        url = self.endpoints.get(environment)
+        if not url or not url.startswith("https://"):
+            raise ProviderRefused(f"{self.name} has no allowlisted {environment} endpoint.")
+        return url
+
+
+#: name -> ProviderDefinition. Empty in production until a provider is
+#: contracted (4d); tests register the fake.
+PROVIDER_REGISTRY: dict = {}
+
+
+def provider_definition(name: str) -> Optional[ProviderDefinition]:
+    return PROVIDER_REGISTRY.get(name)
 ALLOWED_LINE_FIELDS = frozenset({
     "line_id", "quantity", "net_amount", "line_discount", "document_discount", "tax_code", "is_tax_inclusive",
     "components",

@@ -88,6 +88,9 @@ class TaxQuote(Base):
     # The place-of-supply address the quote was determined with, and its role
     # (PlaceOfSupplyRole). Sent to a provider exactly as stored (Phase 4a-1 fix 4).
     supply_address          = Column(JSON, nullable=True)
+    # Provider quotes: the tenant connection that computed them (Phase 4a-2).
+    provider_connection_id  = Column(Integer, ForeignKey("tax_provider_connections.id", ondelete="RESTRICT"),
+                                     nullable=True)
     context_fingerprint     = Column(String(64), nullable=False)
     document_hash           = Column(String(64), nullable=False)
     request_hash            = Column(String(64), nullable=False)

@@ -434,6 +434,7 @@ class OutboxOperation(str, enum.Enum):
     VOID   = "void"
     LINK   = "link"       # attach our invoice number after commit (KEY_ONLY)
     EMAIL  = "email"      # deliver a send-by-email intent once the invoice is SENT
+    ADJUST = "adjust"     # credit note / refund adjusting the original provider transaction (T15/T18)
 
 
 class OutboxState(str, enum.Enum):
@@ -468,6 +469,22 @@ class OutboxReviewKind(str, enum.Enum):
     VOID_FAILED       = "void_failed"         # compensation could not void by reference
     PROVIDER_VOIDED   = "provider_voided"     # the provider shows a void we never asked for
     EMAIL_UNCERTAIN   = "email_uncertain"     # an email attempt was interrupted: never resent automatically
+
+
+class ProviderEnvironment(str, enum.Enum):
+    SANDBOX    = "sandbox"
+    PRODUCTION = "production"
+
+
+class ConnectionStatus(str, enum.Enum):
+    """A tenant's provider connection (Phase 4a-2). Proposed by a billing
+    admin, approved by a different finance approver; SUSPENDED freezes it
+    (credentials revoked, T16) until it is resumed by two people again."""
+    PROPOSED  = "proposed"
+    APPROVED  = "approved"
+    REJECTED  = "rejected"
+    WITHDRAWN = "withdrawn"
+    SUSPENDED = "suspended"
 
 
 class PlaceOfSupplyRole(str, enum.Enum):

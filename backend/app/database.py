@@ -508,6 +508,26 @@ CRITICAL_COLUMNS: list[tuple[str, str, str, str]] = [
         "alembic/versions/a8d3e6f1c9b2_tax_phase4a_fixes.py",
         "ZB-TAX-ARCH-001 Phase 4a-1 fixes: street line of the buyer's tax address",
     ),
+    (
+        "entity_tax_activations", "provider_connection_id",
+        "alembic/versions/b5e9d2c7a4f1_tax_phase4a2_connections.py",
+        "ZB-TAX-ARCH-001 Phase 4a-2: provider activations reference an approved connection",
+    ),
+    (
+        "tax_quotes", "provider_connection_id",
+        "alembic/versions/b5e9d2c7a4f1_tax_phase4a2_connections.py",
+        "ZB-TAX-ARCH-001 Phase 4a-2: provider quotes record the connection that computed them",
+    ),
+    (
+        "tax_provider_outbox", "reference_transaction_id",
+        "alembic/versions/b5e9d2c7a4f1_tax_phase4a2_connections.py",
+        "ZB-TAX-ARCH-001 Phase 4a-2: corrections reference the original provider transaction",
+    ),
+    (
+        "customer_exemption_certificates", "evidence_file_id",
+        "alembic/versions/b5e9d2c7a4f1_tax_phase4a2_connections.py",
+        "ZB-TAX-ARCH-001 Phase 4a-2: certificate evidence documents",
+    ),
 ]
 
 

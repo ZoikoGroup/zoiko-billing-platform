@@ -11,7 +11,7 @@ super administrators have no standing access to tenant tax data (§12.1,
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Header, Query, status
+from fastapi import APIRouter, Depends, File, Form, Header, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import (
@@ -48,6 +48,9 @@ from app.modules.tax.policy_schemas import (
     ImpactPreviewRequest,
     QuoteCreate,
     LegalBasisCreate,
+    ProviderConnectionCreate,
+    ProviderCredentialsSet,
+    ReasonRequest,
     RegimeChangeRequest,
     RegistrationCreate,
     RegistrationUpdate,
@@ -181,7 +184,8 @@ def regime_eligibility(
     return TenantTaxService(db).regime_eligibility(organization_id, entity_id, as_of)
 
 
-@router.post("/legal-entities/{entity_id}/regime", summary="Request a tax regime change",
+@router.post("/legal-entities/{entity_id}/regime", status_code=status.HTTP_201_CREATED,
+             summary="Propose a tax regime change (a different finance approver decides)",
              dependencies=[Depends(get_current_org_admin)])
 def request_regime(
     entity_id: int,
@@ -190,7 +194,47 @@ def request_regime(
     organization_id: int = Depends(get_organization_id),
     current_user=Depends(get_current_user),
 ):
-    return TenantTaxService(db).request_regime(organization_id, current_user.id, entity_id, data.tax_regime)
+    from app.modules.tax.tenant_tax_service import view_regime_change
+
+    return view_regime_change(TenantTaxService(db).request_regime(
+        organization_id, current_user.id, entity_id, data.tax_regime, data.reason))
+
+
+@router.get("/regime-changes", summary="Regime change proposals and decisions")
+def list_regime_changes(seller_entity_id: Optional[int] = Query(None), page: PageParams = Depends(),
+                        db: Session = Depends(get_db), organization_id: int = Depends(get_organization_id)):
+    from app.modules.tax.tenant_tax_service import view_regime_change
+
+    rows, next_cursor = paginate(TenantTaxService(db).list_regime_changes(organization_id, seller_entity_id), page)
+    return {"items": [view_regime_change(r) for r in rows], "next_cursor": next_cursor}
+
+
+def _decide_regime(approve: bool):
+    def handler(change_id: int, data: DecisionRequest, db: Session = Depends(get_db),
+                organization_id: int = Depends(get_organization_id), current_user=Depends(get_current_user)):
+        from app.modules.tax.tenant_tax_service import view_regime_change
+
+        return view_regime_change(TenantTaxService(db).decide_regime_change(
+            organization_id, current_user.id, change_id, approve=approve, reason=data.reason))
+    return handler
+
+
+router.add_api_route("/regime-changes/{change_id}/approve", _decide_regime(True), methods=["POST"],
+                     dependencies=[Depends(get_current_finance_approver)],
+                     summary="Approve a regime change (different user)")
+router.add_api_route("/regime-changes/{change_id}/reject", _decide_regime(False), methods=["POST"],
+                     dependencies=[Depends(get_current_finance_approver)], summary="Reject a regime change")
+
+
+@router.post("/regime-changes/{change_id}/withdraw", summary="Withdraw a proposed regime change",
+             dependencies=[Depends(get_current_org_admin)])
+def withdraw_regime_change(change_id: int, db: Session = Depends(get_db),
+                           organization_id: int = Depends(get_organization_id), current_user=Depends(get_current_user)):
+    from app.modules.tax.models import TaxRegimeChange
+    from app.modules.tax.tenant_tax_service import view_regime_change
+
+    return view_regime_change(TenantTaxService(db).withdraw(TaxRegimeChange, "Regime change", organization_id,
+                                                           current_user.id, change_id))
 
 
 # ── Registrations ───────────────────────────────────────────────────────
@@ -583,3 +627,227 @@ def tenant_duplicate_tax_rows(
     _user=Depends(require_tax_report_role),
 ):
     return TaxFindingsReportService(db).tenant_duplicates(organization_id)
+
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# Phase 4a-2 — provider connections, certificate evidence, provider
+# transactions. Tenant-only (get_organization_id refuses platform tokens).
+# ═════════════════════════════════════════════════════════════════════════
+
+@router.get("/provider-connections", summary="Provider connections (credentials never returned)")
+def list_provider_connections(seller_entity_id: Optional[int] = Query(None), page: PageParams = Depends(),
+                              db: Session = Depends(get_db), organization_id: int = Depends(get_organization_id)):
+    from app.modules.tax.connection_service import ProviderConnectionService, view_connection
+
+    rows, next_cursor = paginate(ProviderConnectionService(db).list(organization_id, seller_entity_id), page)
+    return {"items": [view_connection(r) for r in rows], "next_cursor": next_cursor}
+
+
+@router.get("/provider-connections/{connection_id}", summary="A provider connection")
+def get_provider_connection(connection_id: int, db: Session = Depends(get_db),
+                            organization_id: int = Depends(get_organization_id)):
+    from app.modules.tax.connection_service import ProviderConnectionService, view_connection
+
+    return view_connection(ProviderConnectionService(db).get(organization_id, connection_id))
+
+
+@router.post("/provider-connections", status_code=status.HTTP_201_CREATED,
+             summary="Propose a provider connection (endpoint from the allowlist; no URL accepted)",
+             dependencies=[Depends(get_current_billing_admin)])
+def propose_provider_connection(data: ProviderConnectionCreate, db: Session = Depends(get_db),
+                                organization_id: int = Depends(get_organization_id),
+                                current_user=Depends(get_current_user)):
+    from app.modules.tax.connection_service import ProviderConnectionService, view_connection
+    from app.modules.tax.enums import ProviderEnvironment
+    from app.modules.tax.provider_contract import ProviderMode
+
+    return view_connection(ProviderConnectionService(db).propose(
+        organization_id, current_user.id, seller_entity_id=data.seller_entity_id, provider_name=data.provider_name,
+        environment=ProviderEnvironment[data.environment], mode=ProviderMode[data.mode]))
+
+
+def _connection_action(action: str):
+    def handler(connection_id: int, data: Optional[DecisionRequest] = None, db: Session = Depends(get_db),
+                organization_id: int = Depends(get_organization_id), current_user=Depends(get_current_user)):
+        from app.modules.tax.connection_service import ProviderConnectionService, view_connection
+
+        svc, reason = ProviderConnectionService(db), (data.reason if data else None)
+        if action in ("approve", "reject"):
+            row = svc.decide(organization_id, current_user.id, connection_id, approve=action == "approve", reason=reason)
+        elif action == "withdraw":
+            row = svc.withdraw(organization_id, current_user.id, connection_id)
+        elif action == "resume":
+            row = svc.request_resume(organization_id, current_user.id, connection_id)
+        elif action in ("resume-approve", "resume-reject"):
+            row = svc.decide_resume(organization_id, current_user.id, connection_id,
+                                    approve=action == "resume-approve", reason=reason)
+        else:
+            row = svc.test_connection(organization_id, current_user.id, connection_id)
+        return view_connection(row)
+    return handler
+
+
+for _action, _dep, _summary in (
+    ("approve", get_current_finance_approver, "Approve a provider connection (different user)"),
+    ("reject", get_current_finance_approver, "Reject a provider connection"),
+    ("withdraw", get_current_billing_admin, "Withdraw a proposed provider connection"),
+    ("resume", get_current_billing_admin, "Ask to resume a suspended connection (new credentials set)"),
+    ("resume-approve", get_current_finance_approver, "Approve resuming a connection (different user)"),
+    ("resume-reject", get_current_finance_approver, "Reject resuming a connection"),
+    ("test", get_current_billing_admin, "Test the connection (allowlisted endpoint only)"),
+):
+    router.add_api_route(f"/provider-connections/{{connection_id}}/{_action}", _connection_action(_action),
+                         methods=["POST"], dependencies=[Depends(_dep)], summary=_summary)
+
+
+@router.put("/provider-connections/{connection_id}/credentials",
+            summary="Set or rotate credentials (write-only; never returned)",
+            dependencies=[Depends(get_current_billing_admin)])
+def set_provider_credentials(connection_id: int, data: ProviderCredentialsSet, db: Session = Depends(get_db),
+                             organization_id: int = Depends(get_organization_id), current_user=Depends(get_current_user)):
+    from app.modules.tax.connection_service import ProviderConnectionService, view_connection
+
+    return view_connection(ProviderConnectionService(db).set_credentials(organization_id, current_user.id,
+                                                                         connection_id, data.secret))
+
+
+@router.post("/provider-connections/{connection_id}/credentials/revoke",
+             summary="Revoke credentials: freezes the connection (T16)",
+             dependencies=[Depends(get_current_billing_admin)])
+def revoke_provider_credentials(connection_id: int, data: ReasonRequest, db: Session = Depends(get_db),
+                                organization_id: int = Depends(get_organization_id),
+                                current_user=Depends(get_current_user)):
+    from app.modules.tax.connection_service import ProviderConnectionService, view_connection
+
+    return view_connection(ProviderConnectionService(db).revoke_credentials(organization_id, current_user.id,
+                                                                            connection_id, data.reason))
+
+
+# ── exemption certificates (model + evidence) ──
+
+@router.get("/exemption-certificates", summary="Exemption certificates")
+def list_exemption_certificates(customer_id: Optional[int] = Query(None), page: PageParams = Depends(),
+                                db: Session = Depends(get_db), organization_id: int = Depends(get_organization_id)):
+    rows, next_cursor = paginate(BuyerEvidenceService(db).list_certificates(organization_id, customer_id), page)
+    return {"items": [view_certificate(c) for c in rows], "next_cursor": next_cursor}
+
+
+@router.post("/exemption-certificates/{certificate_id}/evidence",
+             summary="Attach the certificate document once (PDF, PNG or JPEG)",
+             dependencies=[Depends(get_current_billing_admin)])
+async def attach_certificate_evidence(certificate_id: int, file: UploadFile = File(...),
+                                      sha256: Optional[str] = Form(None, max_length=64),
+                                      db: Session = Depends(get_db),
+                                      organization_id: int = Depends(get_organization_id),
+                                      current_user=Depends(get_current_user)):
+    from app.config import settings
+
+    content = await file.read(settings.TAX_EVIDENCE_MAX_BYTES + 1)
+    return view_certificate(BuyerEvidenceService(db).attach_certificate_evidence(
+        organization_id, current_user.id, certificate_id, content=content, media_type=file.content_type or "",
+        filename=file.filename, expected_sha256=sha256))
+
+
+@router.get("/exemption-certificates/{certificate_id}/evidence", summary="Download the certificate document")
+def download_certificate_evidence(certificate_id: int, db: Session = Depends(get_db),
+                                  organization_id: int = Depends(get_organization_id)):
+    from fastapi.responses import Response
+
+    stored = BuyerEvidenceService(db).certificate_evidence(organization_id, certificate_id)
+    return Response(content=stored.content, media_type=stored.media_type,
+                    headers={"X-Content-SHA256": stored.sha256, "Cache-Control": "no-store",
+                             "Content-Disposition": f'attachment; filename="certificate-{certificate_id}"'})
+
+
+# ── provider transactions (the stuck-transaction view) ──
+
+def _transaction_view(db: Session, row, now) -> dict:
+    from app.modules.billing.models import Invoice
+
+    invoice = db.get(Invoice, row.invoice_id)
+    created = row.created_at if row.created_at.tzinfo else row.created_at.replace(tzinfo=now.tzinfo)
+    return {
+        "id": row.id, "operation": row.operation.name, "state": row.state.name, "provider_name": row.provider_name,
+        "provider_connection_id": row.provider_connection_id, "invoice_id": row.invoice_id,
+        "invoice_number": invoice.invoice_number if invoice else None, "credit_note_id": row.credit_note_id,
+        "review_kind": row.review_kind, "review_reason": row.review_reason, "last_error": row.last_error,
+        "attempts": row.attempts, "age_seconds": int((now - created).total_seconds()),
+        "grace_deadline": row.grace_deadline, "next_attempt_at": row.next_attempt_at,
+        "provider_transaction_id": row.provider_transaction_id, "verified": row.verified_at is not None,
+        "send_requested": bool(row.send_intent), "void_requested_by": row.void_requested_by,
+        "created_at": row.created_at, "completed_at": row.completed_at,
+    }
+
+
+@router.get("/provider-transactions", summary="This organization's provider transactions")
+def list_provider_transactions(state: Optional[str] = Query(None, max_length=30),
+                               operation: Optional[str] = Query(None, max_length=20),
+                               page: PageParams = Depends(), db: Session = Depends(get_db),
+                               organization_id: int = Depends(get_organization_id)):
+    from datetime import datetime, timezone
+
+    from app.modules.tax.enums import OutboxOperation, OutboxState
+    from app.modules.tax.provider_models import TaxProviderOutbox
+
+    q = db.query(TaxProviderOutbox).filter(TaxProviderOutbox.organization_id == organization_id)
+    try:
+        if state:
+            q = q.filter(TaxProviderOutbox.state == OutboxState[state.upper()])
+        if operation:
+            q = q.filter(TaxProviderOutbox.operation == OutboxOperation[operation.upper()])
+    except KeyError:
+        raise BadRequestException("Unknown state or operation.")
+    rows, next_cursor = paginate(q.order_by(TaxProviderOutbox.id.desc()).all(), page)
+    now = datetime.now(timezone.utc)
+    return {"items": [_transaction_view(db, r, now) for r in rows], "next_cursor": next_cursor}
+
+
+def _own_transaction(db: Session, organization_id: int, row_id: int):
+    from app.modules.tax.provider_models import TaxProviderOutbox
+
+    row = db.query(TaxProviderOutbox).filter(TaxProviderOutbox.id == row_id,
+                                             TaxProviderOutbox.organization_id == organization_id).first()
+    if row is None:
+        raise NotFoundException("Provider transaction", row_id)
+    return row
+
+
+@router.get("/provider-transactions/{row_id}", summary="One provider transaction")
+def get_provider_transaction(row_id: int, db: Session = Depends(get_db),
+                             organization_id: int = Depends(get_organization_id)):
+    from datetime import datetime, timezone
+
+    return _transaction_view(db, _own_transaction(db, organization_id, row_id), datetime.now(timezone.utc))
+
+
+def _transaction_action(action: str):
+    def handler(row_id: int, db: Session = Depends(get_db), organization_id: int = Depends(get_organization_id),
+                current_user=Depends(get_current_user)):
+        from datetime import datetime, timezone
+
+        from app.modules.tax.provider_issuance import ProviderIssuanceService
+
+        row = _own_transaction(db, organization_id, row_id)
+        svc = ProviderIssuanceService(db)
+        if action == "check-state":
+            return {"transaction": _transaction_view(db, row, datetime.now(timezone.utc)),
+                    "provider": svc.check_state(row.id)}
+        if action == "retry":
+            row = svc.retry(row.id)
+        elif action == "void-request":
+            row = svc.request_void(row.id, current_user.id)
+        else:
+            row = svc.approve_void(row.id, current_user.id)
+        return _transaction_view(db, row, datetime.now(timezone.utc))
+    return handler
+
+
+for _action, _dep, _summary in (
+    ("check-state", get_current_billing_admin, "Ask the provider what it holds (read-only)"),
+    ("retry", get_current_billing_admin, "Re-queue a row that failed on our side"),
+    ("void-request", get_current_billing_admin, "Ask to void a committed provider transaction"),
+    ("void-approve", get_current_finance_approver, "Approve the void (different user; never-sent invoices only)"),
+):
+    router.add_api_route(f"/provider-transactions/{{row_id}}/{_action}", _transaction_action(_action),
+                         methods=["POST"], dependencies=[Depends(_dep)], summary=_summary)

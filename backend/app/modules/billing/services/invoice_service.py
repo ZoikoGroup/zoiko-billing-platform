@@ -157,6 +157,15 @@ class InvoiceService:
             self.db.flush()
         return inv
 
+    def _void_provider_transaction(self, inv: Invoice, actor_id: Optional[int]) -> None:
+        """A cancelled or voided provider-committed invoice voids its provider
+        transaction by reference, in the same commit (Phase 4a-2)."""
+        if inv.tax_quote_id is None:
+            return
+        from app.modules.tax.provider_issuance import ProviderIssuanceService
+
+        ProviderIssuanceService(self.db).enqueue_cancellation(inv, actor_id)
+
     def _governed_gate(self):
         if getattr(self, "governed_gate", None) is None:
             from app.modules.tax.issuance_gate import GovernedIssuanceGate
@@ -1625,6 +1634,7 @@ class InvoiceService:
         inv.cancelled_at = datetime.utcnow()
         inv.cancellation_reason = reason
         inv.public_link_version = (getattr(inv, "public_link_version", 1) or 1) + 1
+        self._void_provider_transaction(inv, updated_by)
         safe_commit_and_refresh(self.db, inv)
         self._record_status_history(organization_id, invoice_id, old_status, InvoiceStatus.CANCELLED.value, updated_by, reason)
         self.audit.log(organization_id, updated_by, BillingAuditAction.CANCEL, "Invoice", invoice_id)
@@ -1645,6 +1655,7 @@ class InvoiceService:
         # the list and the audit trail, unlike a cancelled one. CANCELLED
         # status already keeps it out of balances and outstanding totals.
         inv.public_link_version = (getattr(inv, "public_link_version", 1) or 1) + 1
+        self._void_provider_transaction(inv, updated_by)
         safe_commit_and_refresh(self.db, inv)
         self._record_status_history(organization_id, invoice_id, old_status, InvoiceStatus.CANCELLED.value, updated_by, reason or "Voided")
         self.audit.log(organization_id, updated_by, BillingAuditAction.VOID, "Invoice", invoice_id)

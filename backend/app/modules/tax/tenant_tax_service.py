@@ -244,7 +244,8 @@ class TenantTaxService:
                            effective_from: date, effective_to: Optional[date] = None,
                            registration_id: Optional[int] = None, legal_basis_id: Optional[int] = None,
                            tenant_rate_percent: Optional[Decimal] = None, tenant_source_citation: Optional[str] = None,
-                           tenant_source_url: Optional[str] = None) -> EntityTaxActivation:
+                           tenant_source_url: Optional[str] = None,
+                           provider_connection_id: Optional[int] = None) -> EntityTaxActivation:
         self._entity(seller_entity_id, organization_id)
         self._scope_refs(jurisdiction_id, tax_type_id)
         if mode not in TENANT_ACTIVATION_MODES:
@@ -259,12 +260,22 @@ class TenantTaxService:
         if legal_basis_id is not None:
             self._get(EntityTaxLegalBasis, legal_basis_id, organization_id, "Legal basis")
         self._check_tenant_config_fields(mode, tenant_rate_percent, tenant_source_citation, tenant_source_url)
+        if (mode == TaxOperatingMode.PROVIDER_APPROVED) != (provider_connection_id is not None):
+            raise BadRequestException("A provider activation references exactly one provider connection; other "
+                                      "modes reference none.")
+        if provider_connection_id is not None:
+            from app.modules.tax.provider_models import TaxProviderConnection
+
+            connection = self._get(TaxProviderConnection, provider_connection_id, organization_id, "Provider connection")
+            if connection.seller_entity_id != seller_entity_id:
+                raise BadRequestException("The provider connection belongs to a different seller entity.")
         row = EntityTaxActivation(
             organization_id=organization_id, seller_entity_id=seller_entity_id, jurisdiction_id=jurisdiction_id,
             tax_type_id=tax_type_id, transaction_class=transaction_class, mode=mode, effective_from=effective_from,
             effective_to=effective_to, registration_id=registration_id, legal_basis_id=legal_basis_id,
             tenant_rate_percent=tenant_rate_percent, tenant_source_citation=tenant_source_citation,
-            tenant_source_url=tenant_source_url, status=TenantApprovalStatus.PROPOSED, proposed_by=actor_id,
+            tenant_source_url=tenant_source_url, provider_connection_id=provider_connection_id,
+            status=TenantApprovalStatus.PROPOSED, proposed_by=actor_id,
             created_at=_now(),
         )
         self.db.add(row)
@@ -326,6 +337,19 @@ class TenantTaxService:
                 problems.append("the legal basis is for a different entity, jurisdiction or tax type")
         else:
             problems.append("no registration or legal basis")
+        if row.mode == TaxOperatingMode.PROVIDER_APPROVED:
+            # The third approval of a provider market (with the platform's
+            # availability and this activation): an approved, usable connection.
+            from app.modules.tax.connection_service import ProviderConnectionService
+            from app.modules.tax.provider_models import TaxProviderConnection
+
+            connection = self.db.get(TaxProviderConnection, row.provider_connection_id) \
+                if row.provider_connection_id else None
+            problem = ProviderConnectionService(self.db).usable_problem(connection)
+            if problem:
+                problems.append(problem)
+            elif connection.seller_entity_id != row.seller_entity_id:
+                problems.append("the provider connection belongs to a different seller entity")
         return problems
 
     def decide_activation(self, organization_id: int, actor_id: int, activation_id: int, *, approve: bool,
@@ -446,30 +470,97 @@ class TenantTaxService:
             "backing_activations": backed,
         }
 
-    def request_regime(self, organization_id: int, actor_id: int, entity_id: int, regime: EntityTaxRegime) -> dict:
-        """GOVERNED is accepted only through here and only when the entity has
-        at least one ACTIVE (effective, approved) activation backed by a
-        published pack or approved tenant configuration (T12): never by a
-        settings toggle, a currency or a plan."""
-        eligibility = self.regime_eligibility(organization_id, entity_id)
-        if regime != EntityTaxRegime.GOVERNED:
-            return eligibility
+    def propose_regime_change(self, organization_id: int, actor_id: int, entity_id: int, regime: EntityTaxRegime,
+                              reason: Optional[str] = None):
+        """A regime change in either direction is a proposal (product question
+        6): a different finance approver decides it. GOVERNED is proposable
+        only when the entity qualifies (T12); leaving GOVERNED never alters
+        issued invoices or committed quotes."""
+        from app.modules.tax.models import TaxRegimeChange
+
         entity = self._entity(entity_id, organization_id)
-        if entity.tax_regime == EntityTaxRegime.GOVERNED:
-            return eligibility
-        if not eligibility["would_qualify"]:
+        if entity.tax_regime == regime:
+            raise BadRequestException(f"The entity is already {regime.name}.")
+        eligibility = self.regime_eligibility(organization_id, entity_id)
+        if regime == EntityTaxRegime.GOVERNED and not eligibility["would_qualify"]:
             raise BadRequestException(GOVERNED_NOT_QUALIFIED.replace("{id}", str(entity_id))
                                       .replace("{reasons}", "; ".join(eligibility["unmet_conditions"])))
-        old = entity.tax_regime
-        entity.tax_regime = EntityTaxRegime.GOVERNED
-        entity.version = (entity.version or 1) + 1
-        entity.updated_by = actor_id
-        self._log(organization_id, actor_id, BillingAuditAction.UPDATE, "SellerLegalEntity", entity.id,
-                  old_values={"tax_regime": old.name},
-                  new_values={"tax_regime": EntityTaxRegime.GOVERNED.name,
-                              "backing_activations": eligibility["backing_activations"]})
+        open_change = self.db.query(TaxRegimeChange).filter(
+            TaxRegimeChange.seller_entity_id == entity.id, TaxRegimeChange.status == TenantApprovalStatus.PROPOSED).first()
+        if open_change is not None:
+            raise BadRequestException(f"Regime change {open_change.id} is already awaiting a decision.")
+        row = TaxRegimeChange(
+            organization_id=organization_id, seller_entity_id=entity.id, from_regime=entity.tax_regime.name,
+            to_regime=regime.name, reason=reason, eligibility=_jsonable(eligibility),
+            status=TenantApprovalStatus.PROPOSED, proposed_by=actor_id, created_at=_now())
+        self.db.add(row)
+        self.db.flush()
+        self._log(organization_id, actor_id, BillingAuditAction.CREATE, "TaxRegimeChange", row.id,
+                  new_values={"from": row.from_regime, "to": row.to_regime})
         self.db.commit()
-        return self.regime_eligibility(organization_id, entity_id)
+        return row
+
+    def request_regime(self, organization_id: int, actor_id: int, entity_id: int, regime: EntityTaxRegime,
+                       reason: Optional[str] = None):
+        """POST /regime: records a proposal (see propose_regime_change)."""
+        return self.propose_regime_change(organization_id, actor_id, entity_id, regime, reason)
+
+    def decide_regime_change(self, organization_id: int, actor_id: int, change_id: int, *, approve: bool,
+                             reason: Optional[str] = None):
+        from app.modules.tax.models import TaxRegimeChange
+
+        row = self._get(TaxRegimeChange, change_id, organization_id, "Regime change")
+        if row.status != TenantApprovalStatus.PROPOSED:
+            raise BadRequestException(f"Regime change {row.id} is {row.status.name}, not PROPOSED.")
+        self._assert_checker(row.proposed_by, actor_id)
+        entity = self._entity(row.seller_entity_id, organization_id)
+        target = EntityTaxRegime[row.to_regime]
+        if approve:
+            if entity.tax_regime.name != row.from_regime:
+                raise BadRequestException("The entity's regime changed since this proposal; propose again.")
+            if target == EntityTaxRegime.GOVERNED:
+                eligibility = self.regime_eligibility(organization_id, entity.id)
+                if not eligibility["would_qualify"]:
+                    raise BadRequestException(GOVERNED_NOT_QUALIFIED.replace("{id}", str(entity.id))
+                                              .replace("{reasons}", "; ".join(eligibility["unmet_conditions"])))
+            old = entity.tax_regime
+            entity.tax_regime = target
+            entity.version = (entity.version or 1) + 1          # open quotes go stale; issued records untouched
+            entity.updated_by = actor_id
+            self._log(organization_id, actor_id, BillingAuditAction.UPDATE, "SellerLegalEntity", entity.id,
+                      old_values={"tax_regime": old.name},
+                      new_values={"tax_regime": target.name, "regime_change_id": row.id})
+        row.status = TenantApprovalStatus.APPROVED if approve else TenantApprovalStatus.REJECTED
+        row.approved_by, row.approved_at, row.decision_reason = actor_id, _now(), reason
+        self.db.flush()
+        self._log(organization_id, actor_id, BillingAuditAction.APPROVE if approve else BillingAuditAction.REJECT,
+                  "TaxRegimeChange", row.id, new_values={"status": row.status.name})
+        self.db.commit()
+        return row
+
+    def list_regime_changes(self, organization_id: int, entity_id: Optional[int] = None) -> list:
+        from app.modules.tax.models import TaxRegimeChange
+
+        q = self.db.query(TaxRegimeChange).filter(TaxRegimeChange.organization_id == organization_id)
+        if entity_id is not None:
+            q = q.filter(TaxRegimeChange.seller_entity_id == entity_id)
+        return q.order_by(TaxRegimeChange.id).all()
+
+
+def _jsonable(value):
+    import json
+
+    return json.loads(json.dumps(value, default=str))
+
+
+def view_regime_change(row) -> dict:
+    return {
+        "id": row.id, "seller_entity_id": row.seller_entity_id, "from_regime": row.from_regime,
+        "to_regime": row.to_regime, "reason": row.reason, "status": row.status.name,
+        "proposed_by": row.proposed_by, "approved_by": row.approved_by, "approved_at": row.approved_at,
+        "decision_reason": row.decision_reason, "created_at": row.created_at,
+        "eligibility_at_proposal": row.eligibility,
+    }
 
 
 def view_registration(row: EntityTaxRegistration) -> dict:
@@ -507,6 +598,7 @@ def view_activation(row: EntityTaxActivation) -> dict:
         "availability_version_id": row.availability_version_id,
         "tenant_rate_percent": row.tenant_rate_percent, "tenant_source_citation": row.tenant_source_citation,
         "tenant_source_url": row.tenant_source_url,
+        "provider_connection_id": row.provider_connection_id,
         # Every response for a tenant-configured activation carries the label.
         "verification_label": TENANT_CONFIG_LABEL if tenant_config else None,
         "status": row.status.name, "proposed_by": row.proposed_by, "approved_by": row.approved_by,

@@ -152,7 +152,7 @@ jobs:
         # the same migration chain, and what makes step 3 above pass for
         # real rather than merely not crash.
         run: python -m alembic upgrade head
-      - name: Tax framework on PostgreSQL — migration round trip + PG-only tests (ZB-TAX-ARCH-001 Phases 1-4a)
+      - name: Tax framework on PostgreSQL — migration round trip + PG-only tests (ZB-TAX-ARCH-001 Phases 1-4a-2)
         # The immutability triggers, the btree_gist EXCLUDE constraint and its
         # DEFERRABLE behaviour exist only on Postgres; the SQLite suite below
         # cannot exercise them. TAX_PG_TESTS_REQUIRED makes a missing URL an
@@ -173,7 +173,7 @@ jobs:
               exit 1
             fi
           done
-          python -m pytest tests/test_tax_phase1_registry_pg.py tests/test_tax_phase2_pg.py tests/test_tax_phase3a_pg.py tests/test_tax_phase3b_pg.py tests/test_tax_phase4a_pg.py -v -rs             --junitxml=tax-pg-results.xml || {
+          python -m pytest tests/test_tax_phase1_registry_pg.py tests/test_tax_phase2_pg.py tests/test_tax_phase3a_pg.py tests/test_tax_phase3b_pg.py tests/test_tax_phase4a_pg.py tests/test_tax_phase4a2_pg.py -v -rs             --junitxml=tax-pg-results.xml || {
             python scripts/ci_annotate_failures.py junit tax-pg-results.xml
             exit 1
           }

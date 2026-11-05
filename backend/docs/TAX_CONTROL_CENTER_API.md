@@ -1,4 +1,4 @@
-# Tax Control Center — API Contract for Gaps B1 and B3
+# Tax Control Center — API Contract (B1, B3, Phase 4a-2)
 
 The backend for the Tax Control Center frontend (plan:
 `TAX_PHASE4_PLAN.md`, "Tax Control Center UI"). It contains two gaps:
@@ -136,6 +136,187 @@ body), as before.
 
 **No tenant data:** items carry no organization, customer or invoice
 fields. A test asserts this against a tenant with invoices.
+
+## Behaviour change for external API clients (B3)
+
+Twelve list endpoints used to return **every** row. Since PR #134 they
+return **at most 50 by default** (up to 200 with `limit`), and the rest
+through `next_cursor`. No current frontend called them, so nothing in the
+product broke. **External or scripted API clients must follow `next_cursor`
+until it is `null`.**
+
+| Endpoint | Previously | Now |
+|---|---|---|
+| `GET /api/v1/super-admin/tax-registry/source-revisions` | all rows | 50 by default |
+| `GET /api/v1/super-admin/tax-registry/market-availability` | all rows | 50 by default |
+| `GET /api/v1/super-admin/tax-registry/tax-code-sets` | all rows | 50 by default |
+| `GET /api/v1/super-admin/tax-registry/rule-packs` | all rows | 50 by default |
+| `GET /api/v1/tax/jurisdictions` | all rows | 50 by default |
+| `GET /api/v1/tax/legal-entities` | all rows | 50 by default |
+| `GET /api/v1/tax/registrations` | all rows | 50 by default |
+| `GET /api/v1/tax/legal-bases` | all rows | 50 by default |
+| `GET /api/v1/tax/activations` | all rows | 50 by default |
+| `GET /api/v1/tax/product-classifications` | all rows | 50 by default |
+| `GET /api/v1/tax/review-items` | all rows | 50 by default |
+| `GET /api/v1/tax/exceptions` | 200 drafts checked | unchanged default (200), plus `cursor` |
+
+`staged-rates` keeps its previous `skip` and `limit` (default 100). New
+screens must page with `next_cursor`.
+
+## Phase 4a-2 endpoints (tenant, `/api/v1/tax`)
+
+These are tenant-only: platform tokens get `403` (T13). Every list follows
+the B3 contract (`limit`, `cursor` → `items`, `next_cursor`). Approvals follow
+the existing tenant two-person rule: proposers are `org_admin` or
+`billing_admin`; approvers are `finance_approver` and never the proposer.
+
+### Provider connections (T-screen: Provider Connections)
+
+```
+GET  /provider-connections?seller_entity_id=&limit=&cursor=     -> {items: [Connection], next_cursor}
+GET  /provider-connections/{id}                                 -> Connection
+POST /provider-connections                    (billing admin)   -> 201 Connection
+     {"seller_entity_id": 3, "provider_name": "avatax", "environment": "SANDBOX", "mode": "COMMIT"}
+POST /provider-connections/{id}/approve       (finance approver, not the proposer)  {"reason": null} -> Connection
+POST /provider-connections/{id}/reject        (finance approver)                    {"reason": "..."} -> Connection
+POST /provider-connections/{id}/withdraw      (billing admin)                                        -> Connection
+PUT  /provider-connections/{id}/credentials   (billing admin)   {"secret": "..."}    -> Connection   (write-only)
+POST /provider-connections/{id}/credentials/revoke (billing admin) {"reason": "leaked"} -> Connection (SUSPENDED)
+POST /provider-connections/{id}/resume        (billing admin; new credentials set first)             -> Connection
+POST /provider-connections/{id}/resume-approve (finance approver, not the requester)                 -> Connection
+POST /provider-connections/{id}/resume-reject  (finance approver)                                    -> Connection
+POST /provider-connections/{id}/test          (billing admin; allowlisted endpoint only)             -> Connection
+```
+
+**Request fields:**
+- `environment`: `SANDBOX` or `PRODUCTION`.
+- `mode`: `ESTIMATE_ONLY` or `COMMIT`.
+
+Any other field is refused with `422`. That includes `base_url`, `endpoint`,
+`url` and `host`: **the endpoint comes from a code-defined allowlist per
+provider and environment.**
+
+**Connection:**
+
+```json
+{
+  "id": 7, "seller_entity_id": 3, "provider_name": "avatax", "environment": "SANDBOX", "mode": "COMMIT",
+  "status": "APPROVED", "proposed_by": 11, "approved_by": 12, "approved_at": "2026-11-05T10:01:00+00:00",
+  "decision_reason": null, "suspended_reason": null, "resume_requested_by": null,
+  "credentials": {"present": true, "last_rotated_at": "2026-11-05T10:00:00+00:00", "last4": "9999"},
+  "health": {"ok": true, "checked_at": "2026-11-05T10:02:00+00:00", "detail": "reachable"},
+  "created_at": "...", "updated_at": "..."
+}
+```
+
+**Status:** `PROPOSED`, `APPROVED`, `REJECTED`, `WITHDRAWN` or `SUSPENDED`.
+
+**Credentials are never returned**: only `present`, `last_rotated_at` and the
+masked `last4`. Setting, rotating and revoking them are all audited.
+Revoking makes the connection `SUSPENDED`. Quotes and issuing through it then
+fail closed until two people resume it.
+
+**Production credentials** are refused (`400`) until the managed secret store
+exists (4d gate).
+
+**`test`** records `health`. It never echoes a credential.
+
+### Activations: a new field
+
+`POST /activations` accepts `provider_connection_id`. It is required when
+`mode` is `PROVIDER_APPROVED` and refused for other modes. The activation
+response includes it.
+
+A provider activation is approvable only when its connection is `APPROVED`,
+has credentials, and belongs to the same seller entity. A provider market is
+therefore approved three times, each by two people:
+1. the platform market;
+2. the tenant connection;
+3. the tenant activation.
+
+### Exemption certificates
+
+```
+GET  /exemption-certificates?customer_id=&limit=&cursor=        -> {items: [Certificate], next_cursor}
+POST /customers/{id}/exemption-certificates  (billing admin)   + optional "reason_code": "RESALE"
+POST /exemption-certificates/{id}/evidence   (billing admin)   multipart: file=<PDF|PNG|JPEG>, sha256=<optional hex>
+     -> Certificate     400: wrong type, signature mismatch, empty, over the size limit, hash mismatch, already attached
+GET  /exemption-certificates/{id}/evidence                      -> the file (Content-Type as stored;
+                                                                   X-Content-SHA256; Cache-Control: no-store)
+```
+
+**Certificate:**
+
+```json
+{"id": 4, "certificate_number": "EX-1", "jurisdiction_id": 1, "tax_type_id": null, "scope_description": "Charity",
+ "valid_from": "2026-01-01", "expires_at": null, "evidence_ref": "file", "status": "ACTIVE",
+ "reason_code": "CHARITY", "evidence_attached": true, "created_at": "...", "revoked_at": null}
+```
+
+**Evidence storage:**
+- write-once per certificate;
+- content-addressed per tenant;
+- size limit `TAX_EVIDENCE_MAX_BYTES` (5 MB);
+- never served to platform roles.
+
+### Regime changes (product question 6)
+
+```
+POST /legal-entities/{id}/regime   (org admin)   {"tax_regime": "governed"|"legacy_manual", "reason": "..."}
+     -> 201 RegimeChange (PROPOSED)       400: already that regime / not qualified / one already open
+GET  /regime-changes?seller_entity_id=&limit=&cursor=           -> {items: [RegimeChange], next_cursor}
+POST /regime-changes/{id}/approve   (finance approver, not the proposer)   -> RegimeChange (applies it)
+POST /regime-changes/{id}/reject    (finance approver)                     -> RegimeChange
+POST /regime-changes/{id}/withdraw  (org admin)                            -> RegimeChange
+```
+
+**RegimeChange:**
+
+```json
+{"id": 2, "seller_entity_id": 3, "from_regime": "GOVERNED", "to_regime": "LEGACY_MANUAL", "reason": "pilot ended",
+ "status": "APPROVED", "proposed_by": 10, "approved_by": 12, "approved_at": "...", "decision_reason": null,
+ "created_at": "...", "eligibility_at_proposal": {"would_qualify": true, "...": "..."}}
+```
+
+**Behaviour change:**
+- `POST /regime` with `governed` used to switch immediately. It now
+  **proposes**, in both directions.
+- The settings toggle (`PATCH /legal-entities/{id}`) refuses changing a
+  GOVERNED entity's regime.
+
+### Provider transactions (stuck-transaction view)
+
+```
+GET  /provider-transactions?state=&operation=&limit=&cursor=    -> {items: [Transaction], next_cursor}   (newest first)
+GET  /provider-transactions/{id}                                -> Transaction
+POST /provider-transactions/{id}/check-state   (billing admin)  -> {"transaction": Transaction, "provider": {...}}  read-only
+POST /provider-transactions/{id}/retry         (billing admin)  -> Transaction   (ROW_ERROR / UNRESOLVED_COMMIT only)
+POST /provider-transactions/{id}/void-request  (billing admin)  -> Transaction   (committed, needs review)
+POST /provider-transactions/{id}/void-approve  (finance approver, not the requester) -> Transaction (never-sent only)
+```
+
+**Filter values:**
+- `state`: `PENDING`, `UNCERTAIN`, `REMOTE_COMMITTED`, `DONE`, `FAILED`,
+  `VOIDED`, `CANCELLED` or `REVIEW_REQUIRED`.
+- `operation`: `COMMIT`, `ADJUST`, `VOID`, `EMAIL` or `LINK`.
+
+**Transaction:**
+
+```json
+{"id": 15, "operation": "COMMIT", "state": "REVIEW_REQUIRED", "provider_name": "avatax", "provider_connection_id": 7,
+ "invoice_id": 41, "invoice_number": "INV-0041", "credit_note_id": null, "review_kind": "UNRESOLVED_COMMIT",
+ "review_reason": "...", "last_error": "...", "attempts": 3, "age_seconds": 1260, "grace_deadline": "...",
+ "next_attempt_at": "...", "provider_transaction_id": null, "verified": false, "send_requested": true,
+ "void_requested_by": null, "created_at": "...", "completed_at": null}
+```
+
+**`check-state` → `provider`:** either
+`{"available": true, "provider": {"state": "COMMITTED", "total_tax": "10.00", ...}}`
+or `{"available": false, "detail": "..."}`.
+
+`GET /exceptions` and `GET /invoices/{id}/tax-summary` (the `issuance`
+block) keep showing provider issuing that is overdue or needs review, with
+owner and age.
 
 ## Tests
 

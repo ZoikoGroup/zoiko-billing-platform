@@ -14,6 +14,7 @@ Rules:
   * Evidence is append-only: a new address supersedes the previous one; a
     tax ID or certificate is retired/revoked, not edited.
 """
+import hashlib
 import re
 from datetime import date, datetime, timezone
 from typing import Optional
@@ -30,10 +31,17 @@ from app.modules.tax.enums import (
     EvidenceSource,
     VerificationStatus,
 )
-from app.modules.tax.models import CustomerExemptionCertificate, CustomerTaxAddress, CustomerTaxId
+from app.modules.tax.models import CustomerExemptionCertificate, CustomerTaxAddress, CustomerTaxId, TaxEvidenceFile
 from app.modules.tax.registry_models import TaxJurisdiction, TaxTypeDefinition
 
 _ISO2 = re.compile(r"^[A-Z]{2}$")
+
+#: Certificate evidence (Phase 4a-2): declared type -> required file signature.
+EVIDENCE_TYPES = {
+    "application/pdf": b"%PDF-",
+    "image/png": b"\x89PNG\r\n\x1a\n",
+    "image/jpeg": b"\xff\xd8\xff",
+}
 _SUBDIVISION = re.compile(r"^[A-Z0-9]{1,3}$")
 
 
@@ -180,8 +188,8 @@ class BuyerEvidenceService:
     # ── exemption certificates ──
     def add_certificate(self, organization_id: int, actor_id: int, customer_id: int, *, certificate_number: str,
                         jurisdiction_id: int, scope_description: str, valid_from: date, evidence_ref: str,
-                        tax_type_id: Optional[int] = None,
-                        expires_at: Optional[date] = None) -> CustomerExemptionCertificate:
+                        tax_type_id: Optional[int] = None, expires_at: Optional[date] = None,
+                        reason_code: Optional[str] = None) -> CustomerExemptionCertificate:
         self._customer(customer_id, organization_id)
         if self.db.get(TaxJurisdiction, jurisdiction_id) is None:
             raise BadRequestException(f"Jurisdiction {jurisdiction_id} is not in the tax reference registry.")
@@ -196,6 +204,7 @@ class BuyerEvidenceService:
             organization_id=organization_id, customer_id=customer_id, certificate_number=certificate_number.strip(),
             jurisdiction_id=jurisdiction_id, tax_type_id=tax_type_id, scope_description=scope_description.strip(),
             valid_from=valid_from, expires_at=expires_at, evidence_ref=evidence_ref.strip(),
+            reason_code=(reason_code or "").strip().upper() or None,
             status=CertificateStatus.ACTIVE, created_by=actor_id, created_at=_now(),
         )
         self.db.add(row)
@@ -203,6 +212,61 @@ class BuyerEvidenceService:
         self._log(organization_id, actor_id, BillingAuditAction.CREATE, "CustomerExemptionCertificate", row.id)
         self.db.commit()
         return row
+
+    def list_certificates(self, organization_id: int, customer_id: Optional[int] = None) -> list:
+        q = self.db.query(CustomerExemptionCertificate).filter(
+            CustomerExemptionCertificate.organization_id == organization_id)
+        if customer_id is not None:
+            self._customer(customer_id, organization_id)
+            q = q.filter(CustomerExemptionCertificate.customer_id == customer_id)
+        return q.order_by(CustomerExemptionCertificate.id).all()
+
+    def attach_certificate_evidence(self, organization_id: int, actor_id: int, certificate_id: int, *,
+                                    content: bytes, media_type: str, filename: Optional[str] = None,
+                                    expected_sha256: Optional[str] = None) -> CustomerExemptionCertificate:
+        """The certificate document, once: PDF, PNG or JPEG (declared type and
+        file signature must agree), within the size limit, hashed by the
+        server (and checked against the client's hash when one is sent),
+        stored write-once under the tenant."""
+        from app.config import settings
+
+        row = self._get(CustomerExemptionCertificate, certificate_id, organization_id, "Exemption certificate")
+        if row.evidence_file_id is not None:
+            raise BadRequestException("This certificate already has its evidence document; it is write-once.")
+        media_type = (media_type or "").split(";")[0].strip().lower()
+        signature = EVIDENCE_TYPES.get(media_type)
+        if signature is None:
+            raise BadRequestException("Evidence must be a PDF, PNG or JPEG file.")
+        if not content:
+            raise BadRequestException("The evidence file is empty.")
+        if len(content) > settings.TAX_EVIDENCE_MAX_BYTES:
+            raise BadRequestException(f"The evidence file exceeds {settings.TAX_EVIDENCE_MAX_BYTES // (1024 * 1024)} MB.")
+        if not content.startswith(signature):
+            raise BadRequestException(f"The file content is not a valid {media_type} document.")
+        digest = hashlib.sha256(content).hexdigest()
+        if expected_sha256 and expected_sha256.strip().lower() != digest:
+            raise BadRequestException("The file's SHA-256 does not match the hash supplied with it.")
+        stored = self.db.query(TaxEvidenceFile).filter(TaxEvidenceFile.organization_id == organization_id,
+                                                       TaxEvidenceFile.sha256 == digest).first()
+        if stored is None:
+            stored = TaxEvidenceFile(organization_id=organization_id, sha256=digest, media_type=media_type,
+                                     size_bytes=len(content), filename=(filename or "")[:255] or None,
+                                     content=content, uploaded_by=actor_id, created_at=_now())
+            self.db.add(stored)
+            self.db.flush()
+        row.evidence_file_id = stored.id
+        self.db.flush()
+        self._log(organization_id, actor_id, BillingAuditAction.UPDATE, "CustomerExemptionCertificate", row.id,
+                  new_values={"evidence_sha256": digest, "media_type": media_type, "size_bytes": len(content)})
+        self.db.commit()
+        return row
+
+    def certificate_evidence(self, organization_id: int, certificate_id: int) -> TaxEvidenceFile:
+        row = self._get(CustomerExemptionCertificate, certificate_id, organization_id, "Exemption certificate")
+        stored = self.db.get(TaxEvidenceFile, row.evidence_file_id) if row.evidence_file_id else None
+        if stored is None or stored.organization_id != organization_id:
+            raise NotFoundException("Certificate evidence", certificate_id)
+        return stored
 
     def revoke_certificate(self, organization_id: int, actor_id: int, certificate_id: int) -> CustomerExemptionCertificate:
         row = self._get(CustomerExemptionCertificate, certificate_id, organization_id, "Exemption certificate")
@@ -236,4 +300,5 @@ def view_certificate(c: CustomerExemptionCertificate) -> dict:
     return {"id": c.id, "certificate_number": c.certificate_number, "jurisdiction_id": c.jurisdiction_id,
             "tax_type_id": c.tax_type_id, "scope_description": c.scope_description, "valid_from": c.valid_from,
             "expires_at": c.expires_at, "evidence_ref": c.evidence_ref, "status": c.status.name,
+            "reason_code": c.reason_code, "evidence_attached": c.evidence_file_id is not None,
             "created_at": c.created_at, "revoked_at": c.revoked_at}

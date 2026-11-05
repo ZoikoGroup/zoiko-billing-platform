@@ -142,6 +142,7 @@ class ActivationCreate(_Strict):
     tenant_rate_percent: Optional[RatePercent] = None
     tenant_source_citation: Optional[str] = None
     tenant_source_url: Optional[str] = Field(None, max_length=1000)
+    provider_connection_id: Optional[int] = None
 
 
 class DecisionRequest(_Strict):
@@ -150,6 +151,27 @@ class DecisionRequest(_Strict):
 
 class RegimeChangeRequest(_Strict):
     tax_regime: EntityTaxRegime
+    reason: Optional[str] = Field(None, max_length=2000)
+
+
+# ── Phase 4a-2: provider connections ────────────────────────────────────
+
+class ProviderConnectionCreate(_Strict):
+    """No URL field: the endpoint comes from the code-defined allowlist for
+    (provider, environment). Any extra field (base_url, endpoint, host...)
+    is refused (422)."""
+    seller_entity_id: int
+    provider_name: str = Field(..., min_length=1, max_length=100)
+    environment: Literal["SANDBOX", "PRODUCTION"]
+    mode: Literal["ESTIMATE_ONLY", "COMMIT"]
+
+
+class ProviderCredentialsSet(_Strict):
+    secret: str = Field(..., min_length=8, max_length=4096)
+
+
+class ReasonRequest(_Strict):
+    reason: str = Field(..., min_length=1, max_length=2000)
 
 
 # ── Tenant: product classification ──────────────────────────────────────
@@ -199,6 +221,7 @@ class CertificateCreate(_Strict):
     valid_from: date
     expires_at: Optional[date] = None
     evidence_ref: str = Field(..., min_length=1, max_length=500)
+    reason_code: Optional[str] = Field(None, max_length=50)
 
 
 # ── Phase 3a: governed quotes and credits ───────────────────────────────

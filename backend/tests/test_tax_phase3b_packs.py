@@ -267,7 +267,11 @@ def publish_pack(w, code, golden=GOLDEN):
 
 
 def govern(w, entity):
-    return TenantTaxService(w["db"]).request_regime(w["org"].id, w["admin"].id, entity.id, EntityTaxRegime.GOVERNED)
+    """Phase 4a-2: an org admin proposes, a different finance approver decides."""
+    svc = TenantTaxService(w["db"])
+    change = svc.request_regime(w["org"].id, w["admin"].id, entity.id, EntityTaxRegime.GOVERNED)
+    svc.decide_regime_change(w["org"].id, w["checker"].id, change.id, approve=True)
+    return svc.regime_eligibility(w["org"].id, entity.id)
 
 
 def quote(w, inv):
@@ -404,7 +408,7 @@ def test_t12_no_governed_via_toggle_currency_or_plan(w):
     # No code path but request_regime writes the regime.
     app_dir = pathlib.Path("app")
     writers = sorted(str(p.relative_to(app_dir)) for p in app_dir.rglob("*.py")
-                     if re.search(r"\.tax_regime\s*=\s*EntityTaxRegime\.GOVERNED", p.read_text(encoding="utf-8")))
+                     if re.search(r"\.tax_regime\s*=\s*(?!=)", p.read_text(encoding="utf-8")))
     assert writers == [str(pathlib.Path("modules/tax/tenant_tax_service.py"))]
     with pytest.raises(BadRequestException, match="does not qualify"):
         govern(w, entity)
@@ -419,7 +423,7 @@ def test_t12_governed_accepted_once_a_published_pack_backs_an_activation(w):
     assert entity.tax_regime == EntityTaxRegime.GOVERNED and entity.version == version + 1
     log = db.query(BillingAuditLog).filter(BillingAuditLog.entity_type == "SellerLegalEntity",
                                            BillingAuditLog.entity_id == entity.id).order_by(BillingAuditLog.id.desc()).first()
-    assert log.new_values["tax_regime"] == "GOVERNED" and log.actor_id == w["admin"].id
+    assert log.new_values["tax_regime"] == "GOVERNED" and log.actor_id == w["checker"].id    # the approver applies it
     # The AU entity is unaffected: its pack is still unpublished.
     with pytest.raises(BadRequestException, match="does not qualify"):
         govern(w, w["au"])

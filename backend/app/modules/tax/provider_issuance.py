@@ -86,6 +86,7 @@ class ProviderIssuanceBlocked(BadRequestException):
 
 
 def default_provider_lookup(name: Optional[str]):
+    """Name-based lookup, used only when a test injects adapters by name."""
     from app.modules.tax.engines import PROVIDERS
 
     return PROVIDERS.get(name) if name else None
@@ -213,7 +214,8 @@ def build_commit_payload(db: Session, quote: TaxQuote, row: TaxProviderOutbox) -
         "tax_date": quote.tax_date.isoformat() if quote.tax_date else None,
         "currency": quote.currency,
         "seller": {"country_code": getattr(seller, "country_code", None),
-                   "subdivision_code": getattr(seller, "subdivision_code", None)},
+                   "subdivision_code": getattr(seller, "subdivision_code", None),
+                   "registered_jurisdictions": registered_jurisdictions(db, quote)},
         "buyer": {"address": supply},
         "lines": [{
             "line_id": line.document_line_id, "quantity": str(line.quantity),
@@ -227,12 +229,52 @@ def build_commit_payload(db: Session, quote: TaxQuote, row: TaxProviderOutbox) -
     }
 
 
+def registered_jurisdictions(db: Session, quote: TaxQuote) -> list:
+    """Where the seller entity holds a recorded registration or an approved
+    legal basis on the tax date (Phase 4a-2 nexus). The provider may apply
+    tax only inside this set; anything else is REVIEW_REQUIRED."""
+    from app.modules.tax.enums import TenantApprovalStatus
+    from app.modules.tax.models import EntityTaxLegalBasis, EntityTaxRegistration
+    from app.modules.tax.registry_models import TaxJurisdiction, TaxTypeDefinition
+
+    if quote.seller_entity_id is None:
+        return []
+    day = quote.tax_date
+    out = []
+
+    def valid(row):
+        return (row.valid_from is None or day is None or row.valid_from <= day) and \
+            (row.valid_to is None or day is None or day < row.valid_to)
+
+    def codes(row):
+        j = db.get(TaxJurisdiction, row.jurisdiction_id)
+        t = db.get(TaxTypeDefinition, row.tax_type_id)
+        return (j.code if j else None), (t.code if t else None)
+
+    for reg in db.query(EntityTaxRegistration).filter(EntityTaxRegistration.seller_entity_id == quote.seller_entity_id,
+                                                      EntityTaxRegistration.organization_id == quote.organization_id):
+        if valid(reg):
+            j, t = codes(reg)
+            out.append({"jurisdiction_code": j, "tax_type": t, "basis": "REGISTRATION",
+                        "registration_number": reg.registration_number})
+    for basis in db.query(EntityTaxLegalBasis).filter(EntityTaxLegalBasis.seller_entity_id == quote.seller_entity_id,
+                                                      EntityTaxLegalBasis.organization_id == quote.organization_id,
+                                                      EntityTaxLegalBasis.status == TenantApprovalStatus.APPROVED):
+        if valid(basis):
+            j, t = codes(basis)
+            out.append({"jurisdiction_code": j, "tax_type": t, "basis": "LEGAL_BASIS", "registration_number": None})
+    return sorted(out, key=lambda r: (r["jurisdiction_code"] or "", r["tax_type"] or "", r["basis"]))
+
+
 class ProviderIssuanceService:
     def __init__(self, db: Session, provider_lookup: Optional[Callable] = None, now: Callable = _now,
                  finalizer: Optional[Callable] = None, mailer: Optional[Callable] = None,
                  payload_builder: Optional[Callable] = None):
         self.db = db
         self.now = now
+        # Production resolves adapters through the tenant's approved, usable
+        # connection (Phase 4a-2); tests may inject a lookup by provider name.
+        self._by_name = provider_lookup is not None
         self.provider_lookup = provider_lookup or default_provider_lookup
         self.health = ProviderHealth(db, now=now)
         self.finalizer = finalizer or self._default_finalizer
@@ -268,6 +310,14 @@ class ProviderIssuanceService:
             return DocumentReferencePolicy(str(settings.TAX_PROVIDER_DOCUMENT_REFERENCE).lower())
         except ValueError:
             return DocumentReferencePolicy.KEY_ONLY
+
+    def _adapter(self, obj):
+        """The adapter for a quote or outbox row, or None (fail closed)."""
+        if self._by_name:
+            return self.provider_lookup(obj.provider_name)
+        from app.modules.tax.connection_service import ProviderConnectionService
+
+        return ProviderConnectionService(self.db).adapter_for_id(getattr(obj, "provider_connection_id", None))
 
     def _past(self, moment: Optional[datetime]) -> bool:
         return moment is not None and self.now() >= _aware(moment)
@@ -319,7 +369,7 @@ class ProviderIssuanceService:
                     "This invoice's provider transaction needs review before it can be issued "
                     f"({existing.review_reason or existing.review_kind}).")
             return existing
-        adapter = self.provider_lookup(quote.provider_name)
+        adapter = self._adapter(quote)
         if adapter is None:
             self._refuse(quote, f"Tax provider {quote.provider_name!r} is not configured; the invoice was not issued.")
         if adapter.capabilities().mode == ProviderMode.ESTIMATE_ONLY:
@@ -340,6 +390,7 @@ class ProviderIssuanceService:
             operation=OutboxOperation.COMMIT, provider_name=quote.provider_name, idempotency_key=key,
             document_reference=reference, state=OutboxState.PENDING, attempts=0, next_attempt_at=now,
             grace_deadline=grace, created_by=actor_id, created_at=now, updated_at=now,
+            provider_connection_id=quote.provider_connection_id,
         )
         quote.status = TaxQuoteStatus.VALIDATED
         quote.validated_at = now
@@ -365,7 +416,7 @@ class ProviderIssuanceService:
         if row is None or row.state not in (OutboxState.PENDING, OutboxState.UNCERTAIN):
             return row
         quote = self.db.get(TaxQuote, row.tax_quote_id)
-        adapter = self.provider_lookup(row.provider_name)
+        adapter = self._adapter(row)
         now = self.now()
         row.updated_at = now
         if adapter is None:
@@ -482,7 +533,7 @@ class ProviderIssuanceService:
         if row is None or row.state != OutboxState.REVIEW_REQUIRED \
                 or row.review_kind != OutboxReviewKind.UNRESOLVED_COMMIT.name:
             return row
-        adapter = self.provider_lookup(row.provider_name)
+        adapter = self._adapter(row)
         if adapter is None:
             return row
         quote = self.db.get(TaxQuote, row.tax_quote_id)
@@ -551,6 +602,7 @@ class ProviderIssuanceService:
             organization_id=row.organization_id, invoice_id=row.invoice_id, tax_quote_id=row.tax_quote_id,
             operation=OutboxOperation.EMAIL, provider_name=row.provider_name,
             idempotency_key=f"{row.idempotency_key}:email", state=OutboxState.PENDING, attempts=0,
+            provider_connection_id=row.provider_connection_id,
             send_intent=row.send_intent, next_attempt_at=now,
             created_by=(row.send_intent or {}).get("requested_by") or row.created_by, created_at=now, updated_at=now,
         )
@@ -594,7 +646,7 @@ class ProviderIssuanceService:
     def _enqueue_link(self, row: TaxProviderOutbox) -> None:
         if self._policy() != DocumentReferencePolicy.KEY_ONLY:
             return
-        adapter = self.provider_lookup(row.provider_name)
+        adapter = self._adapter(row)
         if adapter is None or not adapter.capabilities().link_reference:
             return
         from app.modules.billing.models import Invoice
@@ -605,6 +657,7 @@ class ProviderIssuanceService:
             organization_id=row.organization_id, invoice_id=row.invoice_id, tax_quote_id=row.tax_quote_id,
             operation=OutboxOperation.LINK, provider_name=row.provider_name,
             idempotency_key=f"{row.idempotency_key}:link", document_reference=invoice.invoice_number,
+            provider_connection_id=row.provider_connection_id,
             provider_transaction_id=row.provider_transaction_id, state=OutboxState.PENDING, attempts=0,
             next_attempt_at=now, created_by=row.created_by, created_at=now, updated_at=now,
         ))
@@ -620,7 +673,7 @@ class ProviderIssuanceService:
         if invoice.status != InvoiceStatus.DRAFT or invoice.sent_at is not None:
             self._review(row, OutboxReviewKind.VOID_FAILED, f"Not voided: the invoice may have been sent ({reason}).")
             return
-        adapter = self.provider_lookup(row.provider_name)
+        adapter = self._adapter(row)
         try:
             if adapter is None:
                 raise ProviderError("provider not configured")
@@ -635,6 +688,193 @@ class ProviderIssuanceService:
         quote.status = TaxQuoteStatus.VOIDED
         quote.voided_at = now
         quote.void_reason = f"Provider transaction voided: {reason}"[:1000]
+
+    # ── corrections by reference (Phase 4a-2, T15/T18) ──
+    def enqueue_adjust(self, credit_note, quote: TaxQuote, credit_lines: list, actor_id: Optional[int]):
+        """A governed credit note against a provider-committed invoice adjusts
+        the original provider transaction by reference. Written in the
+        caller's transaction (flush only), with the credit note itself."""
+        from app.modules.tax.quote_models import TaxQuoteComponent, TaxQuoteLine
+
+        now = self.now()
+        codes = {c.id: c.component_code for c in self.db.query(TaxQuoteComponent).filter(
+            TaxQuoteComponent.id.in_([cl.tax_quote_component_id for cl in credit_lines] or [0]))}
+        doc_lines = {ql.id: ql.document_line_id for ql in self.db.query(TaxQuoteLine).filter(
+            TaxQuoteLine.id.in_([cl.tax_quote_line_id for cl in credit_lines] or [0]))}
+        lines = {}
+        for cl in credit_lines:
+            entry = lines.setdefault(cl.tax_quote_line_id, {"line_id": doc_lines.get(cl.tax_quote_line_id),
+                                                             "net_amount": Decimal("0"), "components": []})
+            entry["components"].append({"component_code": codes.get(cl.tax_quote_component_id),
+                                        "tax_amount": str(cl.credited_tax)})
+            if len(entry["components"]) == 1:                    # the base is the same for every component
+                entry["net_amount"] += Decimal(cl.credited_base)
+        tax = sum((Decimal(cl.credited_tax) for cl in credit_lines), Decimal("0"))
+        net = sum((Decimal(e["net_amount"]) for e in lines.values()), Decimal("0"))
+        payload = {
+            "idempotency_key": f"zb:{quote.organization_id}:cn:{credit_note.id}",
+            "document_reference": getattr(credit_note, "credit_note_number", None) or f"credit-note-{credit_note.id}",
+            "document_type": "credit_note", "original_transaction_id": quote.provider_correlation_id,
+            "tax_date": quote.tax_date.isoformat() if quote.tax_date else None, "currency": quote.currency,
+            "lines": [{**e, "net_amount": str(e["net_amount"])} for e in lines.values()],
+            "totals": {"tax": str(tax), "total": str(net + tax)},
+        }
+        row = TaxProviderOutbox(
+            organization_id=quote.organization_id, invoice_id=quote.document_id, tax_quote_id=quote.id,
+            operation=OutboxOperation.ADJUST, provider_name=quote.provider_name,
+            provider_connection_id=quote.provider_connection_id, idempotency_key=payload["idempotency_key"],
+            document_reference=payload["document_reference"], reference_transaction_id=quote.provider_correlation_id,
+            credit_note_id=credit_note.id, request_payload=payload, state=OutboxState.PENDING, attempts=0,
+            next_attempt_at=now, grace_deadline=now + timedelta(minutes=settings.TAX_PROVIDER_GRACE_MINUTES),
+            created_by=actor_id, created_at=now, updated_at=now)
+        self.db.add(row)
+        self.db.flush()
+        return row
+
+    def enqueue_cancellation(self, invoice, actor_id: Optional[int]):
+        """Cancelling or voiding a provider-committed invoice voids the
+        provider transaction by reference (flush only, caller's transaction)."""
+        quote = self.db.get(TaxQuote, invoice.tax_quote_id) if invoice.tax_quote_id else None
+        if quote is None or quote.remote_commit_state != RemoteCommitState.COMMITTED:
+            return None
+        commit = self.db.query(TaxProviderOutbox).filter(
+            TaxProviderOutbox.tax_quote_id == quote.id, TaxProviderOutbox.operation == OutboxOperation.COMMIT,
+            TaxProviderOutbox.state == OutboxState.DONE).first()
+        if commit is None:
+            return None
+        now = self.now()
+        row = TaxProviderOutbox(
+            organization_id=quote.organization_id, invoice_id=invoice.id, tax_quote_id=quote.id,
+            operation=OutboxOperation.VOID, provider_name=quote.provider_name,
+            provider_connection_id=quote.provider_connection_id, idempotency_key=f"{commit.idempotency_key}:cancel",
+            reference_transaction_id=commit.provider_transaction_id, state=OutboxState.PENDING, attempts=0,
+            next_attempt_at=now, grace_deadline=now + timedelta(minutes=settings.TAX_PROVIDER_GRACE_MINUTES),
+            created_by=actor_id, created_at=now, updated_at=now)
+        self.db.add(row)
+        self.db.flush()
+        return row
+
+    def deliver_correction(self, row_id: int) -> Optional[TaxProviderOutbox]:
+        """One attempt at an ADJUST or VOID-by-reference row. Same error
+        contract as commit: a refusal needs a person (our credit or
+        cancellation stands), an ambiguous outcome is looked up by key."""
+        row = self._lock(row_id)
+        if row is None or row.operation not in (OutboxOperation.ADJUST, OutboxOperation.VOID) \
+                or row.state not in (OutboxState.PENDING, OutboxState.UNCERTAIN):
+            return row
+        adapter = self._adapter(row)
+        now = self.now()
+        row.updated_at = now
+        if adapter is None:
+            row.last_error = "provider connection not usable"
+            if self._past(row.grace_deadline):
+                self._review(row, OutboxReviewKind.UNRESOLVED_COMMIT,
+                             "The provider connection is not usable; the correction has not reached the provider.")
+            self.db.commit()
+            return row
+        original_key = row.idempotency_key.rsplit(":cancel", 1)[0]
+        if row.state == OutboxState.UNCERTAIN:
+            try:
+                txn = adapter.transaction_state(idempotency_key=row.idempotency_key if row.operation ==
+                                                OutboxOperation.ADJUST else original_key)
+            except Exception as exc:
+                row.last_error = f"state lookup failed: {exc}"
+                if self._past(row.grace_deadline):
+                    self._review(row, OutboxReviewKind.UNRESOLVED_COMMIT,
+                                 "The correction's outcome could not be confirmed by the grace deadline; "
+                                 "reconciliation keeps checking.")
+                self.db.commit()
+                return row
+            landed = txn.state == (RemoteTransactionState.COMMITTED if row.operation == OutboxOperation.ADJUST
+                                   else RemoteTransactionState.VOIDED)
+            if landed:
+                row.state, row.completed_at, row.verified_at = OutboxState.DONE, now, now
+                row.provider_transaction_id = row.provider_transaction_id or txn.transaction_id
+                row.remote_snapshot = snapshot_of(txn, True)
+                self.db.commit()
+                return row
+        row.attempts += 1
+        try:
+            if row.operation == OutboxOperation.ADJUST:
+                result = adapter.adjust(transaction_id=row.reference_transaction_id,
+                                        idempotency_key=row.idempotency_key, payload=row.request_payload)
+            else:
+                adapter.void(transaction_id=row.reference_transaction_id, idempotency_key=row.idempotency_key,
+                             reason="invoice cancelled")
+                result = row.reference_transaction_id
+        except ProviderRateLimited as exc:
+            row.last_error, row.next_attempt_at = f"rate limited: {exc}", now + timedelta(seconds=exc.retry_after_seconds)
+            self.db.commit()
+            return row
+        except ProviderRefused as exc:
+            self._review(row, OutboxReviewKind.VOID_FAILED if row.operation == OutboxOperation.VOID
+                         else OutboxReviewKind.ROW_ERROR,
+                         f"The provider refused the {row.operation.name.lower()}: {exc}. Our record stands; a person "
+                         "must settle the provider side.")
+            self.db.commit()
+            return row
+        except Exception as exc:
+            row.state, row.last_error, row.next_attempt_at = OutboxState.UNCERTAIN, f"outcome unknown: {exc}", now
+            self.db.commit()
+            return row
+        row.state, row.completed_at = OutboxState.DONE, now
+        row.provider_transaction_id = result
+        try:
+            key = row.idempotency_key if row.operation == OutboxOperation.ADJUST else original_key
+            row.remote_snapshot = snapshot_of(adapter.transaction_state(idempotency_key=key), True)
+            row.verified_at = now
+        except Exception:
+            row.remote_snapshot = {"verified": False, "transaction_id": result}
+        self.db.commit()
+        return row
+
+    # ── stuck-transaction actions (tenant; Phase 4a-2) ──
+    def check_state(self, row_id: int) -> dict:
+        """Read-only: what the provider holds for this row's key. Changes nothing."""
+        row = self.db.get(TaxProviderOutbox, row_id)
+        adapter = self._adapter(row)
+        if adapter is None:
+            return {"available": False, "detail": "The provider connection is not usable."}
+        key = row.idempotency_key.rsplit(":cancel", 1)[0] if row.operation == OutboxOperation.VOID \
+            else row.idempotency_key
+        try:
+            return {"available": True, "provider": snapshot_of(adapter.transaction_state(idempotency_key=key), True)}
+        except Exception as exc:
+            return {"available": False, "detail": type(exc).__name__}
+
+    def retry(self, row_id: int) -> TaxProviderOutbox:
+        """Put a row that failed on our side back in the queue. Safe: an
+        uncommitted row is retried through a state lookup first."""
+        row = self._lock(row_id)
+        if row is None or row.state != OutboxState.REVIEW_REQUIRED \
+                or row.review_kind not in (OutboxReviewKind.ROW_ERROR.name, OutboxReviewKind.UNRESOLVED_COMMIT.name):
+            raise BadRequestException("Only rows that failed on our side or whose outcome is unresolved can be retried.")
+        row.review_kind = row.review_reason = None
+        row.state = OutboxState.REMOTE_COMMITTED if (row.operation == OutboxOperation.COMMIT and
+                                                     row.provider_transaction_id) else OutboxState.UNCERTAIN
+        row.next_attempt_at, row.updated_at = self.now(), self.now()
+        self.db.commit()
+        return row
+
+    def request_void(self, row_id: int, actor_id: int) -> TaxProviderOutbox:
+        row = self._lock(row_id)
+        if row is None or row.operation != OutboxOperation.COMMIT or row.state != OutboxState.REVIEW_REQUIRED \
+                or not row.provider_transaction_id:
+            raise BadRequestException("Only a committed provider transaction that needs review can be voided.")
+        row.void_requested_by, row.void_requested_at, row.updated_at = actor_id, self.now(), self.now()
+        self.db.commit()
+        return row
+
+    def approve_void(self, row_id: int, actor_id: int) -> TaxProviderOutbox:
+        """The second person: void by reference, only if never sent."""
+        row = self._lock(row_id)
+        if row is None or row.void_requested_by is None or row.state != OutboxState.REVIEW_REQUIRED:
+            raise BadRequestException("There is no pending void request for this transaction.")
+        if row.void_requested_by == actor_id:
+            raise BadRequestException("You requested this void; a different user must approve it.")
+        self._compensate(row, f"void approved after review (requested by user {row.void_requested_by})")
+        self.db.commit()
+        return row
 
     # ── the whole issue, inline ──
     def issue(self, invoice, quote: TaxQuote, actor_id: Optional[int]):
@@ -693,6 +933,11 @@ class ProviderIssuanceService:
                            OutboxState.REVIEW_REQUIRED: "review"}.get(row.state)
                     if key:
                         stats[key] += 1
+            corrections = TaxProviderOutbox.operation.in_([OutboxOperation.ADJUST, OutboxOperation.VOID])
+            for row_id in self._ids(corrections, TaxProviderOutbox.state.in_([OutboxState.PENDING, OutboxState.UNCERTAIN]),
+                                    (TaxProviderOutbox.next_attempt_at.is_(None)) |
+                                    (TaxProviderOutbox.next_attempt_at <= now)):
+                self._safely(self.deliver_correction, row_id, stats)
             for row_id in self._ids(TaxProviderOutbox.operation == OutboxOperation.EMAIL,
                                     TaxProviderOutbox.state == OutboxState.UNCERTAIN):
                 self._safely(self._email_interrupted, row_id, stats)
@@ -739,7 +984,7 @@ class ProviderIssuanceService:
         row = self._lock(row_id)
         if row is None:
             return None
-        adapter = self.provider_lookup(row.provider_name)
+        adapter = self._adapter(row)
         row.attempts += 1
         try:
             if adapter is None:
@@ -759,7 +1004,7 @@ class ProviderIssuanceService:
         from app.modules.tax.models import TaxReviewItem
 
         row = self.db.get(TaxProviderOutbox, row_id)
-        adapter = self.provider_lookup(row.provider_name)
+        adapter = self._adapter(row)
         if adapter is None:
             return row
         try:

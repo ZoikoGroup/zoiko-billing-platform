@@ -384,6 +384,14 @@ class Settings(BaseSettings):
     # What identifies the invoice at the provider: "key_only" (link the number
     # after commit) or "invoice_number". The tax lead decides; see the plan.
     TAX_PROVIDER_DOCUMENT_REFERENCE: str = "key_only"
+    # Phase 4a-2: provider credentials. A Fernet key dedicated to provider
+    # credentials (never the MFA key); unset = credentials cannot be stored.
+    # Production-environment credentials stay refused until the managed
+    # secret store exists (4d gate).
+    TAX_PROVIDER_ENCRYPTION_KEY: str = ""
+    TAX_PROVIDER_PRODUCTION_CREDENTIALS_ALLOWED: bool = False
+    # Exemption-certificate evidence uploads (PDF, PNG, JPEG).
+    TAX_EVIDENCE_MAX_BYTES: int = 5 * 1024 * 1024
 
     # ── ZB-COM-003: Trial-ending-soon warning (Prompt 4) ─────────────────
     # Days before trial_ends_at to fire the proactive warning email.

@@ -27,6 +27,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Numeric,
     Text,
@@ -228,6 +229,8 @@ class EntityTaxActivation(Base):
     tenant_rate_percent     = Column(Numeric(9, 6), nullable=True)
     tenant_source_citation  = Column(Text, nullable=True)
     tenant_source_url       = Column(String(1000), nullable=True)
+    # PROVIDER_APPROVED only: the tenant's approved provider connection (Phase 4a-2).
+    provider_connection_id  = _fk("tax_provider_connections.id", nullable=True)
     status                  = Column(CaseInsensitiveEnum(TenantApprovalStatus), nullable=False, index=True,
                                      default=TenantApprovalStatus.PROPOSED, server_default=TenantApprovalStatus.PROPOSED.name)
     proposed_by             = _user_fk()
@@ -357,12 +360,61 @@ class CustomerExemptionCertificate(Base):
     valid_from         = Column(Date, nullable=False)
     expires_at         = Column(Date, nullable=True)        # exclusive; NULL = no stated expiry
     evidence_ref       = Column(String(500), nullable=False)
+    reason_code        = Column(String(50), nullable=True)      # e.g. RESALE, CHARITY, GOVERNMENT (Phase 4a-2)
+    # The uploaded certificate document (tenant-scoped, write-once; Phase 4a-2).
+    evidence_file_id   = _fk("tax_evidence_files.id", nullable=True)
     status             = Column(CaseInsensitiveEnum(CertificateStatus), nullable=False,
                                 default=CertificateStatus.ACTIVE, server_default=CertificateStatus.ACTIVE.name)
     created_by         = _user_fk()
     created_at         = Column(DateTime(timezone=True), nullable=False)
     revoked_by         = _user_fk()
     revoked_at         = Column(DateTime(timezone=True), nullable=True)
+
+
+class TaxEvidenceFile(Base):
+    """Tenant-scoped, content-addressed, write-once evidence documents
+    (exemption certificates). Never served to platform roles (T13); deleted
+    only by the tenant erasure purge."""
+    __tablename__ = "tax_evidence_files"
+
+    id              = Column(Integer, primary_key=True, index=True)
+    organization_id = _org_fk()
+    sha256          = Column(String(64), nullable=False)
+    media_type      = Column(String(100), nullable=False)
+    size_bytes      = Column(Integer, nullable=False)
+    filename        = Column(String(255), nullable=True)
+    content         = Column(LargeBinary, nullable=False)
+    uploaded_by     = _user_fk()
+    created_at      = Column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (UniqueConstraint("organization_id", "sha256", name="uq_tax_evidence_files_org_sha256"),)
+
+
+class TaxRegimeChange(Base):
+    """A proposed change of a seller entity's tax regime, in either direction
+    (product question 6). Proposed by an org admin, decided by a different
+    finance approver; nothing changes regime on one person's say-so."""
+    __tablename__ = "tax_regime_changes"
+
+    id               = Column(Integer, primary_key=True, index=True)
+    organization_id  = _org_fk()
+    seller_entity_id = _fk("seller_legal_entities.id", nullable=False, index=True)
+    from_regime      = Column(String(30), nullable=False)
+    to_regime        = Column(String(30), nullable=False)
+    reason           = Column(Text, nullable=True)
+    eligibility      = Column(JSON, nullable=True)            # snapshot at proposal
+    status           = Column(CaseInsensitiveEnum(TenantApprovalStatus), nullable=False, index=True,
+                              default=TenantApprovalStatus.PROPOSED, server_default=TenantApprovalStatus.PROPOSED.name)
+    proposed_by      = _user_fk()
+    approved_by      = _user_fk()
+    approved_at      = Column(DateTime(timezone=True), nullable=True)
+    decision_reason  = Column(Text, nullable=True)
+    created_at       = Column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        Index("uq_tax_regime_changes_one_open", "seller_entity_id", unique=True,
+              sqlite_where=text("status = 'PROPOSED'"), postgresql_where=text("status = 'PROPOSED'")),
+    )
 
 
 class TaxReviewItem(Base):
@@ -402,8 +454,8 @@ TENANT_RECORD_GUARDS = (
     ("entity_tax_activations",
      ("organization_id", "seller_entity_id", "jurisdiction_id", "tax_type_id", "transaction_class", "mode",
       "effective_from", "effective_to", "registration_id", "legal_basis_id", "availability_version_id",
-      "tenant_rate_percent", "tenant_source_citation", "tenant_source_url", "proposed_by", "approved_by",
-      "approved_at", "predecessor_id", "created_at"),
+      "tenant_rate_percent", "tenant_source_citation", "tenant_source_url", "provider_connection_id",
+      "proposed_by", "approved_by", "approved_at", "predecessor_id", "created_at"),
      "APPROVED,SUPERSEDED,REJECTED"),
     ("product_tax_classifications",
      ("organization_id", "product_id", "tax_code_id", "reason", "proposed_by", "approved_by", "approved_at",
@@ -417,7 +469,8 @@ TENANT_RECORD_GUARDS = (
       "source_field", "created_by", "created_at"), "*"),
     ("customer_exemption_certificates",
      ("organization_id", "customer_id", "certificate_number", "jurisdiction_id", "tax_type_id",
-      "scope_description", "valid_from", "expires_at", "evidence_ref", "created_by", "created_at"), "*"),
+      "scope_description", "valid_from", "expires_at", "evidence_ref", "reason_code", "created_by", "created_at"),
+     "*"),
 )
 
 #: Transaction-scoped Postgres setting the erasure purge sets before deleting.
@@ -511,3 +564,22 @@ def register_tenant_record_guard(table, fields, frozen_statuses: str = "*") -> N
     event.listen(table, "after_create", DDL(PG_TENANT_GUARD_FUNCTION).execute_if(dialect="postgresql"))
     event.listen(table, "after_create",
                  DDL(pg_tenant_trigger_sql(table.name, tuple(fields), frozen_statuses)).execute_if(dialect="postgresql"))
+
+
+# Phase 4a-2 tenant records under the same retention guard.
+EVIDENCE_FILE_FROZEN_FIELDS = ("organization_id", "sha256", "media_type", "size_bytes", "filename", "content",
+                               "uploaded_by", "created_at")
+REGIME_CHANGE_FROZEN_FIELDS = ("organization_id", "seller_entity_id", "from_regime", "to_regime", "reason",
+                               "eligibility", "proposed_by", "created_at")
+register_tenant_record_guard(TaxEvidenceFile.__table__, EVIDENCE_FILE_FROZEN_FIELDS)
+register_tenant_record_guard(TaxRegimeChange.__table__, REGIME_CHANGE_FROZEN_FIELDS)
+
+
+@event.listens_for(Session, "before_flush")
+def _guard_certificate_evidence_write_once(session, flush_context, instances):
+    """An exemption certificate's evidence document is attached once."""
+    for obj in session.dirty:
+        if isinstance(obj, CustomerExemptionCertificate):
+            hist = sa_inspect(obj).attrs["evidence_file_id"].history
+            if hist.deleted and hist.deleted[0] is not None:
+                raise TaxRecordFrozenError(f"Exemption certificate {obj.id} already has its evidence document.")

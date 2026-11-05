@@ -459,6 +459,8 @@ class TaxDeterminationService:
         quote.expires_at = self.now() + timedelta(hours=settings.TAX_QUOTE_TTL_HOURS)
         if engine.is_remote:
             quote.provider_name = engine.name
+            # The tenant connection that computed it; issuing goes through the same one.
+            quote.provider_connection_id = getattr(getattr(engine, "adapter", None), "connection_id", None)
             quote.remote_commit_state = RemoteCommitState.PENDING
         quote.subtotal_unrounded, quote.discount_unrounded = q6(sub_u), q6(disc_u)
         quote.tax_unrounded, quote.total_unrounded = q6(tax_u), q6(tot_u)
