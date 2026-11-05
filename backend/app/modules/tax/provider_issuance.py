@@ -412,7 +412,8 @@ class ProviderIssuanceService:
                 "The invoice stays a draft.")
         from app.modules.tax.pseudonym import PseudonymKeyService
 
-        problem = self.health.circuit_problem(quote.provider_name) or self.health.heartbeat_problem()             or PseudonymKeyService(self.db).problem(invoice.organization_id)
+        problem = (self.health.circuit_problem(quote.provider_name) or self.health.heartbeat_problem()
+                   or PseudonymKeyService(self.db).problem(invoice.organization_id))
         if problem:
             self._refuse(quote, problem)
         key = idempotency_key(quote)

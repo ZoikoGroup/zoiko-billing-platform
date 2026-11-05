@@ -375,6 +375,10 @@ class Settings(BaseSettings):
     TAX_PROVIDER_RECONCILIATION_ENABLED: bool = True      # own job; independent of the billing scheduler
     TAX_PROVIDER_RECONCILIATION_INTERVAL_SECONDS: int = 300
     TAX_PROVIDER_HEARTBEAT_STALE_INTERVALS: int = 3       # older than this many intervals blocks provider issuing
+    # Phase 4d-0: "worker" = the dedicated process (systemd unit
+    # zoiko-billing-tax-worker) runs reconciliation and the web app schedules
+    # nothing; "in_app" = the web app's own scheduler runs it.
+    TAX_PROVIDER_RECONCILIATION_MODE: str = "in_app"
     TAX_PROVIDER_GRACE_MINUTES: int = 15                  # retry local finalize, then void (never past quote expiry)
     TAX_PROVIDER_INLINE_TIMEOUT_SECONDS: int = 10
     TAX_PROVIDER_CB_FAILURES: int = 5

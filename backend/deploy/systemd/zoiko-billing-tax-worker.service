@@ -1,0 +1,24 @@
+# ZB-TAX-ARCH-001 Phase 4d-0: the dedicated tax provider reconciliation worker.
+# Installed by .github/workflows/deploy.yml (placeholders filled from the
+# zoiko-billing-backend unit). Runbook: backend/docs/TAX_RECONCILIATION_WORKER.md
+[Unit]
+Description=Zoiko Billing - tax provider reconciliation worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@SERVICE_USER@
+WorkingDirectory=@BACKEND_DIR@
+ExecStart=@BACKEND_DIR@/venv/bin/python -m app.modules.tax.reconciliation_worker
+# Settings come from backend/.env (pydantic-settings), as for the web app.
+Restart=on-failure
+RestartSec=10
+# SIGTERM: finish the current pass, then exit 0.
+KillSignal=SIGTERM
+TimeoutStopSec=120
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

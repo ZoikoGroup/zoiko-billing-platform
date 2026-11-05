@@ -159,3 +159,46 @@ then be removed.
 | `tests/test_tax_phase4a2.py`, `tests/privacy/test_tax_phase4a2_api.py` | The credential view and rotation audit gained the additive store fields |
 
 **CI result:** _see PR_.
+
+---
+
+# PR 2: Dedicated Reconciliation Worker
+
+Provider reconciliation now runs in its own process: the second 4d-0 gate.
+Operations are in `TAX_RECONCILIATION_WORKER.md` (the runbook).
+
+## What changed
+
+| Area | Summary |
+|---|---|
+| **Entry point** | `python -m app.modules.tax.reconciliation_worker [--once]` (`reconciliation_worker.py`). It runs only reconciliation, which includes the heartbeat and the credential-version sweep, every `TAX_PROVIDER_RECONCILIATION_INTERVAL_SECONDS`. Startup runs the web app's refusals (critical columns, secret store). SIGTERM/SIGINT finish the current pass and exit 0. A failed pass is logged and the loop continues; the pass records its own heartbeat. With `TAX_PROVIDER_RECONCILIATION_ENABLED=false` it exits 0 without running. |
+| **Mode** | `TAX_PROVIDER_RECONCILIATION_MODE=worker\|in_app` (default `in_app`, for local development). In `worker` mode the web app schedules nothing. An unknown value refuses startup. In both modes a stale heartbeat still blocks provider issuing (tested in worker mode). |
+| **systemd** | `backend/deploy/systemd/zoiko-billing-tax-worker.service`: `Restart=on-failure`, SIGTERM with a 120 s stop timeout, `NoNewPrivileges`, `PrivateTmp`. The deploy fills in the user and directory from the backend unit. |
+| **Deploy** | `deploy.yml` renders and installs the unit when it changed (`daemon-reload`), enables it, writes `TAX_PROVIDER_RECONCILIATION_MODE=worker` into the VM's `.env` before restarting the backend, then restarts the worker. The deploy fails, printing the journal, if the worker isn't active. |
+| **Two-worker race (deferred from 4a-1)** | `tests/test_tax_phase4d0_worker_pg.py`: two workers, each on its own Postgres connection, start together on a barrier against 16 pending commits with a slow provider. Each idempotency key reaches the provider exactly once, both workers do work, every row is attempted once, and none stays pending. It must commit, so it runs only with `TAX_PG_RACE_COMMITS=1`, as a separate, last pytest call in the CI tax step (the database is throwaway). |
+
+## Decisions to review
+
+1. **Workers are threads with separate connections in the race test.** The
+   fake provider lives in the test process, so real subprocesses couldn't
+   reach it. Separate connections and sessions are what `SKIP LOCKED` acts
+   on, so this exercises the same locking as two processes.
+2. **The deploy sets `worker` mode on every deploy.** The emergency fallback
+   to `in_app` (in the runbook) is a manual `.env` edit, and the next
+   deploy reverts it.
+3. **VM sudoers.** The deploy now also needs `sudo install` into
+   `/etc/systemd/system`, plus `systemctl daemon-reload/enable` for the new
+   unit. The VM admin must allow these before the first deploy of this PR,
+   or the deploy fails at that step. The unit is installed before the
+   backend restart, so a sudo failure stops the deploy with the old
+   processes still running.
+
+## Tests
+
+| Test file | Covers |
+|---|---|
+| `tests/test_tax_phase4d0_worker.py` (11) | Worker mode: the web app schedules nothing. in_app mode schedules. An unknown mode refuses. `--once` runs the startup checks and one pass. The loop runs until stopped (as SIGTERM does). A failed pass doesn't stop the worker. Disabled exits without running. An unsafe secret store refuses. The `main` entry point. A real pass refreshes a stale heartbeat. A stale heartbeat blocks provider issuing in worker mode. |
+| `tests/test_tax_phase4d0_worker_pg.py` (1, Postgres, CI tax step, commits) | Two live workers process each row once |
+
+**CI result:** _see PR_.
+
