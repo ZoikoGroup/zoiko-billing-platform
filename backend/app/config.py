@@ -400,6 +400,20 @@ class Settings(BaseSettings):
     # Phase 4c: how long a US address resolution stays valid. Older ones (or
     # ones on a superseded resolver dataset) must be resolved again.
     TAX_ADDRESS_RESOLUTION_VALID_DAYS: int = 365
+    # Phase 4d-0: where provider credentials live. "gcp" = GCP Secret Manager
+    # (required for production credentials); "fernet" = the interim
+    # encrypted-table store (refused in production once a PRODUCTION
+    # connection exists). Auth to GCP is the VM's service account (ADC).
+    TAX_PROVIDER_SECRET_STORE: str = "fernet"
+    TAX_SECRET_MANAGER_PROJECT: str = ""
+    # Empty = automatic replication; else one region (user-managed).
+    TAX_SECRET_MANAGER_REGION: str = ""
+    # Optional: load these keys from Secret Manager by version resource name
+    # (projects/<p>/secrets/<name>/versions/<n|latest>) instead of the plain
+    # setting. Cached in memory for TAX_SECRET_CACHE_TTL_SECONDS.
+    TAX_PROVIDER_PSEUDONYM_KEY_SECRET: str = ""
+    TAX_PROVIDER_ENCRYPTION_KEY_SECRET: str = ""
+    TAX_SECRET_CACHE_TTL_SECONDS: int = 300
 
     # ── ZB-COM-003: Trial-ending-soon warning (Prompt 4) ─────────────────
     # Days before trial_ends_at to fire the proactive warning email.

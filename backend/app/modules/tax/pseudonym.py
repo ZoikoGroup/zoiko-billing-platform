@@ -31,9 +31,11 @@ KEY_CHANGED = "pseudonym key changed — remap required"
 
 
 def _key() -> str:
-    from app.config import settings
+    """The key: the plain setting, or (4d-0) loaded from Secret Manager by
+    resource name. Raises SecretStoreUnavailable when it can't be loaded."""
+    from app.modules.tax.secret_store import config_secret
 
-    return (getattr(settings, "TAX_PROVIDER_PSEUDONYM_KEY", "") or "").strip()
+    return config_secret("TAX_PROVIDER_PSEUDONYM_KEY")
 
 
 def key_fingerprint() -> Optional[str]:
@@ -89,10 +91,15 @@ class PseudonymKeyService:
 
     def problem(self, organization_id: int) -> Optional[str]:
         """Why provider quoting/issuing is blocked by the key; None = fine."""
+        from app.modules.tax.secret_store import SecretStoreUnavailable
+
         if not self._has_provider_activations(organization_id):
             return None
         record = self.acknowledged(organization_id)
-        current = key_fingerprint()
+        try:
+            current = key_fingerprint()
+        except SecretStoreUnavailable as exc:
+            return f"pseudonym key unavailable: {exc.message}"
         if record is None and current is None:
             return None                                         # no key ever: no references were sent
         if record is None or record.fingerprint != current:

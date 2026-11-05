@@ -66,6 +66,7 @@ from app.modules.tax.enums import (
 from app.modules.tax.currencies import governed_currency_decimals
 from app.modules.tax.models import EntityTaxActivation, SellerLegalEntity
 from app.modules.tax.quote_models import TaxQuote, TaxQuoteComponent, TaxQuoteLine
+from app.modules.tax.secret_store import SecretStoreUnavailable
 from app.modules.tax.tenant_tax_service import TenantTaxService
 
 SIX = Decimal("0.000001")
@@ -326,7 +327,13 @@ class TaxDeterminationService:
             activations = self._effective_activations(organization_id, doc.seller_entity_id, jurisdiction_ids, cls, tax_date)
             line_engines = {}
             for activation in activations:
-                engine, reason = self.resolver(organization_id).engine_for(activation)
+                try:
+                    engine, reason = self.resolver(organization_id).engine_for(activation)
+                except SecretStoreUnavailable as exc:
+                    # Phase 4d-0: an unreachable or refusing secret store never
+                    # falls back; the provider is unavailable.
+                    raise _Refusal(TaxQuoteStatus.PROVIDER_UNAVAILABLE, "PROVIDER_UNAVAILABLE",
+                                   f"Provider credentials are unavailable: {exc.message}", warnings=issues)
                 if engine is None:
                     routing_problems.append(f"line {item.line_number}: {reason}")
                     continue

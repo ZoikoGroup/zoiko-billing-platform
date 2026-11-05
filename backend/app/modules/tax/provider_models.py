@@ -150,7 +150,13 @@ class TaxProviderConnection(Base):
     decision_reason       = Column(Text, nullable=True)
     suspended_reason      = Column(Text, nullable=True)
     resume_requested_by   = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    credential_ref        = Column(Integer, nullable=True)              # SecretStore reference
+    credential_ref        = Column(Integer, nullable=True)              # Fernet store: tax_provider_secrets id
+    # Phase 4d-0: which store holds the credential, and (gcp) the secret's
+    # resource name plus version numbers. Never the value.
+    credential_store            = Column(String(20), nullable=True)     # "fernet" | "gcp"
+    credential_secret_name      = Column(String(255), nullable=True)    # projects/…/secrets/tax-provider-…
+    credential_version          = Column(String(20), nullable=True)
+    credential_previous_version = Column(String(20), nullable=True)     # disabled after a successful test
     credential_last4      = Column(String(4), nullable=True)
     credential_rotated_at = Column(DateTime(timezone=True), nullable=True)
     credential_set_by     = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)

@@ -538,6 +538,11 @@ CRITICAL_COLUMNS: list[tuple[str, str, str, str]] = [
         "alembic/versions/d2b8e4f6a1c3_tax_phase4c_supply_staleness_pseudonym.py",
         "ZB-TAX-ARCH-001 Phase 4c: the resolver dataset an address resolution came from",
     ),
+    (
+        "tax_provider_connections", "credential_store",
+        "alembic/versions/e5c1a7b3d9f4_tax_phase4d0_secret_manager.py",
+        "ZB-TAX-ARCH-001 Phase 4d-0: which secret store holds a provider credential",
+    ),
 ]
 
 

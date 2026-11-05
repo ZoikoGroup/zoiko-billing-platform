@@ -151,6 +151,9 @@ async def lifespan(app: FastAPI):
     # MFA_ENCRYPTION_KEY checks above) rather than starting in a state that
     # will throw confusing errors on first use of that column.
     verify_critical_columns_present()
+    # ZB-TAX-ARCH-001 Phase 4d-0: refuse an unsafe provider secret store.
+    from app.modules.tax.secret_store import verify_secret_store_at_startup
+    verify_secret_store_at_startup()
     from app.core.worker_safety import warn_if_multiworker_without_redis
     warn_if_multiworker_without_redis(settings)
     if settings.ENABLE_RECURRING_BILLING_SCHEDULER:

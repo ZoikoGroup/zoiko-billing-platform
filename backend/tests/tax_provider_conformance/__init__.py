@@ -195,6 +195,28 @@ def check_credentials_never_leak(make_adapter, secret: str, caplog):
     assert secret not in caplog.text
 
 
+def check_secret_store_never_leaks(store, connection, secret: str, caplog, break_store):
+    """Phase 4d-0: a SecretStore returns the value only from get(); its
+    failures, logs and the connection view never carry it. `break_store()`
+    makes the store fail (unreachable, denied or an unusable key)."""
+    from app.modules.tax.connection_service import view_connection
+    from app.modules.tax.secret_store import SecretStoreUnavailable
+
+    with caplog.at_level(logging.DEBUG):
+        assert store.get(connection) == secret
+        assert secret not in str(view_connection(connection))
+        break_store()
+        for call in (lambda: store.get(connection), lambda: store.put(connection, secret)):
+            try:
+                call()
+            except SecretStoreUnavailable as exc:
+                assert secret not in str(exc) and secret not in repr(exc) and secret not in exc.message
+                assert exc.__cause__ is None or secret not in str(exc.__cause__)
+            else:
+                raise AssertionError("a broken store must fail closed")
+    assert secret not in caplog.text
+
+
 CHECKS = [check_contract_shape, check_idempotent_commit, check_transaction_state_reports_totals,
           check_void_by_reference, check_timeout_is_never_success, check_rate_limit_is_retryable,
           check_refusal_is_definite, check_ambiguous_errors_are_never_refusals, check_adjust_by_reference,

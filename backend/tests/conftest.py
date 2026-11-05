@@ -21,11 +21,17 @@ from sqlalchemy.orm import sessionmaker
 from app.database import Base
 from app.config import settings as _settings
 
-if not _settings.TAX_PROVIDER_ENCRYPTION_KEY:
+
+def _unset(value) -> bool:                       # empty or an unfilled .env.example placeholder
+    value = (value or "").strip()
+    return not value or (value.startswith("<") and value.endswith(">"))
+
+
+if _unset(_settings.TAX_PROVIDER_ENCRYPTION_KEY):
     from cryptography.fernet import Fernet as _Fernet
 
     _settings.TAX_PROVIDER_ENCRYPTION_KEY = _Fernet.generate_key().decode()   # test-only, per session
-if not _settings.TAX_PROVIDER_PSEUDONYM_KEY:
+if _unset(_settings.TAX_PROVIDER_PSEUDONYM_KEY):
     _settings.TAX_PROVIDER_PSEUDONYM_KEY = "test-pseudonym-key-per-session"     # test-only
 from app.modules.organizations.models import Organization
 from app.modules.billing.models import (

@@ -105,7 +105,8 @@ def test_test_connection_calls_only_the_allowlisted_endpoint(w):
 def test_credentials_are_write_only_and_masked(w):
     c = w["connection"]
     view = view_connection(c)
-    assert view["credentials"] == {"present": True, "last_rotated_at": c.credential_rotated_at, "last4": "1234"}
+    assert view["credentials"] == {"present": True, "last_rotated_at": c.credential_rotated_at, "last4": "1234",
+                                   "store": "fernet", "rotation_pending_test": False}
     assert "fake-sandbox-credential-1234" not in str(view)
     stored = w["db"].get(TaxProviderSecret, c.credential_ref)
     assert "fake-sandbox-credential" not in stored.ciphertext
@@ -119,7 +120,8 @@ def test_rotation_replaces_the_secret_and_is_audited(w):
     assert c.credential_last4 == "9876"
     log = w["db"].query(BillingAuditLog).filter(BillingAuditLog.entity_type == "TaxProviderConnection",
                                                 BillingAuditLog.entity_id == c.id).order_by(BillingAuditLog.id.desc()).first()
-    assert log.new_values == {"credentials": "rotated", "last4": "9876"}
+    assert log.new_values == {"credentials": "rotated", "last4": "9876", "store": "fernet", "version": None,
+                              "previous_version_pending": None}
 
 
 def test_revoking_credentials_freezes_the_connection_t16(w):
