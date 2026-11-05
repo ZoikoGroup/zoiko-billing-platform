@@ -60,7 +60,8 @@ from app.modules.tax.enums import (
 )
 from app.modules.tax.determination_service import view_quote
 from app.modules.tax.governed_credit_service import GovernedCreditService
-from app.modules.tax.issuance_gate import GovernedIssuanceGate, RemoteCommitter, TaxIssuanceBlocked
+from app.modules.tax.issuance_gate import GovernedIssuanceGate, TaxIssuanceBlocked
+from app.modules.tax.provider_issuance import ProviderIssuanceService, beat_for_tests
 from app.modules.tax.legal_entity_service import LegalEntityService
 from app.modules.tax.models import TaxRecordFrozenError
 from app.modules.tax.policy_models import TaxRulePackVersion
@@ -220,6 +221,7 @@ def build_world(db, org_code="P3A"):
     world["dig_product"] = product(world, "DIG1", "DIG")
     world["customer"] = buyer(world, verified=True)
     world["provider"] = FakeTaxProvider()
+    beat_for_tests(db)                                     # provider issuing needs a fresh reconciliation heartbeat
     db.commit()
     return world
 
@@ -282,7 +284,7 @@ def invoice_service(w, rounding=RoundingRule.PER_LINE):
     svc = InvoiceService(w["db"])
     svc.governed_gate = GovernedIssuanceGate(
         w["db"], determination=TaxDeterminationService(w["db"], resolver=resolver(w, rounding)),
-        committer=RemoteCommitter(provider_lookup=lambda q: w["provider"]))
+        provider_issuance=ProviderIssuanceService(w["db"], provider_lookup=lambda name: w["provider"]))
     return svc
 
 
@@ -729,14 +731,12 @@ def test_t10_provider_timeout_after_remote_success_never_commits_twice(w):
     inv = draft(w, [(w["dig_product"], 100, 1, False)])                 # B2B digital -> provider
     q = quote(w, inv)
     assert q.engine_name == "fake-provider" and q.remote_commit_state == RemoteCommitState.PENDING
-    with pytest.raises(TaxIssuanceBlocked, match="did not confirm"):
-        finalize(w, inv)
-    w["db"].refresh(inv)
-    w["db"].refresh(q)
-    assert inv.status == InvoiceStatus.DRAFT and q.remote_commit_state == RemoteCommitState.UNCERTAIN
-    issued = finalize(w, inv)                                          # reconciles first
+    pending = finalize(w, inv)                                         # Phase 4a-1: outbox, not an error
+    assert pending.status == InvoiceStatus.DRAFT                       # locked DRAFT: "waiting on provider"
+    issued = finalize(w, inv)                                          # looks up the provider's state first
     assert issued.status == InvoiceStatus.SENT
     assert w["provider"].commit_calls == 1
+    w["db"].refresh(q)
     assert q.remote_commit_state == RemoteCommitState.COMMITTED
 
 

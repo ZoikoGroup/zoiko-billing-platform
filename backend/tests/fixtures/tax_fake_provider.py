@@ -1,15 +1,43 @@
 """
-Fake tax provider for ZB-TAX-ARCH-001 Phase 3a tests (T10). Never registered
-in app.modules.tax.engines.PROVIDERS.
+Fake tax provider for ZB-TAX-ARCH-001 tests (Phase 3a T10, Phase 4a-1
+outbox, reconciliation and conformance). Never registered in
+app.modules.tax.engines.PROVIDERS.
 
-`fail_mode="timeout_after_success"` simulates the dangerous case: the provider
-commits remotely but the response never arrives, so the caller sees a timeout.
-A correct caller reconciles (remote_state) instead of committing again.
+It implements the full adapter contract (provider_contract.ProviderAdapter)
+and keeps an in-memory "remote" ledger keyed by our idempotency key, so a
+test can see exactly what the provider holds. Faults are injected with
+`fail` (a set of mode names; a mode listed in `once` fires only once):
+
+  timeout_after_success    commit lands remotely, then the caller times out
+  timeout_before_success   the caller times out and nothing lands
+  commit_error             the provider refuses the commit
+  rate_limited             the provider throttles the commit
+  state_error              transaction_state fails
+  void_error               void fails
+  determine_error          the estimate fails (PROVIDER_UNAVAILABLE)
+
+`result_hook(request, result)` lets a test reshape an estimate (reason codes,
+foreign jurisdictions, a different tax date) and `remote_tax_delta` makes the
+provider's recorded totals drift from ours.
 """
+from datetime import date
 from decimal import Decimal
 
-from app.modules.tax.engines import ComponentResult, EngineRequest, LineResult, ProviderAdapter, ProviderTimeout
-from app.modules.tax.enums import RemoteCommitState, RoundingMode, TaxOutcome
+from app.modules.tax.engines import ComponentResult, EngineRequest, LineResult
+from app.modules.tax.enums import RoundingMode, TaxOutcome
+from app.modules.tax.provider_contract import (
+    ALLOWED_COMMIT_FIELDS,
+    ProviderAdapter,
+    ProviderCapabilities,
+    ProviderError,
+    ProviderMode,
+    ProviderRateLimited,
+    ProviderTimeout,
+    ProviderTransaction,
+    RemoteTransactionState,
+)
+
+FAKE_SECRET = "sk_fake_SUPERSECRET_3141"
 
 
 class FakeTaxProvider(ProviderAdapter):
@@ -17,27 +45,110 @@ class FakeTaxProvider(ProviderAdapter):
     version = "1-test"
     rounding_mode = RoundingMode.HALF_UP
 
-    def __init__(self, rate: Decimal = Decimal("10"), fail_mode: str = ""):
-        self.rate = rate
-        self.fail_mode = fail_mode
+    def __init__(self, rate: Decimal = Decimal("10"), fail_mode: str = "", mode: ProviderMode = ProviderMode.COMMIT,
+                 link: bool = True, result_hook=None, secret: str = FAKE_SECRET):
+        self.rate = Decimal(rate)
+        self.fail = {fail_mode} if fail_mode else set()
+        self.once = {fail_mode} if fail_mode else set()
+        self.mode = mode
+        self.link = link
+        self.result_hook = result_hook
+        self.secret = secret                       # stands in for a credential: must never leak
+        self.remote_tax_delta = Decimal("0")
         self.commit_calls = 0
-        self.remote_committed: dict = {}            # idempotency_key -> correlation id
+        self.void_calls = 0
+        self.ledger: dict = {}                     # idempotency_key -> {"id", "state", "payload"}
+        self.links: dict = {}
+        self.payloads: list = []
+
+    # ── fault injection ──
+    @property
+    def fail_mode(self):
+        return next(iter(self.fail), "")
+
+    @fail_mode.setter
+    def fail_mode(self, value):
+        self.fail = {value} if value else set()
+        self.once = {value} if value else set()
+
+    def _fires(self, mode: str) -> bool:
+        if mode not in self.fail:
+            return False
+        if mode in self.once:
+            self.fail.discard(mode)
+        return True
+
+    # ── contract ──
+    def capabilities(self) -> ProviderCapabilities:
+        return ProviderCapabilities(markets=(("GB", "VAT"),), void=True, link_reference=self.link, mode=self.mode)
 
     def determine(self, request: EngineRequest) -> LineResult:
+        if self._fires("determine_error"):
+            raise ProviderError(f"simulated outage (credential {self.secret[:3]}…)")
         components = [ComponentResult(component_code=f"FAKE:{a.jurisdiction_id}:{a.tax_type_id}", rate_percent=self.rate,
                                       rate_source="PROVIDER", jurisdiction_id=a.jurisdiction_id,
                                       tax_type_id=a.tax_type_id, activation_id=a.id)
                       for a in request.activations]
-        return LineResult(outcome=TaxOutcome.STANDARD, explanation_code="PROVIDER_STANDARD", components=components,
-                          legal_reason="Fake provider determination.")
+        result = LineResult(outcome=TaxOutcome.STANDARD, explanation_code="PROVIDER_STANDARD", components=components,
+                            legal_reason="Fake provider determination.", provider_tax_date=request.tax_date,
+                            provider_currency=request.currency)
+        return self.result_hook(request, result) if self.result_hook else result
 
-    def commit(self, *, quote_ref: str, idempotency_key: str, payload: dict) -> str:
+    def commit(self, *, idempotency_key: str, payload: dict, quote_ref: str = None) -> str:
         self.commit_calls += 1
-        correlation = self.remote_committed.setdefault(idempotency_key, f"fake-{len(self.remote_committed) + 1}")
-        if self.fail_mode == "timeout_after_success":
-            self.fail_mode = ""                    # only the first attempt times out
+        unexpected = set(payload) - ALLOWED_COMMIT_FIELDS
+        if unexpected:
+            raise ProviderError(f"unexpected payload fields {sorted(unexpected)}")
+        if self._fires("commit_error"):
+            raise ProviderError("simulated refusal")
+        if self._fires("rate_limited"):
+            raise ProviderRateLimited("simulated throttling", retry_after_seconds=30)
+        if self._fires("timeout_before_success"):
+            raise ProviderTimeout("simulated timeout; nothing committed")
+        entry = self.ledger.get(idempotency_key)
+        if entry is None:
+            entry = {"id": f"fake-{len(self.ledger) + 1}", "state": RemoteTransactionState.COMMITTED,
+                     "payload": payload}
+            self.ledger[idempotency_key] = entry
+            self.payloads.append(payload)
+        if self._fires("timeout_after_success"):
             raise ProviderTimeout("simulated timeout after the provider committed")
-        return correlation
+        return entry["id"]
 
-    def remote_state(self, *, quote_ref: str, idempotency_key: str) -> RemoteCommitState:
-        return RemoteCommitState.COMMITTED if idempotency_key in self.remote_committed else RemoteCommitState.PENDING
+    def transaction_state(self, *, idempotency_key: str) -> ProviderTransaction:
+        if self._fires("state_error"):
+            raise ProviderError("simulated state lookup failure")
+        entry = self.ledger.get(idempotency_key)
+        if entry is None:
+            return ProviderTransaction(state=RemoteTransactionState.NOT_FOUND)
+        payload = entry["payload"]
+        components: dict = {}
+        for line in payload.get("lines", []):
+            for comp in line.get("components", []):
+                components[comp["component_code"]] = components.get(comp["component_code"], Decimal("0")) \
+                    + Decimal(comp["tax_amount"])
+        return ProviderTransaction(
+            state=entry["state"], transaction_id=entry["id"], currency=payload.get("currency"),
+            tax_date=date.fromisoformat(payload["tax_date"]) if payload.get("tax_date") else None,
+            total_tax=Decimal(payload["totals"]["tax"]) + self.remote_tax_delta,
+            total_amount=Decimal(payload["totals"]["total"]) + self.remote_tax_delta, components=components,
+        )
+
+    def void(self, *, transaction_id: str, idempotency_key: str, reason: str) -> None:
+        if self._fires("void_error"):
+            raise ProviderError("simulated void failure")
+        for entry in self.ledger.values():
+            if entry["id"] == transaction_id:
+                entry["state"] = RemoteTransactionState.VOIDED
+                self.void_calls += 1
+                return
+        raise ProviderError(f"unknown transaction {transaction_id}")
+
+    def link_reference(self, *, transaction_id: str, document_reference: str) -> None:
+        if not self.link:
+            raise ProviderError("linking not supported")
+        self.links[transaction_id] = document_reference
+
+    # test helpers
+    def committed_keys(self) -> list:
+        return [k for k, e in self.ledger.items() if e["state"] == RemoteTransactionState.COMMITTED]

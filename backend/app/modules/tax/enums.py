@@ -358,6 +358,7 @@ class ReviewItemKind(str, enum.Enum):
     CERTIFICATE_EXPIRING  = "certificate_expiring"
     CERTIFICATE_EXPIRED   = "certificate_expired"
     TAX_ID_VERIFICATION_EXPIRED = "tax_id_verification_expired"
+    PROVIDER_DRIFT        = "provider_drift"      # Phase 4a-1: provider record differs from our snapshot
 
 
 class ReviewItemStatus(str, enum.Enum):
@@ -424,6 +425,45 @@ class RemoteCommitState(str, enum.Enum):
     UNCERTAIN      = "uncertain"      # timed out: reconcile remote state before any retry (T10)
     COMMITTED      = "committed"
     VOIDED         = "voided"
+
+
+# ── Phase 4a-1: provider issuance outbox (§09.3) ─────────────────────────
+
+class OutboxOperation(str, enum.Enum):
+    COMMIT = "commit"
+    VOID   = "void"
+    LINK   = "link"       # attach our invoice number after commit (KEY_ONLY)
+
+
+class OutboxState(str, enum.Enum):
+    """Provider issuance state machine. PENDING -> REMOTE_COMMITTED -> DONE is
+    the happy path; UNCERTAIN means a timeout whose outcome must be looked up
+    before anything else (T10)."""
+    PENDING          = "pending"
+    UNCERTAIN        = "uncertain"
+    REMOTE_COMMITTED = "remote_committed"
+    DONE             = "done"
+    FAILED           = "failed"           # provider refused: nothing committed remotely
+    VOIDED           = "voided"           # committed remotely, then voided by reference
+    REVIEW_REQUIRED  = "review_required"  # needs a person (drift, void not possible, ...)
+
+
+#: States in which the invoice is locked and the row still has work to do.
+ACTIVE_OUTBOX_STATES = frozenset({OutboxState.PENDING, OutboxState.UNCERTAIN, OutboxState.REMOTE_COMMITTED})
+#: Final states: the row never changes again.
+TERMINAL_OUTBOX_STATES = frozenset({OutboxState.DONE, OutboxState.FAILED, OutboxState.VOIDED})
+
+
+class CircuitState(str, enum.Enum):
+    CLOSED    = "closed"
+    OPEN      = "open"         # too many failures: PROVIDER_UNAVAILABLE until the cool-down ends
+    SUSPENDED = "suspended"    # frozen by a person (contract ended, credentials revoked; T16)
+
+
+class DocumentReferencePolicy(str, enum.Enum):
+    """What identifies our invoice at the provider (tax lead decides)."""
+    KEY_ONLY       = "key_only"         # send our key; link the invoice number after commit
+    INVOICE_NUMBER = "invoice_number"   # send the reserved invoice number as the document code
 
 
 #: Quote statuses that can still be validated and committed at issuance.

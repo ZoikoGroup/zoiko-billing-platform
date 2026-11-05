@@ -488,6 +488,11 @@ CRITICAL_COLUMNS: list[tuple[str, str, str, str]] = [
         "alembic/versions/e4b8c1d6f2a9_tax_phase3b_rounding_and_packs.py",
         "ZB-TAX-ARCH-001 Phase 3b: the rule-pack registry records each pack's declarations",
     ),
+    (
+        "tax_provider_outbox", "idempotency_key",
+        "alembic/versions/f2c7a9e1b4d3_tax_phase4a_provider_outbox.py",
+        "ZB-TAX-ARCH-001 Phase 4a-1: provider issuance runs through the transactional outbox",
+    ),
 ]
 
 
@@ -607,6 +612,8 @@ import app.modules.tax.models  # noqa: F401,E402 — ZB-TAX-ARCH-001 tenant tax 
 import app.modules.tax.registry_models  # noqa: F401,E402 — ZB-TAX-ARCH-001 global reference registry (non-tenant)
 import app.modules.tax.policy_models  # noqa: F401,E402 — ZB-TAX-ARCH-001 market availability + tax codes (non-tenant)
 import app.modules.tax.quote_models  # noqa: F401,E402 — ZB-TAX-ARCH-001 governed quotes / snapshots (tenant)
+import app.modules.tax.provider_models  # noqa: F401,E402 — ZB-TAX-ARCH-001 provider outbox (tenant) + circuits/heartbeats
+import app.modules.tax.provider_issuance  # noqa: F401,E402 — registers the locked-draft guard (issuing via provider)
 import app.modules.chatbot.models  # noqa: F401,E402 — 28-table AI assistant schema
 import app.modules.notifications.models  # noqa: F401,E402 — ZB-* email pipeline foundation
 import app.services.email_foundation.models  # noqa: F401,E402 — Email System Foundation Infrastructure

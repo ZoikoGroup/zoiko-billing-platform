@@ -77,6 +77,9 @@ class ComponentResult:
     activation_id: Optional[int] = None
     reporting_code: Optional[str] = None
     is_reverse_charge: bool = False
+    #: The provider's own amount for this component (provider engines only),
+    #: checked against its line total (REVIEW_REQUIRED on mismatch).
+    provider_tax_amount: Optional[Decimal] = None
 
 
 @dataclass
@@ -85,6 +88,12 @@ class LineResult:
     explanation_code: str
     components: list = field(default_factory=list)
     legal_reason: Optional[str] = None
+    # What a provider reports back, compared with our context (Phase 4a-1):
+    provider_tax_date: Optional[date] = None
+    provider_currency: Optional[str] = None
+    provider_line_tax: Optional[Decimal] = None
+    reason_code: Optional[str] = None          # canonical REASON_CODES key for untaxed lines
+    applied_jurisdiction_ids: Optional[list] = None
 
     @classmethod
     def not_determined(cls, code: str, reason: str) -> "LineResult":
@@ -214,39 +223,14 @@ def registered_rule_packs() -> dict:
     return RULE_PACKS
 
 
-# ── Providers (interface + seam; no real provider in 3a) ─────────────────
+# ── Providers (contract in provider_contract.py) ────────────────────────
 
-class ProviderError(Exception):
-    pass
-
-
-class ProviderTimeout(ProviderError):
-    """The provider may or may not have acted: reconcile before retrying (T10)."""
-
-
-class ProviderAdapter(ABC):
-    """A licensed external determination service (§09.3). Estimates are
-    non-binding; commit is the legally binding step and is idempotent on the
-    key the caller supplies."""
-    name: str
-    version: str = "1"
-    rounding_rule: RoundingRule = RoundingRule.PER_LINE
-    rounding_mode: Optional[RoundingMode] = None
-    required_facts: frozenset = ROUTING_FACTS
-    unresolved_buyer_as_consumer: bool = False
-
-    @abstractmethod
-    def determine(self, request: EngineRequest) -> LineResult:
-        ...
-
-    @abstractmethod
-    def commit(self, *, quote_ref: str, idempotency_key: str, payload: dict) -> str:
-        """Commit remotely; return the provider correlation id. May raise
-        ProviderTimeout (outcome unknown) or ProviderError (not committed)."""
-
-    @abstractmethod
-    def remote_state(self, *, quote_ref: str, idempotency_key: str) -> RemoteCommitState:
-        """COMMITTED if the provider holds a committed transaction for this key."""
+from app.modules.tax.provider_contract import (  # noqa: E402  (re-exported)
+    ProviderAdapter,
+    ProviderError,
+    ProviderRateLimited,
+    ProviderTimeout,
+)
 
 
 class ProviderEngine(TaxEngine):
@@ -298,6 +282,12 @@ class EngineResolver:
             # The published declaration must still match the code (no drift).
             declared_mode = pack_cls.rounding_mode.name if pack_cls.rounding_mode else None
             if (row.rounding_rule, row.rounding_mode) != (pack_cls.rounding_rule.name, declared_mode):
+                continue
+            # T16: a source whose usage rights were revoked (or that lost its
+            # approval) freezes the pack at use time; no fallback.
+            from app.modules.tax.policy_service import source_dependency_status
+
+            if not all(source_dependency_status(self.db, ref)["approved"] for ref in getattr(pack_cls, "source_refs", ())):
                 continue
             if any(m.get("jurisdiction_code") == jurisdiction and m.get("tax_type") == tax_type for m in row.markets or []):
                 return pack_cls()

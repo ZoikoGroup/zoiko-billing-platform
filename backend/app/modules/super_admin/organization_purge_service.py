@@ -165,8 +165,9 @@ class OrganizationPurgeService:
         keyed by a text hash, which Postgres cannot UNION with integer keys)."""
         from app.modules.tax.policy_models import POLICY_TABLES
         from app.modules.tax.registry_models import REGISTRY_TABLES
+        from app.modules.tax.provider_models import PROVIDER_PLATFORM_TABLES
 
-        return set(REGISTRY_TABLES) | set(POLICY_TABLES)
+        return set(REGISTRY_TABLES) | set(POLICY_TABLES) | set(PROVIDER_PLATFORM_TABLES)
 
     def _enable_tax_erasure(self) -> None:
         """Retained tax evidence (ZB-TAX-ARCH-001 Phase 2) refuses deletion

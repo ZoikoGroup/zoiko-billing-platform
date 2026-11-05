@@ -437,10 +437,13 @@ def source_dependency_status(db: Session, handoff_ref: str) -> dict:
     if source is None:
         return {"handoff_ref": handoff_ref, "source_id": None, "title": None, "approved": False,
                 "reason": "not in the source register"}
-    approved = (source.evidence_status is not None and source.evidence_status.name == "CAPTURED"
+    revoked = source.redistribution_permission is not None and source.redistribution_permission.name == "DENIED"
+    approved = (not revoked and source.evidence_status is not None and source.evidence_status.name == "CAPTURED"
                 and source.reviewer_user_id is not None and source.reviewed_at is not None)
+    reason = None if approved else ("usage rights revoked (redistribution DENIED)" if revoked
+                                    else "evidence not captured and reviewed")
     return {"handoff_ref": handoff_ref, "source_id": source.id, "title": source.title, "approved": approved,
-            "reason": None if approved else "evidence not captured and reviewed"}
+            "reason": reason}
 
 
 class RulePackService(_VersionWorkflow):

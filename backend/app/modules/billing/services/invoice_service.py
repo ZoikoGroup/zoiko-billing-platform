@@ -131,6 +131,32 @@ class InvoiceService:
 
         return is_governed(self.db, inv)
 
+    def complete_governed_issue(self, inv: Invoice, quote, actor_id: Optional[int], commit: bool = True,
+                                reason: Optional[str] = None) -> Invoice:
+        """DRAFT -> SENT from a validated governed quote, as ONE unit: tax
+        figures from the quote, the committed tax date and currency, the
+        status, the quote link, history and audit. Used by the synchronous
+        gate and by provider issuance's transaction 2 (commit=False there:
+        the outbox row is completed in the same commit)."""
+        from app.modules.billing.models import InvoiceStatusHistory
+
+        gate = self._governed_gate()
+        old_status = inv.status.value
+        gate.apply(inv, quote)
+        inv.status = InvoiceStatus.SENT
+        inv.sent_at = datetime.utcnow()
+        gate.commit(inv, quote, actor_id)
+        self.db.add(InvoiceStatusHistory(organization_id=inv.organization_id, invoice_id=inv.id,
+                                         from_status=old_status, to_status=InvoiceStatus.SENT.value,
+                                         changed_by=actor_id, reason=reason))
+        self.audit.log_no_commit(inv.organization_id, actor_id, BillingAuditAction.SEND, "Invoice", inv.id,
+                                 new_values={"tax_quote_id": quote.id})
+        if commit:
+            safe_commit_and_refresh(self.db, inv)
+        else:
+            self.db.flush()
+        return inv
+
     def _governed_gate(self):
         if getattr(self, "governed_gate", None) is None:
             from app.modules.tax.issuance_gate import GovernedIssuanceGate
@@ -873,15 +899,11 @@ class InvoiceService:
             # client-sent percentages the legacy recalculation would use.
             gate = self._governed_gate()
             quote = gate.prepare(inv)
-            gate.apply(inv, quote)
-            inv.status = InvoiceStatus.SENT
-            inv.sent_at = datetime.utcnow()
-            gate.commit(inv, quote, updated_by)
-            self._record_status_history(organization_id, invoice_id, old_status, InvoiceStatus.SENT, updated_by)
-            self.audit.log(organization_id, updated_by, BillingAuditAction.SEND, "Invoice", invoice_id,
-                           new_values={"tax_quote_id": quote.id})
-            safe_commit_and_refresh(self.db, inv)
-            return inv
+            if gate.is_remote(quote):
+                # Provider tax: transactional outbox (Phase 4a-1). Returns SENT,
+                # or a locked DRAFT that reconciliation finishes.
+                return gate.provider_issuance().issue(inv, quote, updated_by)
+            return self.complete_governed_issue(inv, quote, updated_by)
         self.recalculate_invoice(invoice_id, organization_id)
         self._stamp_issue_tax_context(inv, organization_id)
         inv.status = InvoiceStatus.SENT
@@ -953,7 +975,20 @@ class InvoiceService:
         if inv.status == InvoiceStatus.DRAFT and self._is_governed(inv):
             gate = self._governed_gate()
             governed_quote = gate.prepare(inv)
-            gate.apply(inv, governed_quote)          # rolled back with everything else if delivery fails
+            if gate.is_remote(governed_quote):
+                # Provider tax: issue through the outbox first; no PDF or email
+                # until the invoice is SENT (Phase 4a-1).
+                inv = gate.provider_issuance().issue(inv, governed_quote, sent_by)
+                governed_quote = None
+                if inv.status != InvoiceStatus.SENT:
+                    return {
+                        "invoice_id": inv.id, "invoice_number": inv.invoice_number, "status": "ISSUING",
+                        "email_sent_to": None, "email_delivered": False, "sent_at": None,
+                        "message": "Issuing — waiting on the tax provider. Nothing was emailed; send it again "
+                                   "once the invoice is issued.",
+                    }
+            else:
+                gate.apply(inv, governed_quote)      # rolled back with everything else if delivery fails
         elif inv.status == InvoiceStatus.DRAFT:
             self.recalculate_invoice(invoice_id, organization_id)
             inv = self.repo.get_by_id(invoice_id, organization_id)
