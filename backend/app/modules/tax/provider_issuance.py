@@ -1005,6 +1005,13 @@ class ProviderIssuanceService:
             ok = False
             self.db.rollback()
             logger.exception("tax provider reconciliation failed")
+        try:                                                  # Phase 4d-0: credential version housekeeping
+            from app.modules.tax.connection_service import sweep_secret_versions
+
+            stats.update(sweep_secret_versions(self.db, now))
+        except Exception:
+            self.db.rollback()
+            logger.exception("tax provider reconciliation: credential version sweep failed")
         try:
             hb = self.db.get(TaxJobHeartbeat, RECONCILIATION_JOB)
             hb.last_finished_at = self.now()

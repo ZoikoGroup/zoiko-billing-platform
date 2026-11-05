@@ -157,6 +157,11 @@ class TaxProviderConnection(Base):
     credential_secret_name      = Column(String(255), nullable=True)    # projects/…/secrets/tax-provider-…
     credential_version          = Column(String(20), nullable=True)
     credential_previous_version = Column(String(20), nullable=True)     # disabled after a successful test
+    # Disabled versions awaiting destruction: {"<version>": "<disabled at ISO>"}.
+    credential_disabled_versions = Column(JSON, nullable=True)
+    # A revocation whose destroy failed: versions up to this one are destroyed
+    # by reconciliation (later ones belong to new credentials).
+    credential_destroy_through  = Column(String(20), nullable=True)
     credential_last4      = Column(String(4), nullable=True)
     credential_rotated_at = Column(DateTime(timezone=True), nullable=True)
     credential_set_by     = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)

@@ -414,6 +414,9 @@ class Settings(BaseSettings):
     TAX_PROVIDER_PSEUDONYM_KEY_SECRET: str = ""
     TAX_PROVIDER_ENCRYPTION_KEY_SECRET: str = ""
     TAX_SECRET_CACHE_TTL_SECONDS: int = 300
+    # Disabled (rotated-out) credential versions are destroyed by
+    # reconciliation after this many days; re-enabling stays possible until then.
+    TAX_SECRET_DISABLED_VERSION_RETENTION_DAYS: int = 30
 
     # ── ZB-COM-003: Trial-ending-soon warning (Prompt 4) ─────────────────
     # Days before trial_ends_at to fire the proactive warning email.

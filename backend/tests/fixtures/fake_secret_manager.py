@@ -94,4 +94,4 @@ class FakeSecretManager:
         self.secrets[name] = {"labels": {}, "replication": {"automatic": {}}, "versions": {}}
         self.add_secret_version({"parent": name, "payload": {"data": value.encode()}})
         self.calls.clear()
-        return f"{name}/versions/latest"
+        return f"{name}/versions/1"

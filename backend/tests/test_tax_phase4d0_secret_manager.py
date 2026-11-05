@@ -343,3 +343,119 @@ def test_an_unfilled_placeholder_is_never_used_as_a_key(monkeypatch):
     monkeypatch.setattr(settings, "TAX_PROVIDER_PSEUDONYM_KEY", "<SET_IN_SECRET_MANAGER>")
     monkeypatch.setattr(settings, "TAX_PROVIDER_PSEUDONYM_KEY_SECRET", "<SET_IN_SECRET_MANAGER>")
     assert key_fingerprint() is None
+
+
+# ── review additions: destroy retry, disabled-version retention, pinned key ──
+
+def _destroy_items(w):
+    from app.modules.tax.enums import ReviewItemKind
+    from app.modules.tax.models import TaxReviewItem
+
+    return w["db"].query(TaxReviewItem).filter(
+        TaxReviewItem.kind == ReviewItemKind.CREDENTIAL_VERSIONS_NOT_DESTROYED,
+        TaxReviewItem.subject_id == w["connection"].id).all()
+
+
+def test_a_failed_destroy_raises_a_review_item_and_reconciliation_retries_until_it_succeeds(w):
+    from app.modules.tax.provider_issuance import ProviderIssuanceService
+    from app.modules.tax.review_service import view_review_item
+
+    c, fake = w["connection"], w["gcp"]
+    svc(w).set_credentials(w["org"].id, w["maker"].id, c.id, "gcp-rotated-credential-0002")
+    fake.fail["list"] = gexc.ServiceUnavailable("down")
+    with pytest.raises(SecretStoreUnavailable):
+        svc(w).revoke_credentials(w["org"].id, w["maker"].id, c.id, "leaked")
+    (item,) = _destroy_items(w)
+    view = view_review_item(item)
+    assert view["status"] == "OPEN" and view["owner_role"] == "BILLING_ADMIN" and view["age_days"] == 0
+    assert "not destroyed" in view["detail"] and c.credential_destroy_through == "2"
+
+    stats = ProviderIssuanceService(w["db"]).reconcile()                 # still down: stays open
+    assert stats["secret_failures"] == 1 and _destroy_items(w)[0].status.name == "OPEN"
+    assert fake.states(w["secret_name"]) == {"1": "ENABLED", "2": "ENABLED"}
+
+    del fake.fail["list"]
+    stats = ProviderIssuanceService(w["db"]).reconcile()
+    assert stats["destroy_retried"] == 1
+    assert fake.states(w["secret_name"]) == {"1": "DESTROYED", "2": "DESTROYED"}
+    w["db"].refresh(c)
+    assert c.credential_destroy_through is None and _destroy_items(w)[0].status.name == "RESOLVED"
+    log = w["db"].query(BillingAuditLog).filter(BillingAuditLog.entity_type == "TaxProviderConnection",
+                                                BillingAuditLog.entity_id == c.id).order_by(BillingAuditLog.id.desc()).first()
+    assert log.new_values["credentials"] == "revoked versions destroyed (retry)"
+
+
+def test_a_destroy_retry_never_touches_credentials_set_after_the_revocation(w):
+    from app.modules.tax.provider_issuance import ProviderIssuanceService
+
+    c, fake = w["connection"], w["gcp"]
+    fake.fail["list"] = gexc.ServiceUnavailable("down")
+    with pytest.raises(SecretStoreUnavailable):
+        svc(w).revoke_credentials(w["org"].id, w["maker"].id, c.id, "leaked")
+    del fake.fail["list"]
+    svc(w).set_credentials(w["org"].id, w["maker"].id, c.id, "gcp-new-credential-after-revoke")   # version 2
+    ProviderIssuanceService(w["db"]).reconcile()
+    assert fake.states(w["secret_name"]) == {"1": "DESTROYED", "2": "ENABLED"}
+    w["db"].refresh(c)
+    assert c.credential_version == "2"
+
+
+def _rotate_and_confirm(w):
+    c = w["connection"]
+    svc(w).set_credentials(w["org"].id, w["maker"].id, c.id, "gcp-rotated-credential-0002")
+    svc(w).test_connection(w["org"].id, w["maker"].id, c.id)                # disables version 1
+    assert list((c.credential_disabled_versions or {}).keys()) == ["1"]
+
+
+def test_disabled_versions_are_destroyed_after_the_retention_window(w):
+    from datetime import datetime, timedelta, timezone
+
+    from app.modules.tax.connection_service import sweep_secret_versions
+
+    _rotate_and_confirm(w)
+    now = datetime.now(timezone.utc)
+    assert sweep_secret_versions(w["db"], now + timedelta(days=29))["disabled_destroyed"] == 0
+    assert w["gcp"].states(w["secret_name"]) == {"1": "DISABLED", "2": "ENABLED"}
+    assert sweep_secret_versions(w["db"], now + timedelta(days=31))["disabled_destroyed"] == 1
+    assert w["gcp"].states(w["secret_name"]) == {"1": "DESTROYED", "2": "ENABLED"}
+    w["db"].refresh(w["connection"])
+    assert w["connection"].credential_disabled_versions is None
+    log = w["db"].query(BillingAuditLog).filter(BillingAuditLog.entity_type == "TaxProviderConnection",
+                                                BillingAuditLog.entity_id == w["connection"].id) \
+        .order_by(BillingAuditLog.id.desc()).first()
+    assert log.new_values == {"credentials": "disabled versions destroyed", "versions": ["1"]}
+
+
+def test_a_version_re_enabled_within_the_window_is_kept(w):
+    from datetime import datetime, timedelta, timezone
+
+    from app.modules.tax.connection_service import sweep_secret_versions
+
+    _rotate_and_confirm(w)
+    w["gcp"].secrets[w["secret_name"]]["versions"]["1"]["state"] = "ENABLED"     # an admin re-enabled it
+    sweep_secret_versions(w["db"], datetime.now(timezone.utc) + timedelta(days=31))
+    assert w["gcp"].states(w["secret_name"])["1"] == "ENABLED"
+
+
+def test_the_retention_window_is_configurable(w, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    from app.modules.tax.connection_service import sweep_secret_versions
+
+    monkeypatch.setattr(settings, "TAX_SECRET_DISABLED_VERSION_RETENTION_DAYS", 7)
+    _rotate_and_confirm(w)
+    assert sweep_secret_versions(w["db"], datetime.now(timezone.utc) + timedelta(days=8))["disabled_destroyed"] == 1
+
+
+@pytest.mark.parametrize("resource", [
+    f"projects/{PROJECT}/secrets/tax-provider-pseudonym-key/versions/latest",
+    f"projects/{PROJECT}/secrets/tax-provider-pseudonym-key/versions/current",
+    f"projects/{PROJECT}/secrets/tax-provider-pseudonym-key",
+])
+def test_the_pseudonym_key_must_name_a_numbered_version(gcp, monkeypatch, resource):
+    monkeypatch.setattr(settings, "TAX_PROVIDER_PSEUDONYM_KEY_SECRET", resource)
+    with pytest.raises(SecretStoreUnavailable, match="numbered version"):
+        secret_store.config_secret("TAX_PROVIDER_PSEUDONYM_KEY")
+    with pytest.raises(SystemExit, match="numbered version"):
+        verify_secret_store_at_startup(lambda: None)
+    assert gcp.calls == []

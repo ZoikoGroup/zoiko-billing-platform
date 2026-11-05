@@ -361,6 +361,7 @@ class ReviewItemKind(str, enum.Enum):
     TAX_ID_VERIFICATION_EXPIRED = "tax_id_verification_expired"
     PROVIDER_DRIFT        = "provider_drift"      # Phase 4a-1: provider record differs from our snapshot
     ADDRESS_RESOLUTION_STALE = "address_resolution_stale"   # Phase 4c: expired or superseded dataset
+    CREDENTIAL_VERSIONS_NOT_DESTROYED = "credential_versions_not_destroyed"   # Phase 4d-0: revoke retry pending
 
 
 class ReviewItemStatus(str, enum.Enum):

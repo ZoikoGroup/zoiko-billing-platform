@@ -33,6 +33,7 @@ Nothing here logs, raises or returns a secret value.
 """
 import logging
 import os
+import re
 import threading
 import time
 from abc import ABC, abstractmethod
@@ -47,6 +48,10 @@ from app.core.exceptions import BadRequestException
 logger = logging.getLogger("zoiko_billing")
 
 KEY_VERSION = "fernet-v1"
+#: A pinned Secret Manager version (never "latest" or an alias).
+NUMBERED_VERSION = re.compile(r"^projects/[^/]+/secrets/[^/]+/versions/[0-9]+$")
+#: Keys that must name a numbered version: a moving alias would silently change them.
+PINNED_KEYS = ("TAX_PROVIDER_PSEUDONYM_KEY",)
 STORES = ("gcp", "fernet")
 SECRET_NAME_PREFIX = "tax-provider-"
 
@@ -142,6 +147,9 @@ def config_secret(name: str) -> str:
     resource = _setting(f"{name}_SECRET")
     if not resource:
         return _setting(name)
+    if name in PINNED_KEYS and not NUMBERED_VERSION.match(resource):
+        raise SecretStoreUnavailable(f"{name}_SECRET must name a numbered version "
+                                     "(projects/<p>/secrets/<name>/versions/<n>), not latest or an alias.")
     if name == "TAX_PROVIDER_ENCRYPTION_KEY" and is_production():
         raise SecretStoreUnavailable("The Fernet store is not used in production; no encryption key is loaded.")
     ttl = max(0, int(getattr(settings, "TAX_SECRET_CACHE_TTL_SECONDS", 300)))
@@ -178,8 +186,14 @@ class SecretStore(ABC):
         """The new credential tested OK: retire the replaced one."""
 
     @abstractmethod
-    def destroy(self, connection) -> None:
-        """Revocation: remove every stored version and clear the references."""
+    def destroy(self, connection, through: Optional[str] = None) -> None:
+        """Revocation: remove every stored version and clear the references.
+        With `through` (a retry after a failed revocation), destroy only the
+        versions up to it and leave the connection's current references."""
+
+    def destroy_expired_disabled(self, connection, cutoff: datetime) -> list:
+        """Destroy versions disabled before `cutoff`; returns their numbers."""
+        return []
 
 
 def has_credentials(connection) -> bool:
@@ -242,10 +256,10 @@ class FernetSecretStore(SecretStore):
     def retire_previous(self, connection) -> None:
         connection.credential_previous_version = None
 
-    def destroy(self, connection) -> None:
-        if connection.credential_ref is not None:
+    def destroy(self, connection, through: Optional[str] = None) -> None:
+        if connection.credential_ref is not None and through is None:
             self._delete(connection.organization_id, connection.credential_ref)
-        connection.credential_ref = None
+            connection.credential_ref = None
 
     def _delete(self, organization_id: int, ref: int) -> None:
         from app.modules.tax.provider_models import TaxProviderSecret
@@ -311,6 +325,12 @@ class GcpSecretManagerStore(SecretStore):
     def _version_of(version_name: str) -> str:
         return version_name.rsplit("/", 1)[-1]
 
+    def _disable(self, connection, name: str, version: str) -> None:
+        _gcp_call("disable version", self.client.disable_secret_version, name=f"{name}/versions/{version}")
+        disabled = dict(connection.credential_disabled_versions or {})
+        disabled[version] = datetime.now(timezone.utc).isoformat()
+        connection.credential_disabled_versions = disabled
+
     def put(self, connection, secret: str) -> None:
         name = self._ensure_secret(connection)
         added = _gcp_call("add version", self.client.add_secret_version, parent=name,
@@ -320,7 +340,7 @@ class GcpSecretManagerStore(SecretStore):
         if current is not None and previous is not None:
             # The current version was never confirmed by a test: disable it now
             # and keep the last confirmed one as the fallback to retire later.
-            _gcp_call("disable version", self.client.disable_secret_version, name=f"{name}/versions/{current}")
+            self._disable(connection, name, current)
         elif current is not None:
             previous = current
         connection.credential_store, connection.credential_secret_name = self.name, name
@@ -338,19 +358,45 @@ class GcpSecretManagerStore(SecretStore):
         previous = connection.credential_previous_version
         if previous is None or not connection.credential_secret_name:
             return
-        _gcp_call("disable version", self.client.disable_secret_version,
-                  name=f"{connection.credential_secret_name}/versions/{previous}")
+        self._disable(connection, connection.credential_secret_name, previous)
         connection.credential_previous_version = None
 
-    def destroy(self, connection) -> None:
+    def _versions(self, connection) -> list:
+        """[(number, state, resource name)] after the label check."""
         name = connection.credential_secret_name
-        if name:
-            self._check_labels(connection, name)
-            versions = _gcp_call("list versions", self.client.list_secret_versions, parent=name)
-            for v in versions:
-                if str(getattr(v.state, "name", v.state)).upper() != "DESTROYED":
-                    _gcp_call("destroy version", self.client.destroy_secret_version, name=v.name)
-        connection.credential_version, connection.credential_previous_version = None, None
+        self._check_labels(connection, name)
+        versions = _gcp_call("list versions", self.client.list_secret_versions, parent=name)
+        return [(self._version_of(v.name), str(getattr(v.state, "name", v.state)).upper(), v.name) for v in versions]
+
+    def destroy(self, connection, through: Optional[str] = None) -> None:
+        if connection.credential_secret_name:
+            for number, state, resource in self._versions(connection):
+                if state != "DESTROYED" and (through is None or int(number) <= int(through)):
+                    _gcp_call("destroy version", self.client.destroy_secret_version, name=resource)
+        disabled = {k: v for k, v in (connection.credential_disabled_versions or {}).items()
+                    if through is not None and int(k) > int(through)}
+        connection.credential_disabled_versions = disabled or None
+        if through is None:
+            connection.credential_version, connection.credential_previous_version = None, None
+
+    def destroy_expired_disabled(self, connection, cutoff: datetime) -> list:
+        pending = dict(connection.credential_disabled_versions or {})
+        if not pending or not connection.credential_secret_name:
+            return []
+        states = {number: (state, resource) for number, state, resource in self._versions(connection)}
+        destroyed = []
+        for number, disabled_at in sorted(pending.items(), key=lambda kv: int(kv[0])):
+            state, resource = states.get(number, ("DESTROYED", None))
+            if state == "ENABLED":                              # re-enabled in the window: keep it
+                pending.pop(number)
+            elif state == "DESTROYED":
+                pending.pop(number)
+            elif datetime.fromisoformat(disabled_at) <= cutoff:
+                _gcp_call("destroy version", self.client.destroy_secret_version, name=resource)
+                pending.pop(number)
+                destroyed.append(number)
+        connection.credential_disabled_versions = pending or None
+        return destroyed
 
 
 # ── startup ─────────────────────────────────────────────────────────────
@@ -366,6 +412,11 @@ def verify_secret_store_at_startup(db_factory=None) -> None:
         raise SystemExit(str(exc))
     if settings.TAX_PROVIDER_PRODUCTION_CREDENTIALS_ALLOWED and store != "gcp":
         raise SystemExit("TAX_PROVIDER_PRODUCTION_CREDENTIALS_ALLOWED requires TAX_PROVIDER_SECRET_STORE=gcp.")
+    for name in PINNED_KEYS:
+        resource = _setting(f"{name}_SECRET")
+        if resource and not NUMBERED_VERSION.match(resource):
+            raise SystemExit(f"{name}_SECRET must name a numbered version "
+                             "(projects/<p>/secrets/<name>/versions/<n>), not latest or an alias.")
     if store == "gcp":
         if not _setting("TAX_SECRET_MANAGER_PROJECT"):
             raise SystemExit("TAX_PROVIDER_SECRET_STORE=gcp needs TAX_SECRET_MANAGER_PROJECT.")
