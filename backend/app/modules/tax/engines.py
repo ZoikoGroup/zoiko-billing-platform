@@ -48,6 +48,10 @@ ROUTING_FACTS = frozenset({
     "JURISDICTION_NOT_IN_REGISTRY", "PRICING_MODE_MIXED",
 })
 
+#: Countries whose tax is sub-national: the buyer's state or province is a
+#: required fact there (a postal code alone never resolves the jurisdiction).
+SUBNATIONAL_COUNTRIES = frozenset({"CA", "US"})
+
 #: Context codes about activations: the determination service re-resolves
 #: activations per line itself, so these are reported as warnings only.
 ACTIVATION_FACTS = frozenset({"NO_ACTIVATION", "NO_EFFECTIVE_ACTIVATION", "ACTIVATION_NOT_EFFECTIVE"})
@@ -243,7 +247,8 @@ class ProviderEngine(TaxEngine):
         self.version = adapter.version
         self.rounding_rule = adapter.rounding_rule
         self.rounding_mode = adapter.rounding_mode
-        self.required_facts = adapter.required_facts
+        # Routing facts are always required, whatever the adapter declares.
+        self.required_facts = frozenset(adapter.required_facts or ()) | ROUTING_FACTS
         self.unresolved_buyer_as_consumer = adapter.unresolved_buyer_as_consumer
 
     def determine(self, request: EngineRequest) -> LineResult:

@@ -44,6 +44,7 @@ from app.modules.tax.engines import (
     ROUTING_FACTS,
     ComponentResult,
     EngineRequest,
+    SUBNATIONAL_COUNTRIES,
     EngineResolver,
     LineInput,
     LineResult,
@@ -351,6 +352,9 @@ class TaxDeterminationService:
         # Buyer status matters only to an engine that applies: with no engine,
         # the routing problem (e.g. an expired registration) is the reason.
         required = set(engine.required_facts if engine else ROUTING_FACTS)
+        billing = ((facts.get("buyer") or {}).get("addresses") or {}).get("BILLING") or {}
+        if billing.get("country_code") in SUBNATIONAL_COUNTRIES:
+            required.add("BUYER_SUBDIVISION_MISSING")
         if engine is not None and not engine.unresolved_buyer_as_consumer:
             required.add("BUYER_STATUS_UNRESOLVED")
         else:
