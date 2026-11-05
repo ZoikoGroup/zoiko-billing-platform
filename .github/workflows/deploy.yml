@@ -215,10 +215,39 @@ jobs:
             # `ai_knowledge_document.is_public` column exists.
             python -m seed_knowledge
             deactivate
+            # ── Tax reconciliation worker (ZB-TAX-ARCH-001 Phase 4d-0) ─────────────
+            # Provider reconciliation runs in its own process (systemd unit
+            # zoiko-billing-tax-worker); the web app stops scheduling it
+            # (TAX_PROVIDER_RECONCILIATION_MODE=worker, written before the
+            # restart). A stopped worker fails closed: its heartbeat goes stale
+            # and provider issuing is blocked. The unit is rendered from
+            # deploy/systemd/ with the backend unit's user and this directory.
+            # Runbook: backend/docs/TAX_RECONCILIATION_WORKER.md
+            WORKER_UNIT=zoiko-billing-tax-worker
+            SERVICE_USER="$(systemctl show -p User --value zoiko-billing-backend 2>/dev/null || true)"
+            sed -e "s|@SERVICE_USER@|${SERVICE_USER}|g" -e "s|@BACKEND_DIR@|$(pwd)|g" \
+              "deploy/systemd/${WORKER_UNIT}.service" | sed '/^User=$/d' > "/tmp/${WORKER_UNIT}.service"
+            if ! cmp -s "/tmp/${WORKER_UNIT}.service" "/etc/systemd/system/${WORKER_UNIT}.service"; then
+              sudo install -m 644 "/tmp/${WORKER_UNIT}.service" "/etc/systemd/system/${WORKER_UNIT}.service"
+              sudo systemctl daemon-reload
+              echo "systemd unit ${WORKER_UNIT} installed/updated"
+            fi
+            rm -f "/tmp/${WORKER_UNIT}.service"
+            sudo systemctl enable --quiet "$WORKER_UNIT"
+            sed -i "/^TAX_PROVIDER_RECONCILIATION_MODE=/d" "$ENV_FILE"
+            printf 'TAX_PROVIDER_RECONCILIATION_MODE=worker\n' >> "$ENV_FILE"
             sudo systemctl restart zoiko-billing-backend
             sudo systemctl is-active --quiet zoiko-billing-backend \
               || { echo "::error::zoiko-billing-backend unit not active after restart"; exit 1; }
             echo "systemd unit zoiko-billing-backend active: YES"
+            sudo systemctl restart "$WORKER_UNIT"
+            sleep 5
+            if ! sudo systemctl is-active --quiet "$WORKER_UNIT"; then
+              echo "::error::${WORKER_UNIT} not active after restart (provider issuing stays blocked)"
+              journalctl -u "$WORKER_UNIT" -n 30 --no-pager || true
+              exit 1
+            fi
+            echo "systemd unit ${WORKER_UNIT} active: YES"
             if [ -n "$BACKEND_HEALTH_PORT" ]; then
               ready=0
               for i in 1 2 3 4 5 6; do

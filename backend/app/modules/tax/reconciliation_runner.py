@@ -7,8 +7,11 @@ depend on ENABLE_RECURRING_BILLING_SCHEDULER: without reconciliation,
 provider-taxed invoices cannot be issued safely, so every run writes a
 heartbeat and a stale heartbeat blocks provider issuing (PROVIDER_UNAVAILABLE).
 
-A dedicated worker process replaces this in-process scheduler before any
-provider market goes live (4d gate). Several app instances may run it at
+Phase 4d-0: TAX_PROVIDER_RECONCILIATION_MODE chooses where it runs.
+``worker`` — the dedicated process (app.modules.tax.reconciliation_worker,
+systemd unit zoiko-billing-tax-worker) runs it and the web app schedules
+nothing. ``in_app`` — this in-process scheduler runs it. In both modes a
+stale heartbeat blocks provider issuing. Several processes may run it at
 once: rows are claimed with FOR UPDATE SKIP LOCKED.
 """
 import logging
@@ -21,7 +24,15 @@ from app.config import settings
 logger = logging.getLogger("zoiko_billing.tax.provider")
 
 JOB_ID = "tax_provider_reconciliation"
+MODES = ("worker", "in_app")
 _scheduler: Optional[BackgroundScheduler] = None
+
+
+def reconciliation_mode() -> str:
+    mode = (getattr(settings, "TAX_PROVIDER_RECONCILIATION_MODE", "") or "in_app").strip().lower()
+    if mode not in MODES:
+        raise SystemExit(f"TAX_PROVIDER_RECONCILIATION_MODE must be one of {', '.join(MODES)}, not {mode!r}.")
+    return mode
 
 
 def run_once() -> dict:
@@ -40,6 +51,10 @@ def start() -> None:
     if not settings.TAX_PROVIDER_RECONCILIATION_ENABLED:
         logger.warning("Tax provider reconciliation is disabled: provider-taxed invoices cannot be issued "
                        "(TAX_PROVIDER_RECONCILIATION_ENABLED=false).")
+        return
+    if reconciliation_mode() == "worker":
+        logger.info("Tax provider reconciliation runs in the dedicated worker (zoiko-billing-tax-worker); "
+                    "the web app does not schedule it.")
         return
     if _scheduler is not None:
         return
