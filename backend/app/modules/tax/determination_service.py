@@ -30,7 +30,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
-from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
+from decimal import ROUND_DOWN, Decimal
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -44,6 +44,7 @@ from app.modules.tax.enums import (
     EngineKind,
     EntityTaxRegime,
     RemoteCommitState,
+    RoundingMode,
     RoundingRule,
     SupplyCategory,
     TaxOutcome,
@@ -51,30 +52,13 @@ from app.modules.tax.enums import (
     TenantApprovalStatus,
     transaction_class_for,
 )
+from app.modules.tax.currencies import governed_currency_decimals
 from app.modules.tax.models import EntityTaxActivation, SellerLegalEntity
 from app.modules.tax.quote_models import TaxQuote, TaxQuoteComponent, TaxQuoteLine
 from app.modules.tax.tenant_tax_service import TenantTaxService
 
 SIX = Decimal("0.000001")
 HUNDRED = Decimal("100")
-
-# ISO 4217 minor units for currencies that are not 2. Governed quotes refuse
-# 3-decimal currencies in Phase 3a (money columns are NUMERIC(14,2)); the
-# billing module's CURRENCY_DECIMAL_MAP omits several of these (see
-# TAX_PHASE3A.md findings).
-THREE_DECIMAL_CURRENCIES = frozenset({"BHD", "IQD", "JOD", "KWD", "LYD", "OMR", "TND"})
-ZERO_DECIMAL_CURRENCIES = frozenset({
-    "BIF", "CLP", "DJF", "GNF", "ISK", "JPY", "KMF", "KRW", "PYG", "RWF", "UGX", "VND", "VUV", "XAF", "XOF", "XPF",
-})
-
-
-def governed_currency_decimals(currency: Optional[str]) -> Optional[int]:
-    """Minor units for a governed quote, or None when unsupported in 3a."""
-    code = (currency or "").strip().upper()
-    if not code or code in THREE_DECIMAL_CURRENCIES:
-        return None
-    return 0 if code in ZERO_DECIMAL_CURRENCIES else 2
-
 
 class QuoteConflictError(ZoikoException):
     def __init__(self, message: str):
@@ -90,12 +74,15 @@ def _sha(payload) -> str:
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
-def _q6(value: Decimal) -> Decimal:
-    return Decimal(value).quantize(SIX, rounding=ROUND_HALF_UP)
+# Governed rounding always takes the engine-declared RoundingMode (F4): there
+# is deliberately no default mode here.
+def _q6(value: Decimal, mode: RoundingMode) -> Decimal:
+    """An unrounded figure as stored (6 decimal places)."""
+    return Decimal(value).quantize(SIX, rounding=mode.decimal_rounding)
 
 
-def _round(value: Decimal, decimals: int) -> Decimal:
-    return Decimal(value).quantize(Decimal(1).scaleb(-decimals), rounding=ROUND_HALF_UP)
+def _round(value: Decimal, decimals: int, mode: RoundingMode) -> Decimal:
+    return Decimal(value).quantize(Decimal(1).scaleb(-decimals), rounding=mode.decimal_rounding)
 
 
 # ── Document inputs ─────────────────────────────────────────────────────
@@ -185,7 +172,7 @@ class _Line:
     component_rounded: list = None
 
 
-def _apply_rates(lines: list, decimals: int, rule: RoundingRule) -> None:
+def _apply_rates(lines: list, decimals: int, rule: RoundingRule, mode: RoundingMode) -> None:
     for line in lines:
         rates = [Decimal(c.rate_percent) for c in line.result.components]
         line.rate = sum(r for r, c in zip(rates, line.result.components) if not c.is_reverse_charge) or Decimal("0")
@@ -198,7 +185,7 @@ def _apply_rates(lines: list, decimals: int, rule: RoundingRule) -> None:
 
     if rule == RoundingRule.PER_LINE:
         for line in lines:
-            line.component_rounded = [_round(t, decimals) for t in line.component_tax]
+            line.component_rounded = [_round(t, decimals, mode) for t in line.component_tax]
         return
 
     # PER_DOCUMENT: round each component code's document total once, then
@@ -212,7 +199,7 @@ def _apply_rates(lines: list, decimals: int, rule: RoundingRule) -> None:
             by_code.setdefault(comp.component_code, []).append((li, ci))
     for refs in by_code.values():
         exact = [lines[li].component_tax[ci] for li, ci in refs]
-        target = _round(sum(exact, Decimal("0")), decimals)
+        target = _round(sum(exact, Decimal("0")), decimals, mode)
         floors = [(e / quantum).to_integral_value(rounding=ROUND_DOWN) * quantum for e in exact]
         remainder_units = int(((target - sum(floors, Decimal("0"))) / quantum).to_integral_value())
         order = sorted(range(len(refs)), key=lambda i: (exact[i] - floors[i]), reverse=remainder_units > 0)
@@ -293,8 +280,8 @@ class TaxDeterminationService:
         decimals = governed_currency_decimals(doc.currency)
         if decimals is None:
             raise _Refusal(TaxQuoteStatus.UNSUPPORTED, "CURRENCY_MINOR_UNITS_UNSUPPORTED",
-                           f"{doc.currency or 'An unset currency'} is not supported for governed quotes in this phase: "
-                           "currencies with more than 2 minor units need wider money columns.", warnings=issues)
+                           f"{doc.currency or 'An unset currency'} is not supported for governed quotes: only ISO 4217 "
+                           "currencies with at most 2 minor units are (wider money columns are needed for more).", warnings=issues)
         if Decimal(str(getattr(doc, "shipping_amount", 0) or 0)) != 0 or Decimal(str(getattr(doc, "round_off", 0) or 0)) != 0:
             raise _Refusal(TaxQuoteStatus.UNSUPPORTED, "SHIPPING_OR_ROUND_OFF_UNSUPPORTED",
                            "Shipping and round-off on governed invoices need taxability rules and are not supported yet.",
@@ -346,25 +333,28 @@ class TaxDeterminationService:
 
         if len(engines) > 1:
             raise _Refusal(TaxQuoteStatus.UNSUPPORTED, "MIXED_ENGINES",
-                           "The document's lines resolve to different engines or rounding rules; "
+                           "The document's lines resolve to different engines or rounding rules/modes; "
                            "split the document or align the activations.", warnings=issues)
         engine = next(iter(engines.values()), None)
 
         # Only issues on facts the engine requires block the quote (plan change C).
+        # Buyer status matters only to an engine that applies: with no engine,
+        # the routing problem (e.g. an expired registration) is the reason.
         required = set(engine.required_facts if engine else ROUTING_FACTS)
-        if engine is not None and engine.unresolved_buyer_as_consumer:
-            required.discard("BUYER_STATUS_UNRESOLVED")
-        else:
+        if engine is not None and not engine.unresolved_buyer_as_consumer:
             required.add("BUYER_STATUS_UNRESOLVED")
+        else:
+            required.discard("BUYER_STATUS_UNRESOLVED")
         blocking = [i for i in issues if i["code"] in required and i["code"] not in ACTIVATION_FACTS]
         warnings = [i for i in issues if i not in blocking]
         if blocking:
             raise _Refusal(TaxQuoteStatus.NEEDS_EVIDENCE, "REQUIRED_FACTS_MISSING",
                            "Required tax facts are missing, expired or ambiguous.", issues=blocking, warnings=warnings)
         if engine is None or routing_problems:
+            activation_issues = [i for i in warnings if i["code"] in ACTIVATION_FACTS]
             raise _Refusal(TaxQuoteStatus.NEEDS_EVIDENCE, "NOT_DETERMINED",
                            "Tax could not be determined: " + "; ".join(routing_problems or ["no engine applies"]),
-                           warnings=warnings)
+                           issues=activation_issues, warnings=[i for i in warnings if i not in activation_issues])
 
         # Buyers without business evidence get consumer treatment only where
         # the engine's rules say so; the line class is re-derived for them.
@@ -382,7 +372,11 @@ class TaxDeterminationService:
                                warnings=warnings)
             line.result = result
 
-        _apply_rates(lines, decimals, engine.rounding_rule)
+        if engine.rounding_mode is None:
+            raise _Refusal(TaxQuoteStatus.UNSUPPORTED, "ROUNDING_MODE_UNDECLARED",
+                           f"Engine {engine.name} {engine.version} does not declare a rounding mode.",
+                           warnings=warnings)
+        _apply_rates(lines, decimals, engine.rounding_rule, engine.rounding_mode)
         self._persist(quote, organization_id, engine, lines, decimals, warnings)
 
     def _effective_activations(self, organization_id, seller_entity_id, jurisdiction_ids, cls, tax_date) -> list:
@@ -398,14 +392,19 @@ class TaxDeterminationService:
     def _persist(self, quote: TaxQuote, organization_id: int, engine, lines: list, decimals: int, warnings) -> None:
         """Compute every rounded figure first, then insert the quote once —
         its amounts are frozen columns and are never updated after insert."""
+        mode = engine.rounding_mode
+
+        def q6(value):
+            return _q6(value, mode)
+
         sub_u = disc_u = tax_u = tot_u = Decimal("0")
         sub = disc = tax = tot = Decimal("0")
         rounded = []
         for line in lines:
             line_tax = sum(line.component_rounded, Decimal("0"))
-            gross_after = _round(line.net, decimals)
-            base_rounded = gross_after - line_tax if line.input.is_tax_inclusive else _round(line.base, decimals)
-            pre_rounded = _round(line.pre_base, decimals)
+            gross_after = _round(line.net, decimals, mode)
+            base_rounded = gross_after - line_tax if line.input.is_tax_inclusive else _round(line.base, decimals, mode)
+            pre_rounded = _round(line.pre_base, decimals, mode)
             rounded.append((line, line_tax, base_rounded))
             sub_u += line.pre_base
             disc_u += line.pre_base - line.base
@@ -420,13 +419,14 @@ class TaxDeterminationService:
         quote.engine_name = engine.name
         quote.engine_version = engine.version
         quote.rounding_rule = engine.rounding_rule
+        quote.rounding_mode = mode
         quote.warnings = warnings or None
         quote.expires_at = self.now() + timedelta(hours=settings.TAX_QUOTE_TTL_HOURS)
         if engine.is_remote:
             quote.provider_name = engine.name
             quote.remote_commit_state = RemoteCommitState.PENDING
-        quote.subtotal_unrounded, quote.discount_unrounded = _q6(sub_u), _q6(disc_u)
-        quote.tax_unrounded, quote.total_unrounded = _q6(tax_u), _q6(tot_u)
+        quote.subtotal_unrounded, quote.discount_unrounded = q6(sub_u), q6(disc_u)
+        quote.tax_unrounded, quote.total_unrounded = q6(tax_u), q6(tot_u)
         quote.subtotal, quote.discount_amount, quote.tax_amount, quote.total_amount = sub, disc, tax, tot
         self.db.add(quote)
         self.db.flush()
@@ -438,9 +438,9 @@ class TaxDeterminationService:
                 supply_category=line.input.supply_category, transaction_class=line.input.transaction_class,
                 outcome=line.result.outcome, explanation_code=line.result.explanation_code,
                 legal_reason=line.result.legal_reason, is_tax_inclusive=line.input.is_tax_inclusive,
-                quantity=_q6(Decimal(str(line.source.quantity or 0))), gross_unrounded=_q6(line.gross),
-                line_discount_unrounded=_q6(line.line_discount), document_discount_unrounded=_q6(line.document_discount),
-                taxable_base_unrounded=_q6(line.base), tax_unrounded=_q6(line.tax), effective_rate=line.rate,
+                quantity=q6(Decimal(str(line.source.quantity or 0))), gross_unrounded=q6(line.gross),
+                line_discount_unrounded=q6(line.line_discount), document_discount_unrounded=q6(line.document_discount),
+                taxable_base_unrounded=q6(line.base), tax_unrounded=q6(line.tax), effective_rate=line.rate,
                 taxable_base=base_rounded, tax_amount=line_tax, line_total=base_rounded + line_tax,
             )
             self.db.add(row)
@@ -450,8 +450,8 @@ class TaxDeterminationService:
                     organization_id=organization_id, tax_quote_id=quote.id, tax_quote_line_id=row.id,
                     component_code=comp.component_code, label=comp.label, jurisdiction_id=comp.jurisdiction_id,
                     tax_type_id=comp.tax_type_id, rate_source=comp.rate_source, rate_version_id=comp.rate_version_id,
-                    activation_id=comp.activation_id, rate_percent=comp.rate_percent, taxable_unrounded=_q6(line.base),
-                    tax_unrounded=_q6(unrounded), tax_amount=comp_rounded, reporting_code=comp.reporting_code,
+                    activation_id=comp.activation_id, rate_percent=comp.rate_percent, taxable_unrounded=q6(line.base),
+                    tax_unrounded=q6(unrounded), tax_amount=comp_rounded, reporting_code=comp.reporting_code,
                     is_reverse_charge=comp.is_reverse_charge,
                 ))
         self.db.flush()
@@ -470,7 +470,8 @@ def view_quote(quote: TaxQuote) -> dict:
         "seller_entity_id": quote.seller_entity_id, "status": quote.status.name,
         "engine": None if quote.engine_kind is None else {
             "kind": quote.engine_kind.name, "name": quote.engine_name, "version": quote.engine_version,
-            "rounding_rule": quote.rounding_rule.name if quote.rounding_rule else None},
+            "rounding_rule": quote.rounding_rule.name if quote.rounding_rule else None,
+            "rounding_mode": quote.rounding_mode.name if quote.rounding_mode else None},
         "currency": quote.currency, "tax_date": quote.tax_date, "pricing_mode": quote.pricing_mode,
         "context_fingerprint": quote.context_fingerprint, "document_hash": quote.document_hash,
         "totals": {"subtotal": quote.subtotal, "discount_amount": quote.discount_amount,

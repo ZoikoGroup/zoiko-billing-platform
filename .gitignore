@@ -93,3 +93,6 @@ docs/*
 
 # Local-only Playwright test accounts (throwaway SQLite); never commit.
 frontend/tests/.local-credentials.json
+
+# ZB-TAX-ARCH-001 handoff pack: confidential, never commit.
+/global tax/

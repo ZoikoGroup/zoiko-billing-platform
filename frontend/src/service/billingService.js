@@ -593,6 +593,22 @@ export const taxApi = {
   },
 };
 
+// Governed tax (ZB-TAX-ARCH-001 §11): read models for the invoice editor and
+// Taxes -> Exceptions, and the re-quote action. Each quote request carries a
+// fresh Idempotency-Key so a double click cannot create two quotes.
+function newIdempotencyKey() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  return `tq-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+export const governedTaxApi = {
+  invoiceSummary: (invoiceId) => api.get(ENDPOINTS.GOVERNED_TAX_INVOICE_SUMMARY(invoiceId)),
+  exceptions: (params) => api.get(buildUrl(ENDPOINTS.GOVERNED_TAX_EXCEPTIONS, params)),
+  requestQuote: (documentId, documentType = "invoice") =>
+    api.post(ENDPOINTS.GOVERNED_TAX_QUOTES, { document_type: documentType, document_id: documentId },
+      { headers: { "Idempotency-Key": newIdempotencyKey() } }),
+};
+
 export const creditNoteApi = {
   list: (params) => api.get(buildUrl(ENDPOINTS.CREDIT_NOTES, params)),
   get: (id) => api.get(ENDPOINTS.CREDIT_NOTE(id)),
@@ -814,6 +830,7 @@ export default {
   stripeConnect: stripeConnectApi,
   payments: paymentApi,
   tax: taxApi,
+  governedTax: governedTaxApi,
   creditNotes: creditNoteApi,
   refunds: refundApi,
   writeOffs: writeOffApi,

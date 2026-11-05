@@ -8,6 +8,7 @@ import { isEntitlementLimitError } from "../../../service/api";
 import { SubscriptionLimitReached, StatusBadge as SharedStatusBadge } from "../../../components/billing-shared";
 import { formatDisplayCurrency, formatDisplayDate } from "../../../utils/billing-helpers";
 import { useTerminology } from "../utils/TerminologyContext";
+import GovernedTaxPanel from "../tax/governed-tax-panel";
 
 function StatusBadge({ status }) {
   return <SharedStatusBadge status={status} />;
@@ -685,6 +686,9 @@ export default function InvoiceDetailPage() {
             </div>
           </div>
         </div>
+
+        {/* ── GOVERNED TAX (ZB-TAX-ARCH-001 §11; renders nothing for legacy invoices) ── */}
+        <GovernedTaxPanel invoiceId={id} currency={currency} onQuoted={() => fetchInvoice({ silent: true })} />
 
         {/* ── FINANCIAL SUMMARY ── */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

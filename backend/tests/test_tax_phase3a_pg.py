@@ -142,8 +142,8 @@ def test_snapshot_rows_are_deleted_only_under_the_erasure_flag(pg, issued):
 def test_rule_pack_registry_versions_are_frozen_once_submitted(pg):
     now = datetime.now(timezone.utc)
     rid = pg.execute(text(
-        "INSERT INTO tax_rule_pack_versions (code, version, markets, rounding_rule, status, created_at) "
-        "VALUES ('PG-PACK', '1', '[]', 'PER_LINE', 'PENDING_REVIEW', :now) RETURNING id"), {"now": now}).scalar()
+        "INSERT INTO tax_rule_pack_versions (code, version, markets, rounding_rule, rounding_mode, status, created_at) "
+        "VALUES ('PG-PACK', '1', '[]', 'PER_LINE', 'HALF_UP', 'PENDING_REVIEW', :now) RETURNING id"), {"now": now}).scalar()
     _accepts(pg, "UPDATE tax_rule_pack_versions SET notes = 'draft edit' WHERE id = :id", {"id": rid})
     _accepts(pg, "UPDATE tax_rule_pack_versions SET status = 'IN_APPROVAL' WHERE id = :id", {"id": rid})
     _rejects(pg, "UPDATE tax_rule_pack_versions SET markets = '[{\"jurisdiction_code\": \"GB\"}]' WHERE id = :id",

@@ -45,19 +45,24 @@ from app.modules.tax.registry_schemas import (
     SubmitRateRequest,
 )
 from app.modules.tax.enums import PlatformVersionStatus
-from app.modules.tax.policy_models import TaxCodeSetVersion, TaxMarketAvailabilityVersion
+from app.modules.tax.policy_models import TaxCodeSetVersion, TaxMarketAvailabilityVersion, TaxRulePackVersion
 from app.modules.tax.policy_schemas import (
     AvailabilityAmendRequest,
     AvailabilityDraftRequest,
     CodeSetDraftRequest,
     PolicyActionRequest,
+    RulePackAmendRequest,
+    RulePackRegisterRequest,
     TaxCodeUpsertRequest,
 )
 from app.modules.tax.policy_service import (
     MarketAvailabilityService,
+    RulePackService,
     TaxCodeSetService,
+    source_dependency_status,
     view_availability,
     view_code_set,
+    view_rule_pack,
 )
 from app.modules.tax.registry_service import (
     RegistryReadService,
@@ -477,6 +482,75 @@ for _action, _cap, _step_up in (("validate", "tax_registry.write", False), ("sub
     admin_router.add_api_route(
         f"/tax-code-sets/{{version_id}}/{_action}", _code_set_action(_action, _cap, _step_up),
         methods=["POST"], summary=f"{_action.capitalize()} a tax-code set version",
+    )
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# Phase 3b — native rule packs (UK, Australia). Two-person review: a
+# TAX_REVIEWER registers, attaches golden tests and submits; a different
+# TAX_PUBLISHER (the tax lead) approves and publishes with MFA step-up.
+# ═════════════════════════════════════════════════════════════════════════
+
+@admin_router.get("/rule-packs/catalogue", summary="Native rule packs available in code, with their declarations")
+def rule_pack_catalogue(db: Session = Depends(get_db), _user=Depends(require_capability("tax_registry.read"))):
+    items = []
+    for code, pack in sorted(RulePackService.catalogue().items()):
+        declared = pack.declaration()
+        declared["source_dependencies"] = [source_dependency_status(db, ref) for ref in pack.source_refs]
+        items.append(declared)
+    return {"items": items}
+
+
+@admin_router.get("/rule-packs", summary="List rule-pack registry versions")
+def list_rule_packs(db: Session = Depends(get_db), _user=Depends(require_capability("tax_registry.read"))):
+    return {"items": [view_rule_pack(r) for r in db.query(TaxRulePackVersion).order_by(TaxRulePackVersion.id)]}
+
+
+@admin_router.post("/rule-packs", status_code=status.HTTP_201_CREATED, summary="Register a coded rule pack as a draft")
+def register_rule_pack(data: RulePackRegisterRequest, db: Session = Depends(get_db),
+                       current_user=Depends(require_capability("tax_registry.write"))):
+    row = RulePackService(db).register(actor_id=current_user.id, code=data.code, notes=data.notes)
+    db.commit()
+    return view_rule_pack(row)
+
+
+@admin_router.patch("/rule-packs/{version_id}", summary="Attach the golden-test report or notes to a draft pack")
+def amend_rule_pack(version_id: int, data: RulePackAmendRequest, db: Session = Depends(get_db),
+                    current_user=Depends(require_capability("tax_registry.write"))):
+    changes = data.model_dump(exclude_unset=True)
+    row = RulePackService(db).amend(actor_id=current_user.id, version_id=version_id, changes=changes)
+    db.commit()
+    return view_rule_pack(row)
+
+
+def _rule_pack_action(action: str, capability: str, step_up: bool):
+    def handler(
+        version_id: int,
+        db: Session = Depends(get_db),
+        current_user=Depends(require_capability(capability)),
+        data: Optional[PolicyActionRequest] = None,
+    ):
+        data = data or PolicyActionRequest()
+        if step_up:
+            require_tax_step_up(db, current_user, StepUpRequest(code=data.code, recovery_code=data.recovery_code))
+        svc = RulePackService(db)
+        kwargs = {"actor_id": current_user.id, "version_id": version_id}
+        if action in ("submit", "reject"):
+            if not (data.reason or "").strip():
+                raise BadRequestException("A reason is required.")
+            kwargs["reason"] = data.reason
+        row = getattr(svc, action)(**kwargs)
+        db.commit()
+        return view_rule_pack(row)
+    return handler
+
+
+for _action, _cap, _step_up in (("validate", "tax_registry.write", False), ("submit", "tax_registry.write", False),
+                                ("approve", "tax_registry.approve", True), ("reject", "tax_registry.approve", False),
+                                ("publish", "tax_registry.approve", True)):
+    admin_router.add_api_route(
+        f"/rule-packs/{{version_id}}/{_action}", _rule_pack_action(_action, _cap, _step_up),
+        methods=["POST"], summary=f"{_action.capitalize()} a rule-pack version",
     )
 
 

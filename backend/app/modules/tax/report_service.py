@@ -9,9 +9,13 @@ invoice numbers.
 1. Legacy discount-after-tax over-collection. Legacy (LEGACY_MANUAL) invoices
    compute tax per line BEFORE the document-level discount and then subtract
    the discount from the tax-inclusive total, so tax is charged on the
-   undiscounted base. Estimated over-collection = tax_amount x discount% / 100
-   (exact for a single uniform rate; an estimate otherwise). Nothing is
-   changed: legacy invoicing stays as-is pending the product owner and tax lead.
+   undiscounted base. The document discount is the invoice's discount_amount
+   minus its line discounts (line discounts are applied before tax and do not
+   over-collect), so it covers both a discount_percentage and a fixed
+   document discount. Estimated over-collection = tax_amount x document
+   discount / pre-discount subtotal (exact for a single uniform rate; an
+   estimate otherwise). Nothing is changed: legacy invoicing stays as-is
+   pending the product owner and tax lead.
 
 2. Duplicate legacy tax snapshot rows. Before Phase 3a fix (b), re-sending an
    already-issued invoice wrote its `taxes` rows again. A duplicate is any
@@ -20,10 +24,10 @@ invoice numbers.
 from collections import defaultdict
 from decimal import Decimal
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from app.modules.billing.models import Invoice, InvoiceStatus, Tax
+from app.modules.billing.models import Invoice, InvoiceItem, InvoiceStatus, Tax
 from app.modules.billing.utils.currency_utils import round_money
 
 #: Statuses of invoices that have been issued to the customer.
@@ -34,22 +38,45 @@ ISSUED_STATUSES = (
 HUNDRED = Decimal("100")
 
 
+def _discount_share(inv: Invoice, line_discounts: Decimal):
+    """(document discount, its share of the pre-discount subtotal), or None.
+
+    The document discount is the invoice discount minus its line discounts,
+    which covers a fixed document discount as well as a percentage. Rows whose
+    stored discount_amount does not carry the document discount (written
+    outside the recalculation path) fall back to discount_percentage."""
+    subtotal = Decimal(str(inv.subtotal or 0))
+    doc_discount = Decimal(str(inv.discount_amount or 0)) - line_discounts
+    if doc_discount > 0 and subtotal > 0:
+        return doc_discount, min(doc_discount / subtotal, Decimal("1"))
+    pct = Decimal(str(inv.discount_percentage or 0))
+    if pct > 0:
+        return round_money(subtotal * pct / HUNDRED, inv.currency), min(pct / HUNDRED, Decimal("1"))
+    return None
+
+
 def _overcollection_rows(db: Session, organization_id=None):
-    q = db.query(Invoice).filter(
-        Invoice.status.in_(ISSUED_STATUSES), Invoice.tax_quote_id.is_(None),
-        Invoice.discount_percentage > 0, Invoice.tax_amount > 0,
-    )
+    line_discounts = (db.query(InvoiceItem.invoice_id.label("invoice_id"),
+                               func.coalesce(func.sum(InvoiceItem.discount_amount), 0).label("total"))
+                      .group_by(InvoiceItem.invoice_id).subquery())
+    q = (db.query(Invoice, func.coalesce(line_discounts.c.total, 0))
+         .outerjoin(line_discounts, line_discounts.c.invoice_id == Invoice.id)
+         .filter(Invoice.status.in_(ISSUED_STATUSES), Invoice.tax_quote_id.is_(None), Invoice.tax_amount > 0,
+                 or_(Invoice.discount_percentage > 0, Invoice.discount_amount > 0)))
     if organization_id is not None:
         q = q.filter(Invoice.organization_id == organization_id)
-    for inv in q.order_by(Invoice.issue_date, Invoice.id):
-        estimate = round_money(Decimal(str(inv.tax_amount)) * Decimal(str(inv.discount_percentage)) / HUNDRED,
-                               inv.currency)
-        yield inv, estimate
+    for inv, lines in q.order_by(Invoice.issue_date, Invoice.id):
+        found = _discount_share(inv, Decimal(str(lines)))
+        if found is None:
+            continue
+        doc_discount, share = found
+        estimate = round_money(Decimal(str(inv.tax_amount)) * share, inv.currency)
+        yield inv, doc_discount, estimate
 
 
 def _currency_totals(pairs) -> list:
     totals = defaultdict(lambda: {"invoice_count": 0, "tax_amount": Decimal("0"), "estimated_overcollected_tax": Decimal("0")})
-    for inv, estimate in pairs:
+    for inv, _doc_discount, estimate in pairs:
         t = totals[inv.currency or "UNKNOWN"]
         t["invoice_count"] += 1
         t["tax_amount"] += Decimal(str(inv.tax_amount))
@@ -57,9 +84,10 @@ def _currency_totals(pairs) -> list:
     return [{"currency": c, **v} for c, v in sorted(totals.items())]
 
 
-METHOD_NOTE = ("Estimate = tax_amount x document discount % / 100: legacy invoices charge tax on the base "
-               "before the document discount. Exact for one uniform rate per invoice; an estimate otherwise. "
-               "Read-only: no invoice is changed.")
+METHOD_NOTE = ("Estimate = tax_amount x document discount / pre-discount subtotal: legacy invoices charge tax "
+               "on the base before the document discount. The document discount is the invoice discount minus "
+               "line discounts, so percentage and fixed document discounts are both included. Exact for one "
+               "uniform rate per invoice; an estimate otherwise. Read-only: no invoice is changed.")
 
 
 class TaxFindingsReportService:
@@ -75,15 +103,16 @@ class TaxFindingsReportService:
             "invoices": [{
                 "invoice_id": inv.id, "invoice_number": inv.invoice_number, "issue_date": inv.issue_date,
                 "status": inv.status.name, "currency": inv.currency, "discount_percentage": inv.discount_percentage,
+                "document_discount": doc_discount, "subtotal": inv.subtotal,
                 "tax_amount": inv.tax_amount, "estimated_overcollected_tax": estimate,
-            } for inv, estimate in rows],
+            } for inv, doc_discount, estimate in rows],
         }
 
     def platform_overcollection(self) -> dict:
         rows = list(_overcollection_rows(self.db))
         return {
             "method": METHOD_NOTE,
-            "organizations_affected": len({inv.organization_id for inv, _ in rows}),
+            "organizations_affected": len({inv.organization_id for inv, _d, _e in rows}),
             "invoice_count": len(rows),
             "totals_by_currency": _currency_totals(rows),
         }

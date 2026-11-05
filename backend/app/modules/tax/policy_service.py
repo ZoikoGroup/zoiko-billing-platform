@@ -35,11 +35,13 @@ from app.modules.tax.enums import (
 from app.modules.tax.policy_models import (
     AVAILABILITY_CONTENT_FIELDS,
     CODE_SET_CONTENT_FIELDS,
+    RULE_PACK_CONTENT_FIELDS,
     TaxCode,
     TaxCodeSetVersion,
     TaxMarketAvailabilityVersion,
+    TaxRulePackVersion,
 )
-from app.modules.tax.registry_models import TaxJurisdiction, TaxTypeDefinition
+from app.modules.tax.registry_models import TaxJurisdiction, TaxLegalSourceRevision, TaxTypeDefinition
 from app.modules.tax.registry_service import MakerCheckerError, RegistryImmutabilityError, RegistryStateError, utcnow
 
 logger = logging.getLogger("zoiko_billing.tax.policy")
@@ -54,7 +56,8 @@ MANDATORY_GATES = frozenset({
 
 # ── ORM guard: content frozen once submitted; ACTIVE only -> SUPERSEDED ──
 
-_CONTENT = {TaxMarketAvailabilityVersion: AVAILABILITY_CONTENT_FIELDS, TaxCodeSetVersion: CODE_SET_CONTENT_FIELDS}
+_CONTENT = {TaxMarketAvailabilityVersion: AVAILABILITY_CONTENT_FIELDS, TaxCodeSetVersion: CODE_SET_CONTENT_FIELDS,
+            TaxRulePackVersion: RULE_PACK_CONTENT_FIELDS}
 
 
 def _committed(obj, key):
@@ -422,6 +425,129 @@ class TaxCodeSetService(_VersionWorkflow):
     def describe(self, row) -> dict:
         return {"id": row.id, "code": row.code, "version": row.version,
                 "codes": sorted(c.code for c in self.db.query(TaxCode).filter(TaxCode.code_set_version_id == row.id))}
+
+
+# ── Native rule packs (Phase 3b) ─────────────────────────────────────────
+
+def source_dependency_status(db: Session, handoff_ref: str) -> dict:
+    """A source-register entry and whether it is approved: evidence captured
+    (server-hashed artifact) and reviewed by a named person."""
+    source = (db.query(TaxLegalSourceRevision).filter(TaxLegalSourceRevision.handoff_ref == handoff_ref)
+              .order_by(TaxLegalSourceRevision.id.desc()).first())
+    if source is None:
+        return {"handoff_ref": handoff_ref, "source_id": None, "title": None, "approved": False,
+                "reason": "not in the source register"}
+    approved = (source.evidence_status is not None and source.evidence_status.name == "CAPTURED"
+                and source.reviewer_user_id is not None and source.reviewed_at is not None)
+    return {"handoff_ref": handoff_ref, "source_id": source.id, "title": source.title, "approved": approved,
+            "reason": None if approved else "evidence not captured and reviewed"}
+
+
+class RulePackService(_VersionWorkflow):
+    """Two-person review of a native pack (§09.2): a TAX_REVIEWER registers
+    the coded pack (its declarations are copied, not typed), attaches the
+    golden-test report and submits; a different TAX_PUBLISHER approves and
+    publishes. The author or submitter can never approve or publish. Every
+    step is in the platform audit log. Until published the pack is a draft
+    and the engine resolver ignores it."""
+    model = TaxRulePackVersion
+    request_type = "tax_rule_pack"
+    entity_type = "TaxRulePackVersion"
+
+    def _key_filter(self, row):
+        return TaxRulePackVersion.code == row.code
+
+    @staticmethod
+    def catalogue() -> dict:
+        from app.modules.tax.engines import registered_rule_packs
+
+        return {code: cls for code, cls in registered_rule_packs().items() if hasattr(cls, "declaration")}
+
+    def register(self, *, actor_id: Optional[int], code: str, notes: Optional[str] = None) -> TaxRulePackVersion:
+        pack = self.catalogue().get((code or "").strip().upper())
+        if pack is None:
+            raise BadRequestException(f"No native rule pack {code!r} is registered in code.")
+        declared = pack.declaration()
+        existing = self.db.query(TaxRulePackVersion).filter(TaxRulePackVersion.code == pack.code,
+                                                            TaxRulePackVersion.version == pack.version).first()
+        if existing is not None:
+            raise RegistryStateError(f"{pack.code} version {pack.version} is already registered (id {existing.id}).")
+        row = TaxRulePackVersion(
+            code=pack.code, version=pack.version, markets=declared["markets"],
+            rounding_rule=declared["rounding_rule"], rounding_mode=declared["rounding_mode"],
+            required_facts=declared["required_facts"], coverage=declared["coverage"],
+            source_dependencies=[source_dependency_status(self.db, ref) for ref in pack.source_refs],
+            notes=notes, created_by_user_id=actor_id, created_at=utcnow(), status=PlatformVersionStatus.PENDING_REVIEW,
+        )
+        self.db.add(row)
+        self.db.flush()
+        self._log(actor_id, PlatformAuditAction.CREATE, row, new_values=self.describe(row))
+        return row
+
+    def amend(self, *, actor_id: int, version_id: int, changes: dict) -> TaxRulePackVersion:
+        row = self.get(version_id)
+        self._require_editable(row)
+        unknown = set(changes) - {"golden_test_report", "notes"}
+        if unknown:
+            raise BadRequestException(f"Not editable: {', '.join(sorted(unknown))}")
+        before = self.describe(row)
+        for key, value in changes.items():
+            setattr(row, key, value)
+        # Each edit re-records the current approval state of the sources.
+        pack = self.catalogue().get(row.code)
+        if pack is not None:
+            row.source_dependencies = [source_dependency_status(self.db, ref) for ref in pack.source_refs]
+        self._reset(row)
+        self.db.flush()
+        self._log(actor_id, PlatformAuditAction.UPDATE, row, old_values=before, new_values=self.describe(row))
+        return row
+
+    def errors(self, row: TaxRulePackVersion) -> list[str]:
+        errors: list[str] = []
+        pack = self.catalogue().get(row.code)
+        if pack is None or pack.version != row.version:
+            return [f"{row.code} version {row.version} is not the pack registered in code."]
+        declared = pack.declaration()
+        for key in ("markets", "rounding_rule", "rounding_mode", "required_facts", "coverage"):
+            if getattr(row, key) != declared[key]:
+                errors.append(f"The recorded {key} no longer matches the pack's code; register a new version.")
+        if not declared["rounding_mode"]:
+            errors.append("The pack does not declare a rounding mode.")
+        for ref in pack.source_refs:
+            status = source_dependency_status(self.db, ref)
+            if not status["approved"]:
+                errors.append(f"Source {ref} is not approved: {status['reason']}.")
+        report = row.golden_test_report or {}
+        if not isinstance(report, dict) or not report:
+            errors.append("Attach the golden-test report before submitting.")
+        else:
+            if not str(report.get("commit") or "").strip():
+                errors.append("The golden-test report must name the commit it ran against.")
+            if int(report.get("passed") or 0) <= 0 or int(report.get("failed") or 0) != 0:
+                errors.append("The golden-test report must show passing tests and no failures.")
+        return errors
+
+    def describe(self, row) -> dict:
+        return {"id": row.id, "code": row.code, "version": row.version, "markets": row.markets,
+                "rounding_rule": row.rounding_rule, "rounding_mode": row.rounding_mode,
+                "required_facts": row.required_facts, "coverage": row.coverage,
+                "source_dependencies": row.source_dependencies, "golden_test_report": row.golden_test_report}
+
+
+def view_rule_pack(row: TaxRulePackVersion) -> dict:
+    return {
+        "id": row.id, "code": row.code, "version": row.version, "markets": row.markets,
+        "rounding_rule": row.rounding_rule, "rounding_mode": row.rounding_mode,
+        "required_facts": row.required_facts, "coverage": row.coverage,
+        "source_dependencies": row.source_dependencies, "golden_test_report": row.golden_test_report,
+        "notes": row.notes, "status": row.status.name, "validation_errors": row.validation_errors,
+        "predecessor_id": row.predecessor_id, "approval_request_id": row.approval_request_id,
+        "created_by_user_id": row.created_by_user_id, "maker_user_id": row.maker_user_id,
+        "checker_user_id": row.checker_user_id, "publisher_user_id": row.publisher_user_id,
+        "created_at": row.created_at, "submitted_at": row.submitted_at, "approved_at": row.approved_at,
+        "published_at": row.published_at, "superseded_at": row.superseded_at,
+        "rejection_reason": row.rejection_reason,
+    }
 
 
 def active_code_set(db: Session, code: str = "ZB-TC") -> Optional[TaxCodeSetVersion]:

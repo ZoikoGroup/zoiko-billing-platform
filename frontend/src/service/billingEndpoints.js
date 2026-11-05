@@ -1,6 +1,11 @@
 const BILLING = "/billing";
 
 export const ENDPOINTS = {
+  // ZB-TAX-ARCH-001 governed tax (Phase 3b): served under /api/v1/tax.
+  GOVERNED_TAX_QUOTES: "/api/v1/tax/quotes",
+  GOVERNED_TAX_EXCEPTIONS: "/api/v1/tax/exceptions",
+  GOVERNED_TAX_INVOICE_SUMMARY: (id) => `/api/v1/tax/invoices/${id}/tax-summary`,
+
   SETTINGS: `${BILLING}/settings`,
   SETTINGS_CONFIG: `${BILLING}/settings/config`,
   SETTINGS_CONFIG_RESET: `${BILLING}/settings/config/reset`,

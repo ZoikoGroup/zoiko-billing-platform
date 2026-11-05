@@ -140,7 +140,7 @@ class GovernedIssuanceGate:
             item = items[line.document_line_id]
             item.tax_percentage = line.effective_rate
             item.tax_amount = line.tax_amount
-            item.discount_amount = _round(line.line_discount_unrounded, quote.currency_decimals)
+            item.discount_amount = _round(line.line_discount_unrounded, quote.currency_decimals, quote.rounding_mode)
             item.total = line.line_total
         invoice.subtotal = quote.subtotal
         invoice.discount_amount = quote.discount_amount

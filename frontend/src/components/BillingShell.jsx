@@ -4,6 +4,7 @@ import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   X,
   ChevronDown,
+  ShieldAlert,
   LayoutDashboard,
   FileText,
   TrendingUp,
@@ -184,6 +185,7 @@ const NAV_SECTIONS = [
       { label: "Dashboard", href: "/billing/tax/dashboard", icon: LayoutDashboard },
       { label: "Tax Rates", href: "/billing/tax", icon: CircleDollarSign },
       { label: "Tax Configuration", href: "/billing/tax/configuration", icon: Settings },
+      { label: "Exceptions", href: "/billing/tax/exceptions", icon: ShieldAlert },
       { label: "Reports", href: "/billing/tax/reports", icon: FileText },
       { label: "Settings", href: "/billing/tax/settings", icon: SlidersHorizontal },
     ],

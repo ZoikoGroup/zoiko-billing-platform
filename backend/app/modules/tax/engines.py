@@ -13,9 +13,10 @@ Engine kinds:
   * TenantConfigEngine — the tenant's own approved rate (TENANT_CONFIG_APPROVED),
     always labelled "tenant-configured, not verified by Zoiko".
   * RulePackEngine     — a native rule pack: code registered in RULE_PACKS AND an
-    ACTIVE tax_rule_pack_versions row. RULE_PACKS is empty in Phase 3a; real
-    packs arrive in 3b. Test-only packs live under tests/ and are injected
-    through the resolver — never registered here.
+    ACTIVE tax_rule_pack_versions row. Phase 3b registers the UK and Australia
+    packs (app.modules.tax.rule_packs); they stay unusable until published.
+    Test-only packs live under tests/ and are injected through the resolver —
+    never registered here.
   * ProviderEngine     — wraps a ProviderAdapter (PROVIDER_APPROVED). PROVIDERS is
     empty in Phase 3a; tests inject a fake adapter.
 
@@ -31,6 +32,7 @@ from typing import Callable, Optional
 from app.modules.tax.enums import (
     EngineKind,
     RemoteCommitState,
+    RoundingMode,
     RoundingRule,
     SupplyCategory,
     TaxOperatingMode,
@@ -107,6 +109,8 @@ class TaxEngine(ABC):
     name: str
     version: str
     rounding_rule: RoundingRule = RoundingRule.PER_LINE
+    #: Must be declared (F4): an engine without a rounding mode cannot quote.
+    rounding_mode: Optional[RoundingMode] = None
     required_facts: frozenset = ROUTING_FACTS
     #: Whether the engine's legal rules treat a buyer without business
     #: evidence as a consumer (charging tax). Engines that don't declare it
@@ -116,7 +120,7 @@ class TaxEngine(ABC):
 
     @property
     def identity(self) -> tuple:
-        return (self.kind, self.name, self.version, self.rounding_rule)
+        return (self.kind, self.name, self.version, self.rounding_rule, self.rounding_mode)
 
     @abstractmethod
     def determine(self, request: EngineRequest) -> LineResult:
@@ -125,13 +129,21 @@ class TaxEngine(ABC):
 
 # ── Tenant-configured rates ─────────────────────────────────────────────
 
+#: The tenant-config engine's declared rounding mode: the same as the org's
+#: own billing arithmetic (legacy money rounding), so governed and legacy figures for a
+#: tenant-configured rate agree. A declaration, recorded on every quote.
+TENANT_CONFIG_ROUNDING_MODE = RoundingMode.HALF_UP
+
+
 class TenantConfigEngine(TaxEngine):
     kind = EngineKind.TENANT_CONFIG
     name = "tenant-config"
     version = "1"
 
-    def __init__(self, rounding_rule: RoundingRule = RoundingRule.PER_LINE):
+    def __init__(self, rounding_rule: RoundingRule = RoundingRule.PER_LINE,
+                 rounding_mode: RoundingMode = TENANT_CONFIG_ROUNDING_MODE):
         self.rounding_rule = rounding_rule
+        self.rounding_mode = rounding_mode
 
     def determine(self, request: EngineRequest) -> LineResult:
         components = []
@@ -164,6 +176,8 @@ class RulePack(ABC):
     code: str
     version: str
     rounding_rule: RoundingRule = RoundingRule.PER_LINE
+    #: Required declaration (F4); a pack that leaves it None cannot quote.
+    rounding_mode: Optional[RoundingMode] = None
     required_facts: frozenset = ROUTING_FACTS
     unresolved_buyer_as_consumer: bool = False
 
@@ -180,6 +194,7 @@ class RulePackEngine(TaxEngine):
         self.name = pack.code
         self.version = pack.version
         self.rounding_rule = pack.rounding_rule
+        self.rounding_mode = pack.rounding_mode
         self.required_facts = pack.required_facts
         self.unresolved_buyer_as_consumer = pack.unresolved_buyer_as_consumer
 
@@ -187,8 +202,16 @@ class RulePackEngine(TaxEngine):
         return self.pack.determine(request)
 
 
-#: code -> RulePack class. Empty in Phase 3a by design (packs arrive in 3b).
+#: code -> RulePack class, filled by app.modules.tax.rule_packs (native packs
+#: only; see registered_rule_packs()).
 RULE_PACKS: dict = {}
+
+
+def registered_rule_packs() -> dict:
+    """RULE_PACKS with the native packs loaded."""
+    import app.modules.tax.rule_packs  # noqa: F401  (registers the packs)
+
+    return RULE_PACKS
 
 
 # ── Providers (interface + seam; no real provider in 3a) ─────────────────
@@ -208,6 +231,7 @@ class ProviderAdapter(ABC):
     name: str
     version: str = "1"
     rounding_rule: RoundingRule = RoundingRule.PER_LINE
+    rounding_mode: Optional[RoundingMode] = None
     required_facts: frozenset = ROUTING_FACTS
     unresolved_buyer_as_consumer: bool = False
 
@@ -234,6 +258,7 @@ class ProviderEngine(TaxEngine):
         self.name = adapter.name
         self.version = adapter.version
         self.rounding_rule = adapter.rounding_rule
+        self.rounding_mode = adapter.rounding_mode
         self.required_facts = adapter.required_facts
         self.unresolved_buyer_as_consumer = adapter.unresolved_buyer_as_consumer
 
@@ -267,8 +292,12 @@ class EngineResolver:
         jurisdiction = activation.jurisdiction.code if activation.jurisdiction else None
         tax_type = activation.tax_type.code if activation.tax_type else None
         for row in self.db.query(TaxRulePackVersion).filter(TaxRulePackVersion.status == PlatformVersionStatus.ACTIVE):
-            pack_cls = RULE_PACKS.get(row.code)
+            pack_cls = registered_rule_packs().get(row.code)
             if pack_cls is None or getattr(pack_cls, "version", None) != row.version:
+                continue
+            # The published declaration must still match the code (no drift).
+            declared_mode = pack_cls.rounding_mode.name if pack_cls.rounding_mode else None
+            if (row.rounding_rule, row.rounding_mode) != (pack_cls.rounding_rule.name, declared_mode):
                 continue
             if any(m.get("jurisdiction_code") == jurisdiction and m.get("tax_type") == tax_type for m in row.markets or []):
                 return pack_cls()

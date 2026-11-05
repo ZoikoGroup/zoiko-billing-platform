@@ -42,6 +42,7 @@ from app.database import Base
 from app.modules.tax.enums import (
     EngineKind,
     RemoteCommitState,
+    RoundingMode,
     RoundingRule,
     SupplyCategory,
     TaxOutcome,
@@ -79,6 +80,7 @@ class TaxQuote(Base):
     engine_name             = Column(String(100), nullable=True)
     engine_version          = Column(String(100), nullable=True)
     rounding_rule           = Column(CaseInsensitiveEnum(RoundingRule), nullable=True)
+    rounding_mode           = Column(CaseInsensitiveEnum(RoundingMode), nullable=True)
     currency                = Column(String(3), nullable=True)
     currency_decimals       = Column(Integer, nullable=True)
     tax_date                = Column(Date, nullable=True)

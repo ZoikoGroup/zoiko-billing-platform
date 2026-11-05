@@ -80,7 +80,10 @@ class GovernedCreditService:
             raise BadRequestException("Choose at least one invoice line to credit.")
 
         by_item = {l.document_line_id: l for l in quote.lines}
-        decimals = quote.currency_decimals
+        # Credits round exactly as the original calculation did (F4).
+        decimals, mode = quote.currency_decimals, quote.rounding_mode
+        if mode is None:
+            raise BadRequestException("The invoice's tax snapshot does not record a rounding mode.")
         planned, seen = [], set()
         for request in lines:
             item_id = int(request["invoice_item_id"])
@@ -108,17 +111,17 @@ class GovernedCreditService:
         for qline, fraction, prior, completes in planned:
             base_u = -Decimal(qline.taxable_base_unrounded) * fraction
             prior_base_rounded = sum((Decimal(r.credited_base) for r in _one_per_credit_note(prior)), Decimal("0"))
-            base_r = (-Decimal(qline.taxable_base) - prior_base_rounded) if completes else _round(base_u, decimals)
+            base_r = (-Decimal(qline.taxable_base) - prior_base_rounded) if completes else _round(base_u, decimals, mode)
             subtotal += base_r
             for comp in qline.components:
                 tax_u = -Decimal(comp.tax_unrounded) * fraction
                 prior_tax_rounded = sum((Decimal(r.credited_tax) for r in prior if r.tax_quote_component_id == comp.id),
                                         Decimal("0"))
-                tax_r = (-Decimal(comp.tax_amount) - prior_tax_rounded) if completes else _round(tax_u, decimals)
+                tax_r = (-Decimal(comp.tax_amount) - prior_tax_rounded) if completes else _round(tax_u, decimals, mode)
                 tax += tax_r
                 rows.append(dict(invoice_id=inv.id, tax_quote_id=quote.id, tax_quote_line_id=qline.id,
-                                 tax_quote_component_id=comp.id, credited_base_unrounded=_q6(base_u),
-                                 credited_tax_unrounded=_q6(tax_u), credited_base=base_r, credited_tax=tax_r))
+                                 tax_quote_component_id=comp.id, credited_base_unrounded=_q6(base_u, mode),
+                                 credited_tax_unrounded=_q6(tax_u, mode), credited_base=base_r, credited_tax=tax_r))
 
         # Credit-note headers carry positive magnitudes; direction lives on the lines.
         total = -(subtotal + tax)

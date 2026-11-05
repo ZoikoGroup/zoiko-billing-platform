@@ -185,9 +185,10 @@ class LegalEntityService:
     def _guard_regime(self, data: Dict[str, Any]) -> None:
         if data.get("tax_regime") == EntityTaxRegime.GOVERNED:
             raise BadRequestException(
-                "The governed tax regime cannot be enabled from settings. It requires approved "
-                "jurisdiction activation for this entity (ZB-TAX-ARCH-001 §05, §13.2) and arrives in "
-                "Phase 3; GET /api/v1/tax/legal-entities/{id}/regime-eligibility shows whether it would qualify."
+                "The governed tax regime cannot be enabled from settings. It requires an approved, "
+                "effective jurisdiction activation backed by a published rule pack or approved tenant "
+                "configuration (ZB-TAX-ARCH-001 §05, §13.2): request it with "
+                "POST /api/v1/tax/legal-entities/{id}/regime after checking .../regime-eligibility."
             )
 
     def create_entity(self, organization_id: int, created_by: int, **data: Any) -> SellerLegalEntity:
