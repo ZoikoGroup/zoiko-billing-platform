@@ -149,6 +149,25 @@ def check_ambiguous_errors_are_never_refusals(make_adapter):
         assert adapter.transaction_state(idempotency_key=f"conf-11-{fault}").state == expected
 
 
+def check_adjust_by_reference(make_adapter):
+    """A credit adjusts the original transaction by reference, idempotently on
+    its own key, and transaction_state(adjust key) reports the signed totals."""
+    adapter = make_adapter()
+    tid = adapter.commit(idempotency_key="conf-12", payload=sample_payload("conf-12", tax="12.34", net="123.40"))
+    credit = {**sample_payload("conf-12:cn", tax="-6.17", net="-61.70"), "document_type": "credit_note",
+              "original_transaction_id": tid}
+    first = adapter.adjust(transaction_id=tid, idempotency_key="conf-12:cn", payload=credit)
+    assert adapter.adjust(transaction_id=tid, idempotency_key="conf-12:cn", payload=credit) == first
+    txn = adapter.transaction_state(idempotency_key="conf-12:cn")
+    assert txn.state == RemoteTransactionState.COMMITTED and txn.total_tax == Decimal("-6.17")
+    try:
+        adapter.adjust(transaction_id="no-such-transaction", idempotency_key="conf-12:bad", payload=credit)
+    except ProviderRefused:
+        pass
+    else:
+        raise AssertionError("adjusting an unknown transaction must be refused")
+
+
 def check_money_is_decimal_exact_and_signed(make_adapter):
     adapter = make_adapter()
     adapter.commit(idempotency_key="conf-7", payload=sample_payload("conf-7", tax="-0.01", net="-0.10"))
@@ -178,5 +197,5 @@ def check_credentials_never_leak(make_adapter, secret: str, caplog):
 
 CHECKS = [check_contract_shape, check_idempotent_commit, check_transaction_state_reports_totals,
           check_void_by_reference, check_timeout_is_never_success, check_rate_limit_is_retryable,
-          check_refusal_is_definite, check_ambiguous_errors_are_never_refusals,
+          check_refusal_is_definite, check_ambiguous_errors_are_never_refusals, check_adjust_by_reference,
           check_money_is_decimal_exact_and_signed]

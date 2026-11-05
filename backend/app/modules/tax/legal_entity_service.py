@@ -227,6 +227,11 @@ class LegalEntityService:
         data = _normalize(data)
         self._guard_regime(data)
         entity = self.get_entity(entity_id, organization_id)
+        if "tax_regime" in data and data["tax_regime"] != entity.tax_regime \
+                and entity.tax_regime == EntityTaxRegime.GOVERNED:
+            raise BadRequestException(
+                "The governed tax regime cannot be left from settings: propose the change with "
+                "POST /api/v1/tax/legal-entities/{id}/regime; a different finance approver decides it.")
         if expected_version is not None and entity.version != expected_version:
             raise BadRequestException("This legal entity was modified by someone else. Reload and try again.")
 

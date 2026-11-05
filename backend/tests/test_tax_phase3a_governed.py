@@ -90,7 +90,10 @@ from tests.conftest import (
     make_subscription,
     make_subscription_plan,
 )
-from tests.fixtures.tax_fake_provider import FakeTaxProvider
+from app.modules.tax.connection_service import ProviderConnectionService
+from app.modules.tax.enums import ProviderEnvironment
+from app.modules.tax.provider_contract import ProviderMode
+from tests.fixtures.tax_fake_provider import FakeTaxProvider, register_fake_provider
 from tests.fixtures.tax_test_rulepack import TEST_PACK_CODE, TestOnlyRulePack
 
 GATES = {g.name: {"status": "PASSED", "evidence_ref": f"EV-{g.name}"} for g in MarketGate}
@@ -204,10 +207,18 @@ def build_world(db, org_code="P3A"):
     tenant = TenantTaxService(db)
     reg = tenant.create_registration(org.id, world["maker"].id, seller_entity_id=entity.id, jurisdiction_id=gb.id,
                                      tax_type_id=vat.id, registration_number="GB-FIXTURE", valid_from=date(2020, 1, 1))
+    # Phase 4a-2: a provider activation needs an approved, credentialed connection.
+    world["provider"] = register_fake_provider()
+    connections = ProviderConnectionService(db)
+    conn = connections.propose(org.id, world["maker"].id, seller_entity_id=entity.id, provider_name="fake-provider",
+                               environment=ProviderEnvironment.SANDBOX, mode=ProviderMode.COMMIT)
+    connections.set_credentials(org.id, world["maker"].id, conn.id, "fake-sandbox-credential-1234")
+    connections.decide(org.id, world["checker"].id, conn.id, approve=True)
+    world["connection"] = conn
     for cls, mode, extra in (
         (TransactionClass.B2B_SERVICES, native, {}),
         (TransactionClass.B2C_SERVICES, native, {}),
-        (TransactionClass.B2B_DIGITAL, TaxOperatingMode.PROVIDER_APPROVED, {}),
+        (TransactionClass.B2B_DIGITAL, TaxOperatingMode.PROVIDER_APPROVED, {"provider_connection_id": conn.id}),
         (TransactionClass.B2C_DIGITAL, TaxOperatingMode.TENANT_CONFIG_APPROVED,
          dict(tenant_rate_percent=Decimal("20"), tenant_source_citation="Tenant's own citation",
               tenant_source_url="https://example.test/law")),
@@ -220,7 +231,6 @@ def build_world(db, org_code="P3A"):
     world["svc_product"] = product(world, "SVC1", "SVC")
     world["dig_product"] = product(world, "DIG1", "DIG")
     world["customer"] = buyer(world, verified=True)
-    world["provider"] = FakeTaxProvider()
     beat_for_tests(db)                                     # provider issuing needs a fresh reconciliation heartbeat
     db.commit()
     return world

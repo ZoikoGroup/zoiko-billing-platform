@@ -19,6 +19,12 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 from app.database import Base
+from app.config import settings as _settings
+
+if not _settings.TAX_PROVIDER_ENCRYPTION_KEY:
+    from cryptography.fernet import Fernet as _Fernet
+
+    _settings.TAX_PROVIDER_ENCRYPTION_KEY = _Fernet.generate_key().decode()   # test-only, per session
 from app.modules.organizations.models import Organization
 from app.modules.billing.models import (
     BillingCustomer,

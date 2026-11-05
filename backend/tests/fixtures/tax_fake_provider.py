@@ -29,6 +29,8 @@ from app.modules.tax.engines import ComponentResult, EngineRequest, LineResult
 from app.modules.tax.enums import RoundingMode, TaxOutcome
 from app.modules.tax.provider_contract import (
     ALLOWED_COMMIT_FIELDS,
+    PROVIDER_REGISTRY,
+    ProviderDefinition,
     ProviderAdapter,
     ProviderCapabilities,
     ProviderError,
@@ -64,6 +66,9 @@ class FakeTaxProvider(ProviderAdapter):
         self.ledger: dict = {}                     # idempotency_key -> {"id", "state", "payload"}
         self.links: dict = {}
         self.payloads: list = []
+        self.adjustments: list = []
+        self.test_calls: list = []
+        self.credentials_ok = True
 
     # ── fault injection ──
     @property
@@ -152,6 +157,28 @@ class FakeTaxProvider(ProviderAdapter):
                 return
         raise ProviderError(f"unknown transaction {transaction_id}")
 
+    def adjust(self, *, transaction_id: str, idempotency_key: str, payload: dict) -> str:
+        unexpected = set(payload) - ALLOWED_COMMIT_FIELDS
+        if unexpected:
+            raise ProviderRefused(f"unexpected payload fields {sorted(unexpected)}")
+        if self._fires("adjust_error"):
+            raise ProviderRefused("simulated adjustment refusal")
+        if not any(e["id"] == transaction_id for e in self.ledger.values()):
+            raise ProviderRefused(f"unknown transaction {transaction_id}")
+        entry = self.ledger.get(idempotency_key)
+        if entry is None:
+            entry = {"id": f"fake-adj-{len(self.ledger) + 1}", "state": RemoteTransactionState.COMMITTED,
+                     "payload": payload, "reference": transaction_id}
+            self.ledger[idempotency_key] = entry
+            self.adjustments.append(payload)
+        if self._fires("adjust_timeout_after_success"):
+            raise ProviderTimeout("simulated timeout after the adjustment landed")
+        return entry["id"]
+
+    def test_connection(self) -> dict:
+        self.test_calls.append(getattr(self, "endpoint", None))
+        return {"ok": self.credentials_ok, "detail": "fake sandbox reachable" if self.credentials_ok else "rejected"}
+
     def link_reference(self, *, transaction_id: str, document_reference: str) -> None:
         if not self.link:
             raise ProviderError("linking not supported")
@@ -160,3 +187,23 @@ class FakeTaxProvider(ProviderAdapter):
     # test helpers
     def committed_keys(self) -> list:
         return [k for k, e in self.ledger.items() if e["state"] == RemoteTransactionState.COMMITTED]
+
+
+#: The fake's code-defined allowlist (the only hosts it may be "called" on).
+FAKE_ENDPOINTS = {"SANDBOX": "https://sandbox.fake-provider.test", "PRODUCTION": "https://api.fake-provider.test"}
+
+
+def register_fake_provider(fake: "FakeTaxProvider" = None) -> "FakeTaxProvider":
+    """Register the fake in the provider registry for this test (overwrites any
+    earlier registration). Connection-built adapters return this instance,
+    configured with the allowlisted endpoint and the stored credential."""
+    fake = fake or FakeTaxProvider()
+
+    def factory(*, endpoint: str, credentials: str, mode: ProviderMode):
+        assert endpoint in FAKE_ENDPOINTS.values(), endpoint      # never a tenant-supplied URL
+        fake.endpoint, fake.credentials, fake.mode = endpoint, credentials, mode
+        return fake
+
+    PROVIDER_REGISTRY["fake-provider"] = ProviderDefinition(name="fake-provider", factory=factory,
+                                                            endpoints=FAKE_ENDPOINTS)
+    return fake

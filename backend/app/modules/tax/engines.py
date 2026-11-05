@@ -266,7 +266,7 @@ class EngineResolver:
                  tenant_rounding: RoundingRule = RoundingRule.PER_LINE):
         self.db = db
         self.rule_pack_lookup = rule_pack_lookup or self._registered_rule_pack
-        self.provider_lookup = provider_lookup or (lambda activation: None)
+        self.provider_lookup = provider_lookup or self._connection_adapter
         self.tenant_rounding = tenant_rounding
 
     def _registered_rule_pack(self, activation) -> Optional[RulePack]:
@@ -293,6 +293,21 @@ class EngineResolver:
                 return pack_cls()
         return None
 
+    def _connection_adapter(self, activation):
+        """The adapter of the activation's approved, usable provider
+        connection (Phase 4a-2), or None: fail closed."""
+        from app.modules.tax.connection_service import ProviderConnectionService
+
+        return ProviderConnectionService(self.db).adapter_for_id(getattr(activation, "provider_connection_id", None))
+
+    def _connection_problem(self, activation) -> Optional[str]:
+        from app.modules.tax.connection_service import ProviderConnectionService
+        from app.modules.tax.provider_models import TaxProviderConnection
+
+        connection_id = getattr(activation, "provider_connection_id", None)
+        connection = self.db.get(TaxProviderConnection, connection_id) if connection_id else None
+        return ProviderConnectionService(self.db).usable_problem(connection)
+
     def engine_for(self, activation) -> tuple:
         """(engine or None, reason when None)."""
         if activation.mode == TaxOperatingMode.TENANT_CONFIG_APPROVED:
@@ -305,6 +320,8 @@ class EngineResolver:
         if activation.mode == TaxOperatingMode.PROVIDER_APPROVED:
             adapter = self.provider_lookup(activation)
             if adapter is None:
-                return None, "No tax provider is configured for this market."
+                problem = self._connection_problem(activation) if self.provider_lookup == self._connection_adapter \
+                    else None
+                return None, f"No tax provider is available for this market ({problem or 'not configured'})."
             return ProviderEngine(adapter), None
         return None, f"{activation.mode.name} does not calculate tax."

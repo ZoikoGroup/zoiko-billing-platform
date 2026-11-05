@@ -27,7 +27,7 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import BadRequestException, NotFoundException
 from app.modules.billing.models import CreditNote, CreditNoteStatus, CreditNoteType, Invoice, InvoiceStatus
 from app.modules.tax.determination_service import _q6, _round
-from app.modules.tax.enums import TaxQuoteStatus
+from app.modules.tax.enums import RemoteCommitState, TaxQuoteStatus
 from app.modules.tax.quote_models import CreditNoteTaxLine, TaxQuote, TaxQuoteLine
 
 ONE = Decimal("1")
@@ -134,9 +134,16 @@ class GovernedCreditService:
             reason=reason, currency=inv.currency, _governed_snapshot=True,
         )
         now = _now()
-        for row in rows:
-            self.db.add(CreditNoteTaxLine(organization_id=organization_id, credit_note_id=credit_note.id,
-                                          created_by=actor_id, created_at=now, **row))
+        lines = [CreditNoteTaxLine(organization_id=organization_id, credit_note_id=credit_note.id,
+                                   created_by=actor_id, created_at=now, **row) for row in rows]
+        self.db.add_all(lines)
+        self.db.flush()
+        if quote.remote_commit_state == RemoteCommitState.COMMITTED:
+            # Provider-committed invoice: adjust the original provider
+            # transaction by reference, in the same commit (Phase 4a-2, T15/T18).
+            from app.modules.tax.provider_issuance import ProviderIssuanceService
+
+            ProviderIssuanceService(self.db).enqueue_adjust(credit_note, quote, lines, actor_id)
         self.db.commit()
         return credit_note
 
