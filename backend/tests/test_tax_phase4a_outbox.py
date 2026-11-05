@@ -484,11 +484,10 @@ def test_t16_revoked_source_freezes_the_pack_with_no_false_coverage_claim(db_ses
 # 4a-1 fixes (post-merge review of PR #132)
 # ═════════════════════════════════════════════════════════════════════════
 
-BASE = datetime.now(timezone.utc)
-
-
 def at(**delta):
-    moment = BASE + timedelta(**delta)
+    """A fixed clock `delta` after now. Relative to the moment of the call, not
+    to import time: in a full run a test may start long after collection."""
+    moment = datetime.now(timezone.utc) + timedelta(**delta)
     return lambda: moment
 
 
@@ -637,7 +636,7 @@ def test_fix3_unresolved_past_grace_is_review_required_never_voided(w):
     w["db"].rollback()
     (item,) = TaxExceptionService(w["db"], now=at(minutes=20)).list_exceptions(w["org"].id)["items"]
     assert item["code"] == "PROVIDER_REVIEW_REQUIRED" and item["owner"] == "org_admin"
-    assert item["age_seconds"] >= 15 * 60                          # created just after BASE
+    assert item["age_seconds"] >= 19 * 60
 
 
 @pytest.mark.parametrize("landed", [True, False])
