@@ -85,6 +85,16 @@ def staged_view(row) -> dict:
     return data
 
 
+class TaxStepUpRequired(BadRequestException):
+    """400 with error code TAX_REGISTRY_STEP_UP_REQUIRED (Phase 5a): the
+    Tax Control Center prompts for a code and retries the action once."""
+
+    def __init__(self, message: str):
+        from app.core.exceptions import ZoikoException
+
+        ZoikoException.__init__(self, status_code=400, error_code="TAX_REGISTRY_STEP_UP_REQUIRED", message=message)
+
+
 def require_tax_step_up(db: Session, user, data: StepUpRequest) -> None:
     """Approve/publish always need a fresh factor, even while platform-wide
     step-up is retired (MFA_STEP_UP_ENABLED off). Must run before any
@@ -96,7 +106,7 @@ def require_tax_step_up(db: Session, user, data: StepUpRequest) -> None:
         logger.warning("TAX_REGISTRY_STEP_UP_REQUIRED is off: tax registry decision by user %s without step-up.", user.id)
         return
     if not step_up_bypass_active() and not (data.code or data.recovery_code):
-        raise BadRequestException("MFA step-up is required: provide a current authenticator code or a recovery code.")
+        raise TaxStepUpRequired("MFA step-up is required: provide a current authenticator code or a recovery code.")
     verify_step_up(db, user, code=data.code, recovery_code=data.recovery_code, enforce_when_retired=True)
 
 
@@ -273,6 +283,19 @@ def get_staged_rate(
     _user=Depends(require_capability("tax_registry.read")),
 ):
     return staged_view(TaxRegistryPipeline(db).get_staged(staged_id))
+
+
+@admin_router.get("/staged-rates/{staged_id}/comparison",
+                  summary="Old and new side by side: the staged rate, the rate(s) it replaces or overlaps, checks")
+def compare_staged_rate(
+    staged_id: int,
+    db: Session = Depends(get_db),
+    _user=Depends(require_capability("tax_registry.read")),
+):
+    """Phase 5a (P3 change review). Read-only; platform data only."""
+    pipeline = TaxRegistryPipeline(db)
+    row = pipeline.get_staged(staged_id)
+    return {"staged": staged_view(row), **pipeline.comparison(row)}
 
 
 @admin_router.post("/staged-rates", response_model=StagedRateResponse, status_code=status.HTTP_201_CREATED)

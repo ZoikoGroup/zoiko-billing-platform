@@ -221,6 +221,16 @@ const SUPER_ADMIN_NAV_SECTIONS = [
     ],
   },
   {
+    // ZB-TAX-ARCH-001 Phase 5a: only Zoiko tax staff (TAX_REVIEWER /
+    // TAX_PUBLISHER) see it; platform administrators have no tax access by
+    // default (the backend's tax_registry.* capabilities are explicit-only).
+    label: "Tax",
+    visibleTo: (user) => ["tax_reviewer", "tax_publisher"].includes(user?.platform_role),
+    items: [
+      { label: "Tax Control Center", href: "/super-admin/tax/inbox", icon: Landmark },
+    ],
+  },
+  {
     label: "Reporting",
     items: [
       { label: "Audit & Evidence", href: "/super-admin/audit-logs", icon: ScrollText },
@@ -670,7 +680,7 @@ function SuperAdminSidebarContent({ onNavigate, cockpit, collapsed, onToggleColl
           />
         </div>
 
-        {SUPER_ADMIN_NAV_SECTIONS.map((section) => (
+        {SUPER_ADMIN_NAV_SECTIONS.filter((section) => !section.visibleTo || section.visibleTo(user)).map((section) => (
           <div key={section.label}>
             {collapsed ? null : <FlatSectionLabel label={section.label} />}
             <div className="space-y-1">

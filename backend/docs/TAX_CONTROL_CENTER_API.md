@@ -1,4 +1,4 @@
-# Tax Control Center — API Contract (B1, B3, Phase 4a-2, Phase 4c)
+# Tax Control Center — API Contract (B1, B3, Phase 4a-2, Phase 4c, Phase 5a)
 
 The backend for the Tax Control Center frontend (plan:
 `TAX_PHASE4_PLAN.md`, "Tax Control Center UI"). It contains two gaps:
@@ -136,6 +136,47 @@ body), as before.
 
 **No tenant data:** items carry no organization, customer or invoice
 fields. A test asserts this against a tenant with invoices.
+
+## Phase 5a additions (platform console)
+
+### MFA step-up: a distinct error code
+
+Approve and publish (rates, code sets, availability and rule packs) need
+`code` or `recovery_code` in the body. When neither is sent, the response is
+still `400` with the same message, but now carries
+`"error": "TAX_REGISTRY_STEP_UP_REQUIRED"`.
+
+The console prompts for a code and retries the action once with it. A wrong
+code returns a different error (for example "Invalid MFA code"), which is
+shown in the prompt; there is no automatic retry.
+
+### Staged rate comparison (P3, old and new side by side)
+
+```
+GET /api/v1/super-admin/tax-registry/staged-rates/{id}/comparison      (tax_registry.read)
+```
+
+```json
+{
+  "staged": { "...StagedRateResponse..." },
+  "component": {"id": 1, "code": "GB-VAT", "name": "UK VAT", "tax_type": "VAT",
+                "jurisdiction_code": "GB", "jurisdiction_name": "United Kingdom", "is_cumulative": false},
+  "superseded": { "...RateVersionReference..." } ,
+  "overlapping_active": [ { "...RateVersionReference..." } ],
+  "active_for_key": [ { "...RateVersionReference..." } ],
+  "errors": [], "conflicts": ["Conflicts with staged proposal 32 (22%) for the same key and period."],
+  "warnings": []
+}
+```
+
+- **`superseded`:** the version this change declares it replaces, or
+  `null`.
+- **`overlapping_active`:** other ACTIVE versions for the same key whose
+  period overlaps the staged one. These are what a conflict is about.
+- **`active_for_key`:** every ACTIVE version for the key, for the timeline.
+- **Checks:** the same `errors`, `conflicts` and `warnings` validation would
+  give now. It is read-only: nothing changes.
+- Platform data only; other platform roles and tenants get `403`.
 
 ## Behaviour change for external API clients (B3)
 
