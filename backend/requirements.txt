@@ -71,3 +71,9 @@ anthropic>=0.34.0
 # Test-only — runs against an isolated in-memory SQLite DB (see tests/conftest.py),
 # never against BILLING_DATABASE_URL.
 pytest>=8.0.0
+# ZB-TAX-ARCH-001 Phase 4d-0: provider credentials in GCP Secret Manager
+# (Application Default Credentials; imported only when the gcp store is used).
+google-cloud-secret-manager==2.20.2
+# google-auth pulls pyasn1-modules; 0.4.x needs pyasn1>=0.6.1, which python-jose
+# refuses (see the pyasn1 note above). 0.3.0 accepts pyasn1 0.4.x.
+pyasn1-modules==0.3.0

@@ -337,12 +337,20 @@ class ProviderIssuanceService:
             return DocumentReferencePolicy.KEY_ONLY
 
     def _adapter(self, obj):
-        """The adapter for a quote or outbox row, or None (fail closed)."""
+        """The adapter for a quote or outbox row, or None (fail closed). An
+        unreachable or refusing secret store is None too, with the reason in
+        self.adapter_problem; nothing falls back."""
+        self.adapter_problem = None
         if self._by_name:
             return self.provider_lookup(obj.provider_name)
         from app.modules.tax.connection_service import ProviderConnectionService
+        from app.modules.tax.secret_store import SecretStoreUnavailable
 
-        return ProviderConnectionService(self.db).adapter_for_id(getattr(obj, "provider_connection_id", None))
+        try:
+            return ProviderConnectionService(self.db).adapter_for_id(getattr(obj, "provider_connection_id", None))
+        except SecretStoreUnavailable as exc:
+            self.adapter_problem = f"provider credentials are unavailable: {exc.message}"
+            return None
 
     def _past(self, moment: Optional[datetime]) -> bool:
         return moment is not None and self.now() >= _aware(moment)
@@ -396,7 +404,8 @@ class ProviderIssuanceService:
             return existing
         adapter = self._adapter(quote)
         if adapter is None:
-            self._refuse(quote, f"Tax provider {quote.provider_name!r} is not configured; the invoice was not issued.")
+            self._refuse(quote, f"Tax provider {quote.provider_name!r} is not available "
+                                f"({self.adapter_problem or 'not configured'}); the invoice was not issued.")
         if adapter.capabilities().mode == ProviderMode.ESTIMATE_ONLY:
             raise ProviderIssuanceBlocked(
                 f"The {quote.provider_name} connection is estimate-only: it can quote but can never issue. "
@@ -447,7 +456,7 @@ class ProviderIssuanceService:
         now = self.now()
         row.updated_at = now
         if adapter is None:
-            row.last_error = "provider not configured"
+            row.last_error = self.adapter_problem or "provider not configured"
             row.next_attempt_at = now + timedelta(seconds=settings.TAX_PROVIDER_RECONCILIATION_INTERVAL_SECONDS)
             self.db.commit()
             return row

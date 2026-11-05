@@ -36,7 +36,17 @@ from app.modules.tax.enums import ConnectionStatus, ProviderEnvironment
 from app.modules.tax.models import SellerLegalEntity
 from app.modules.tax.provider_contract import ProviderError, ProviderMode, provider_definition
 from app.modules.tax.provider_models import TaxProviderConnection
-from app.modules.tax.secret_store import FernetSecretStore, SecretStore, masked_last4
+from app.modules.tax.secret_store import (
+    FernetSecretStore,
+    GcpSecretManagerStore,
+    SecretStore,
+    SecretStoreUnavailable,
+    configured_store_name,
+    has_credentials,
+    masked_last4,
+    production_credentials_allowed,
+    store_for,
+)
 
 
 def _now() -> datetime:
@@ -46,7 +56,7 @@ def _now() -> datetime:
 class ProviderConnectionService:
     def __init__(self, db: Session, secrets: Optional[SecretStore] = None):
         self.db = db
-        self.secrets = secrets or FernetSecretStore(db)
+        self.secrets = secrets or store_for(db)
         self.audit = BillingAuditService(db)
 
     # ── helpers ──
@@ -66,6 +76,15 @@ class ProviderConnectionService:
     def _log(self, row, actor_id, action, **values):
         self.audit.log_no_commit(row.organization_id, actor_id, action, "TaxProviderConnection", row.id,
                                  new_values=values or None)
+
+    def _store_of(self, row) -> SecretStore:
+        """The store that holds this connection's credential (for reading,
+        retiring and destroying it). Using it still requires it to be the
+        configured store (usable_problem): there is no fallback."""
+        held = row.credential_store or ("fernet" if row.credential_ref is not None else self.secrets.name)
+        if held == self.secrets.name:
+            return self.secrets
+        return GcpSecretManagerStore(self.db) if held == "gcp" else FernetSecretStore(self.db)
 
     @staticmethod
     def _checker(proposer: Optional[int], actor_id: int, what: str) -> None:
@@ -127,18 +146,19 @@ class ProviderConnectionService:
         secret = (secret or "").strip()
         if len(secret) < 8:
             raise BadRequestException("The credential is too short.")
-        if row.environment == ProviderEnvironment.PRODUCTION and not settings.TAX_PROVIDER_PRODUCTION_CREDENTIALS_ALLOWED:
+        if row.environment == ProviderEnvironment.PRODUCTION and not production_credentials_allowed():
             raise BadRequestException("Production provider credentials cannot be stored until the managed secret "
                                       "store is in place (4d gate).")
-        rotated = row.credential_ref is not None
-        old_ref = row.credential_ref
-        row.credential_ref = self.secrets.put(organization_id, secret)
-        if old_ref is not None:
-            self.secrets.delete(organization_id, old_ref)
+        rotated = has_credentials(row)
+        if rotated and (row.credential_store or "fernet") != self.secrets.name:
+            # Moving stores: remove the old store's copy; never keep two.
+            self._store_of(row).destroy(row)
+        self.secrets.put(row, secret)
         row.credential_last4, row.credential_rotated_at = masked_last4(secret), _now()
         row.credential_set_by, row.updated_at = actor_id, _now()
-        self._log(row, actor_id, BillingAuditAction.UPDATE,
-                  credentials="rotated" if rotated else "set", last4=row.credential_last4)
+        self._log(row, actor_id, BillingAuditAction.UPDATE, credentials="rotated" if rotated else "set",
+                  last4=row.credential_last4, store=row.credential_store, version=row.credential_version,
+                  previous_version_pending=row.credential_previous_version)
         self.db.commit()
         return row
 
@@ -147,21 +167,30 @@ class ProviderConnectionService:
         row = self.get(organization_id, connection_id)
         if not (reason or "").strip():
             raise BadRequestException("A reason is required.")
-        if row.credential_ref is not None:
-            self.secrets.delete(organization_id, row.credential_ref)
-        row.credential_ref, row.credential_last4 = None, None
+        failure = None
+        try:
+            self._store_of(row).destroy(row)                     # every stored version
+        except SecretStoreUnavailable as exc:
+            failure = exc.message
+        # Frozen either way: a failed destroy never leaves the connection usable.
+        row.credential_ref, row.credential_version, row.credential_previous_version = None, None, None
+        row.credential_last4 = None
         if row.status == ConnectionStatus.APPROVED:
             row.status = ConnectionStatus.SUSPENDED            # frozen (T16) until resumed by two people
         row.suspended_reason, row.resume_requested_by, row.updated_at = reason.strip(), None, _now()
-        self._log(row, actor_id, BillingAuditAction.VOID, credentials="revoked", reason=reason.strip())
+        self._log(row, actor_id, BillingAuditAction.VOID, credentials="revoked", reason=reason.strip(),
+                  versions_destroyed=failure is None)
         self.db.commit()
+        if failure is not None:
+            raise SecretStoreUnavailable("The connection is suspended, but its stored credential versions could not "
+                                         f"be destroyed ({failure}). Revoke again once the store is reachable.")
         return row
 
     def request_resume(self, organization_id: int, actor_id: int, connection_id: int) -> TaxProviderConnection:
         row = self.get(organization_id, connection_id)
         if row.status != ConnectionStatus.SUSPENDED:
             raise BadRequestException(f"Provider connection {row.id} is {row.status.name}, not SUSPENDED.")
-        if row.credential_ref is None:
+        if not has_credentials(row):
             raise BadRequestException("Set new credentials before asking to resume the connection.")
         row.resume_requested_by, row.updated_at = actor_id, _now()
         self._log(row, actor_id, BillingAuditAction.UPDATE, resume_requested=True)
@@ -189,22 +218,27 @@ class ProviderConnectionService:
             return "no provider connection"
         if row.status != ConnectionStatus.APPROVED:
             return f"the provider connection is {row.status.name}"
-        if row.credential_ref is None:
+        if not has_credentials(row):
             return "the provider connection has no credentials"
+        if (row.credential_store or "fernet") != configured_store_name():
+            return (f"the credentials are in the {row.credential_store or 'fernet'} store, not the configured "
+                    f"{configured_store_name()} store; re-enter them")
         definition = provider_definition(row.provider_name)
         if definition is None:
             return f"tax provider {row.provider_name} is not available"
-        if row.environment == ProviderEnvironment.PRODUCTION and not settings.TAX_PROVIDER_PRODUCTION_CREDENTIALS_ALLOWED:
+        if row.environment == ProviderEnvironment.PRODUCTION and not production_credentials_allowed():
             return "production provider connections are not enabled yet (4d gate)"
         return None
 
     def adapter_for(self, row: Optional[TaxProviderConnection]):
-        """A configured adapter for a usable connection, or None (fail closed)."""
+        """A configured adapter for a usable connection, or None (fail closed).
+        Raises SecretStoreUnavailable when the store can't be reached or
+        refuses access: callers treat that as PROVIDER_UNAVAILABLE."""
         if self.usable_problem(row) is not None:
             return None
         definition = provider_definition(row.provider_name)
         endpoint = definition.endpoint(row.environment.name)       # the allowlist, never tenant input
-        secret = self.secrets.get(row.organization_id, row.credential_ref)
+        secret = self.secrets.get(row)
         if secret is None:
             return None
         adapter = definition.factory(endpoint=endpoint, credentials=secret, mode=ProviderMode[row.mode])
@@ -218,13 +252,15 @@ class ProviderConnectionService:
 
     def test_connection(self, organization_id: int, actor_id: int, connection_id: int) -> TaxProviderConnection:
         row = self.get(organization_id, connection_id)
-        if row.credential_ref is None:
+        if not has_credentials(row):
             raise BadRequestException("Set credentials before testing the connection.")
         definition = provider_definition(row.provider_name)
         if definition is None:
             raise BadRequestException(f"Tax provider {row.provider_name!r} is not available.")
         try:
-            secret = self.secrets.get(organization_id, row.credential_ref)
+            secret = self._store_of(row).get(row)
+            if secret is None:
+                raise SecretStoreUnavailable("no stored credential")
             adapter = definition.factory(endpoint=definition.endpoint(row.environment.name), credentials=secret,
                                          mode=ProviderMode[row.mode])
             result = adapter.test_connection() or {}
@@ -232,7 +268,17 @@ class ProviderConnectionService:
         except Exception as exc:                                  # never echo the credential
             ok, detail = False, type(exc).__name__
         row.health_ok, row.health_checked_at, row.health_detail = ok, _now(), detail[:500]
-        self._log(row, actor_id, BillingAuditAction.UPDATE, test_connection="ok" if ok else "failed")
+        retired = None
+        if ok and row.credential_previous_version is not None:
+            # Rotation completes only now: the new version works, so the old
+            # one is disabled. A failed test keeps it for a rollback rotation.
+            retired = row.credential_previous_version
+            try:
+                self._store_of(row).retire_previous(row)
+            except SecretStoreUnavailable:
+                retired = None
+        self._log(row, actor_id, BillingAuditAction.UPDATE, test_connection="ok" if ok else "failed",
+                  previous_version_disabled=retired)
         self.db.commit()
         return row
 
@@ -244,8 +290,9 @@ def view_connection(row: TaxProviderConnection) -> dict:
         "proposed_by": row.proposed_by, "approved_by": row.approved_by, "approved_at": row.approved_at,
         "decision_reason": row.decision_reason, "suspended_reason": row.suspended_reason,
         "resume_requested_by": row.resume_requested_by,
-        "credentials": {"present": row.credential_ref is not None, "last_rotated_at": row.credential_rotated_at,
-                        "last4": row.credential_last4},
+        "credentials": {"present": has_credentials(row), "last_rotated_at": row.credential_rotated_at,
+                        "last4": row.credential_last4, "store": row.credential_store,
+                        "rotation_pending_test": row.credential_previous_version is not None},
         "health": {"ok": row.health_ok, "checked_at": row.health_checked_at, "detail": row.health_detail},
         "created_at": row.created_at, "updated_at": row.updated_at,
     }

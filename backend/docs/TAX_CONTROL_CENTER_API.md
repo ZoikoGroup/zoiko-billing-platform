@@ -203,7 +203,8 @@ provider and environment.**
   "id": 7, "seller_entity_id": 3, "provider_name": "avatax", "environment": "SANDBOX", "mode": "COMMIT",
   "status": "APPROVED", "proposed_by": 11, "approved_by": 12, "approved_at": "2026-11-05T10:01:00+00:00",
   "decision_reason": null, "suspended_reason": null, "resume_requested_by": null,
-  "credentials": {"present": true, "last_rotated_at": "2026-11-05T10:00:00+00:00", "last4": "9999"},
+  "credentials": {"present": true, "last_rotated_at": "2026-11-05T10:00:00+00:00", "last4": "9999",
+                  "store": "gcp", "rotation_pending_test": false},
   "health": {"ok": true, "checked_at": "2026-11-05T10:02:00+00:00", "detail": "reachable"},
   "created_at": "...", "updated_at": "..."
 }
@@ -211,15 +212,22 @@ provider and environment.**
 
 **Status:** `PROPOSED`, `APPROVED`, `REJECTED`, `WITHDRAWN` or `SUSPENDED`.
 
-**Credentials are never returned**: only `present`, `last_rotated_at` and the
-masked `last4`. Setting, rotating and revoking them are all audited.
+**Credentials are never returned**: only `present`, `last_rotated_at`, the
+masked `last4`, `store` (`fernet` or `gcp`) and `rotation_pending_test`
+(Phase 4d-0). Setting, rotating and revoking them are all audited.
+
+`rotation_pending_test: true` means a rotation is waiting for a successful
+**Test connection**, after which the previous version is disabled. Prompt
+for it.
 Revoking makes the connection `SUSPENDED`. Quotes and issuing through it then
 fail closed until two people resume it.
 
 **Production credentials** are refused (`400`) until the managed secret store
 exists (4d gate).
 
-**`test`** records `health`. It never echoes a credential.
+**`test`** records `health`. It never echoes a credential. When the secret
+store is unreachable or denies access, quotes are `PROVIDER_UNAVAILABLE` and
+revoking still suspends but returns `400` asking to revoke again.
 
 ### Activations: a new field
 

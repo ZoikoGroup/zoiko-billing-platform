@@ -55,7 +55,7 @@ def test_credentials_are_write_only_over_http(db_session, client_for, world):
     put = client.put(f"{url}/credentials", json={"secret": SECRET})
     assert put.status_code == 200, put.text
     assert put.json()["credentials"] == {"present": True, "last_rotated_at": put.json()["credentials"]["last_rotated_at"],
-                                         "last4": "9999"}
+                                         "last4": "9999", "store": "fernet", "rotation_pending_test": False}
     for response in (put, client.get(url), client.get("/api/v1/tax/provider-connections")):
         assert SECRET not in response.text and "ciphertext" not in response.text and "credential_ref" not in response.text
 
