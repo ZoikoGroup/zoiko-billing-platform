@@ -330,8 +330,9 @@ class VerificationStatus(str, enum.Enum):
 
 
 class AddressRole(str, enum.Enum):
-    BILLING  = "billing"
-    SHIPPING = "shipping"
+    BILLING          = "billing"
+    SHIPPING         = "shipping"
+    SERVICE_LOCATION = "service_location"     # Phase 4c: where a service is performed / used
 
 
 class AddressConfidence(str, enum.Enum):
@@ -359,6 +360,7 @@ class ReviewItemKind(str, enum.Enum):
     CERTIFICATE_EXPIRED   = "certificate_expired"
     TAX_ID_VERIFICATION_EXPIRED = "tax_id_verification_expired"
     PROVIDER_DRIFT        = "provider_drift"      # Phase 4a-1: provider record differs from our snapshot
+    ADDRESS_RESOLUTION_STALE = "address_resolution_stale"   # Phase 4c: expired or superseded dataset
 
 
 class ReviewItemStatus(str, enum.Enum):

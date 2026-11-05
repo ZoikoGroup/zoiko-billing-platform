@@ -528,6 +528,16 @@ CRITICAL_COLUMNS: list[tuple[str, str, str, str]] = [
         "alembic/versions/b5e9d2c7a4f1_tax_phase4a2_connections.py",
         "ZB-TAX-ARCH-001 Phase 4a-2: certificate evidence documents",
     ),
+    (
+        "tax_quotes", "exemption_claims",
+        "alembic/versions/c7f3a1d9e5b2_tax_phase4c_us_addresses.py",
+        "ZB-TAX-ARCH-001 Phase 4c: exemption certificates claimed on a quote",
+    ),
+    (
+        "tax_address_resolutions", "dataset_version",
+        "alembic/versions/d2b8e4f6a1c3_tax_phase4c_supply_staleness_pseudonym.py",
+        "ZB-TAX-ARCH-001 Phase 4c: the resolver dataset an address resolution came from",
+    ),
 ]
 
 

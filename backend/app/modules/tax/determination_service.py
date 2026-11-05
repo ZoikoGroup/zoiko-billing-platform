@@ -44,6 +44,7 @@ from app.modules.tax.engines import (
     ROUTING_FACTS,
     ComponentResult,
     EngineRequest,
+    SUBNATIONAL_COUNTRIES,
     EngineResolver,
     LineInput,
     LineResult,
@@ -351,6 +352,9 @@ class TaxDeterminationService:
         # Buyer status matters only to an engine that applies: with no engine,
         # the routing problem (e.g. an expired registration) is the reason.
         required = set(engine.required_facts if engine else ROUTING_FACTS)
+        supply = ((facts.get("buyer") or {}).get("place_of_supply") or {}).get("address") or {}
+        if supply.get("country_code") in SUBNATIONAL_COUNTRIES:
+            required.add("BUYER_SUBDIVISION_MISSING")
         if engine is not None and not engine.unresolved_buyer_as_consumer:
             required.add("BUYER_STATUS_UNRESOLVED")
         else:
@@ -373,9 +377,23 @@ class TaxDeterminationService:
             from app.modules.tax.provider_issuance import ProviderHealth
 
             health = ProviderHealth(self.db, now=self.now)
-            problem = health.circuit_problem(engine.name)
+            from app.modules.tax.pseudonym import PseudonymKeyService
+
+            problem = health.circuit_problem(engine.name) or PseudonymKeyService(self.db).problem(organization_id)
             if problem:
                 raise _Refusal(TaxQuoteStatus.PROVIDER_UNAVAILABLE, "PROVIDER_UNAVAILABLE", problem, warnings=warnings)
+            # Phase 4c (T14): exemption certificates are evidence, never an
+            # automatic 0%. Valid ones become claims sent to the provider; a
+            # relevant certificate that is not valid blocks and is reviewed.
+            all_acts = [a for line in lines if line.routing for a in line.routing[1]]
+            claims, invalid = self._exemption_claims(organization_id, facts, all_acts, tax_date)
+            if invalid and not claims:
+                raise _Refusal(TaxQuoteStatus.NEEDS_EVIDENCE, "EXEMPTION_CERTIFICATE_INVALID",
+                               "The buyer's exemption certificate for this market is not valid on the tax date ("
+                               + "; ".join(invalid) + "). Renew it or record a valid one; nothing is exempted "
+                               "automatically.", warnings=warnings)
+            quote.exemption_claims = claims or None
+            facts = {**facts, "exemption_claims": claims}
 
         # Buyers without business evidence get consumer treatment only where
         # the engine's rules say so; the line class is re-derived for them.
@@ -397,7 +415,7 @@ class TaxDeterminationService:
                                f"The tax provider could not determine tax: {exc}", warnings=warnings)
             if engine.is_remote:
                 result = _check_provider_line(engine, line.input.line_number, acts, result, tax_date, doc.currency,
-                                              warnings)
+                                              warnings, db=self.db, claims=facts.get("exemption_claims") or [])
             if result.outcome == TaxOutcome.NOT_DETERMINED or not result.components:
                 raise _Refusal(TaxQuoteStatus.NEEDS_EVIDENCE, result.explanation_code or "NOT_DETERMINED",
                                f"Line {line.input.line_number}: {result.legal_reason or 'tax could not be determined'}",
@@ -413,6 +431,42 @@ class TaxDeterminationService:
                            warnings=warnings)
         _apply_rates(lines, decimals, engine.rounding_rule, engine.rounding_mode)
         self._persist(quote, organization_id, engine, lines, decimals, warnings)
+
+    def _exemption_claims(self, organization_id: int, facts: dict, activations: list, tax_date) -> tuple:
+        """(claims, invalid reasons) for the buyer's certificates that cover a
+        market on this quote (the jurisdiction or one of its ancestors, the
+        tax type or every tax type). Expired ones raise a review item (T14)."""
+        from app.modules.tax.enums import CertificateStatus
+        from app.modules.tax.review_service import TaxReviewService
+
+        certificates = (facts.get("buyer") or {}).get("exemption_certificates") or []
+        if not certificates or not activations:
+            return [], []
+        markets = set()
+        for a in activations:
+            for j in _ancestry(self.db, a.jurisdiction_id):
+                markets.add((j, a.tax_type_id))
+        claims, invalid = [], []
+        review = TaxReviewService(self.db)
+        for c in certificates:
+            if not any(j == c["jurisdiction_id"] and (c["tax_type_id"] in (None, t)) for j, t in markets):
+                continue
+            status = c["status"].name if hasattr(c["status"], "name") else str(c["status"])
+            expired = c["expires_at"] is not None and tax_date is not None and c["expires_at"] <= tax_date
+            if status != CertificateStatus.ACTIVE.name:
+                invalid.append(f"certificate {c['id']} is {status}")
+            elif expired:
+                invalid.append(f"certificate {c['id']} expired on {c['expires_at']}")
+                review._raise(_now(), organization_id, "CustomerExemptionCertificate", c["id"], c["expires_at"], True,
+                              f"Exemption certificate {c['id']} expired before an invoice's tax date.")
+            elif tax_date is not None and c["valid_from"] > tax_date:
+                invalid.append(f"certificate {c['id']} is not yet valid")
+            elif not c.get("evidence_attached"):
+                invalid.append(f"certificate {c['id']} has no evidence document")
+            else:
+                claims.append({"certificate_id": c["id"], "jurisdiction_id": c["jurisdiction_id"],
+                               "tax_type_id": c["tax_type_id"], "reason_code": c.get("reason_code")})
+        return claims, invalid
 
     def _effective_activations(self, organization_id, seller_entity_id, jurisdiction_ids, cls, tax_date) -> list:
         candidates = self.db.query(EntityTaxActivation).filter(
@@ -494,35 +548,68 @@ class TaxDeterminationService:
         self.db.flush()
 
 
-def place_of_supply(facts: dict) -> Optional[dict]:
-    """The buyer address this quote was determined with, and its role.
+_SUPPLY_ROLES = {"SHIPPING": PlaceOfSupplyRole.SHIP_TO, "SERVICE_LOCATION": PlaceOfSupplyRole.SERVICE_LOCATION,
+                 "BILLING": PlaceOfSupplyRole.BILLING_FALLBACK}
 
-    Jurisdictions are resolved from the billing address today (context
-    builder), so the role is BILLING_FALLBACK. Ship-to and service-location
-    precedence arrives with address resolution (4c); the stored role then
-    says which one applied."""
-    billing = ((facts.get("buyer") or {}).get("addresses") or {}).get("BILLING")
-    if not billing:
+
+def place_of_supply(facts: dict) -> Optional[dict]:
+    """The buyer address this quote was determined with, and its role: the
+    context builder's place of supply (ship-to for goods, the service
+    location where recorded, billing as the recorded fallback). Its
+    jurisdictions are the ones quoted, and it is what the provider receives."""
+    chosen = (facts.get("buyer") or {}).get("place_of_supply")
+    if not chosen or not chosen.get("address"):
         return None
-    return {"role": PlaceOfSupplyRole.BILLING_FALLBACK.name, "address_id": billing.get("id"),
-            **{k: billing.get(k) for k in ("line1", "line2", "city", "subdivision_code", "postal_code", "country_code")}}
+    address = chosen["address"]
+    out = {"role": _SUPPLY_ROLES[chosen["role"]].name, "address_id": address.get("id"),
+           **{k: address.get(k) for k in ("line1", "line2", "city", "subdivision_code", "postal_code", "country_code")}}
+    resolution = address.get("resolution")
+    if resolution:
+        out["resolution_id"] = resolution["id"]
+    return out
+
+
+def _ancestry(db, jurisdiction_id) -> list:
+    """The jurisdiction and its parents (district -> county -> state -> country)."""
+    from app.modules.tax.registry_models import TaxJurisdiction
+
+    out, seen = [], set()
+    while jurisdiction_id is not None and jurisdiction_id not in seen:
+        seen.add(jurisdiction_id)
+        out.append(jurisdiction_id)
+        row = db.get(TaxJurisdiction, jurisdiction_id)
+        jurisdiction_id = row.parent_id if row is not None else None
+    return out
 
 
 def _check_provider_line(engine, line_number: int, activations, result: LineResult, tax_date, currency,
-                         warnings) -> LineResult:
+                         warnings, db=None, claims=None) -> LineResult:
     """REVIEW_REQUIRED when the provider contradicts our context: tax where we
     hold no registration or obligation, another tax date or currency,
-    components that don't add up, or zero tax without a recognised reason."""
+    components that don't add up, zero tax without a recognised reason, or
+    an exemption without a valid certificate on file.
+
+    A registration covers its jurisdiction's districts for the same tax type
+    (a state registration covers that state's local sales taxes); a different
+    tax type is never covered (QST is not covered by a GST registration)."""
     def review(reason):
         raise _Refusal(TaxQuoteStatus.REVIEW_REQUIRED, "PROVIDER_CONTRADICTS_CONTEXT",
                        f"Line {line_number}: {reason}", warnings=warnings)
 
     if result.outcome == TaxOutcome.NOT_DETERMINED:
         return result
-    held = {a.jurisdiction_id for a in activations}
-    applied = set(result.applied_jurisdiction_ids or []) | {c.jurisdiction_id for c in result.components
-                                                           if c.jurisdiction_id is not None}
-    if applied - held:
+    held = {(a.jurisdiction_id, a.tax_type_id) for a in activations}
+    held_jurisdictions = {a.jurisdiction_id for a in activations}
+
+    def covered(jurisdiction_id, tax_type_id) -> bool:
+        chain = _ancestry(db, jurisdiction_id) if db is not None else [jurisdiction_id]
+        if tax_type_id is None:
+            return any(j in held_jurisdictions for j in chain)
+        return any((j, tax_type_id) in held for j in chain)
+
+    applied = {(c.jurisdiction_id, c.tax_type_id) for c in result.components if c.jurisdiction_id is not None}
+    applied |= {(j, None) for j in (result.applied_jurisdiction_ids or [])}
+    if any(not covered(j, t) for j, t in applied):
         review("the provider applied tax in a jurisdiction where this entity has no recorded registration or "
                "obligation.")
     if result.provider_tax_date is not None and result.provider_tax_date != tax_date:
@@ -539,6 +626,8 @@ def _check_provider_line(engine, line_number: int, activations, result: LineResu
         if code not in REASON_CODES:
             review(f"the provider returned no tax {'with unrecognised reason ' + code if code else 'and no reason'} "
                    "although this entity holds a registration here.")
+        if REASON_CODES[code] == TaxOutcome.EXEMPT and not claims:
+            review("the provider exempted the line, but no valid exemption certificate is on file.")
         components = result.components or [ComponentResult(
             component_code=f"{engine.name}:{code}", rate_percent=Decimal("0"), rate_source="PROVIDER",
             jurisdiction_id=a.jurisdiction_id, tax_type_id=a.tax_type_id, activation_id=a.id, reporting_code=code)

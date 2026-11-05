@@ -226,6 +226,53 @@ router.add_api_route("/regime-changes/{change_id}/reject", _decide_regime(False)
                      dependencies=[Depends(get_current_finance_approver)], summary="Reject a regime change")
 
 
+# ── Pseudonymous customer reference key (Phase 4c) ──────────────────────
+
+@router.get("/pseudonym-key", summary="Pseudonym key status (fingerprints only, never the key)")
+def pseudonym_key_status(db: Session = Depends(get_db), organization_id: int = Depends(get_organization_id)):
+    from app.modules.tax.pseudonym import PseudonymKeyService
+
+    return PseudonymKeyService(db).status(organization_id)
+
+
+@router.get("/pseudonym-key/acknowledgements", summary="Pseudonym key acknowledgements")
+def list_pseudonym_key_acknowledgements(page: PageParams = Depends(), db: Session = Depends(get_db),
+                                        organization_id: int = Depends(get_organization_id)):
+    from app.modules.tax.pseudonym import PseudonymKeyService, view_key_record
+
+    rows, next_cursor = paginate(PseudonymKeyService(db).list(organization_id), page)
+    return {"items": [view_key_record(r) for r in rows], "next_cursor": next_cursor}
+
+
+@router.post("/pseudonym-key/acknowledgements", status_code=status.HTTP_201_CREATED,
+             summary="Propose acknowledging the current pseudonym key (after remapping)",
+             dependencies=[Depends(get_current_billing_admin)])
+def propose_pseudonym_key_acknowledgement(data: ReasonRequest, db: Session = Depends(get_db),
+                                          organization_id: int = Depends(get_organization_id),
+                                          current_user=Depends(get_current_user)):
+    from app.modules.tax.pseudonym import PseudonymKeyService, view_key_record
+
+    return view_key_record(PseudonymKeyService(db).propose(organization_id, current_user.id, data.reason))
+
+
+def _decide_pseudonym_key(approve: bool):
+    def handler(record_id: int, data: DecisionRequest, db: Session = Depends(get_db),
+                organization_id: int = Depends(get_organization_id), current_user=Depends(get_current_user)):
+        from app.modules.tax.pseudonym import PseudonymKeyService, view_key_record
+
+        return view_key_record(PseudonymKeyService(db).decide(organization_id, current_user.id, record_id,
+                                                              approve=approve, reason=data.reason))
+    return handler
+
+
+router.add_api_route("/pseudonym-key/acknowledgements/{record_id}/approve", _decide_pseudonym_key(True),
+                     methods=["POST"], dependencies=[Depends(get_current_finance_approver)],
+                     summary="Approve a pseudonym key acknowledgement (different user)")
+router.add_api_route("/pseudonym-key/acknowledgements/{record_id}/reject", _decide_pseudonym_key(False),
+                     methods=["POST"], dependencies=[Depends(get_current_finance_approver)],
+                     summary="Reject a pseudonym key acknowledgement")
+
+
 @router.post("/regime-changes/{change_id}/withdraw", summary="Withdraw a proposed regime change",
              dependencies=[Depends(get_current_org_admin)])
 def withdraw_regime_change(change_id: int, db: Session = Depends(get_db),
@@ -453,6 +500,16 @@ def record_tax_address(customer_id: int, data: TaxAddressCreate, db: Session = D
                        organization_id: int = Depends(get_organization_id), current_user=Depends(get_current_user)):
     return view_address(BuyerEvidenceService(db).record_address(
         organization_id, current_user.id, customer_id, **data.model_dump()))
+
+
+@router.post("/customers/{customer_id}/tax-addresses/{address_id}/resolve", status_code=status.HTTP_201_CREATED,
+             summary="Resolve a US tax address to its tax districts (Phase 4c)",
+             dependencies=[Depends(get_current_billing_admin)])
+def resolve_tax_address(customer_id: int, address_id: int, db: Session = Depends(get_db),
+                        organization_id: int = Depends(get_organization_id), current_user=Depends(get_current_user)):
+    from app.modules.tax.address_resolver import resolve_address, view_resolution
+
+    return view_resolution(resolve_address(db, organization_id, current_user.id, address_id, customer_id=customer_id))
 
 
 @router.post("/customers/{customer_id}/tax-ids", status_code=status.HTTP_201_CREATED,

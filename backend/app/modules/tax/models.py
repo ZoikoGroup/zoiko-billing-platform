@@ -371,6 +371,50 @@ class CustomerExemptionCertificate(Base):
     revoked_at         = Column(DateTime(timezone=True), nullable=True)
 
 
+class TaxAddressResolution(Base):
+    """Phase 4c: one resolution of a buyer tax address to tax jurisdictions,
+    kept as write-once evidence (resolver, source, precision, candidates)."""
+    __tablename__ = "tax_address_resolutions"
+
+    id                 = Column(Integer, primary_key=True, index=True)
+    organization_id    = _org_fk()
+    address_id         = _fk("customer_tax_addresses.id", nullable=False, index=True)
+    resolver_name      = Column(String(100), nullable=False)
+    source             = Column(String(200), nullable=False)
+    dataset_version    = Column(String(100), nullable=True)        # the resolver's dataset, when it says
+    status             = Column(String(20), nullable=False)        # ResolutionStatus name
+    precision          = Column(String(20), nullable=True)         # ResolutionPrecision name
+    candidates         = Column(Integer, nullable=False, default=0)
+    jurisdiction_codes = Column(JSON, nullable=False)
+    resolved_by        = _user_fk()
+    resolved_at        = Column(DateTime(timezone=True), nullable=False)
+
+
+class TaxPseudonymKeyRecord(Base):
+    """Phase 4c: which TAX_PROVIDER_PSEUDONYM_KEY a tenant's provider records
+    were made under, by fingerprint (never the key). A changed key blocks
+    provider issuing until two people acknowledge the new fingerprint (after
+    remapping the provider's customer records)."""
+    __tablename__ = "tax_pseudonym_key_records"
+
+    id              = Column(Integer, primary_key=True, index=True)
+    organization_id = _org_fk()
+    fingerprint     = Column(String(32), nullable=True)            # None = no key
+    reason          = Column(Text, nullable=True)
+    status          = Column(CaseInsensitiveEnum(TenantApprovalStatus), nullable=False, index=True,
+                             default=TenantApprovalStatus.PROPOSED, server_default=TenantApprovalStatus.PROPOSED.name)
+    proposed_by     = _user_fk()
+    approved_by     = _user_fk()
+    approved_at     = Column(DateTime(timezone=True), nullable=True)
+    decision_reason = Column(Text, nullable=True)
+    created_at      = Column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        Index("uq_tax_pseudonym_key_records_one_open", "organization_id", unique=True,
+              sqlite_where=text("status = 'PROPOSED'"), postgresql_where=text("status = 'PROPOSED'")),
+    )
+
+
 class TaxEvidenceFile(Base):
     """Tenant-scoped, content-addressed, write-once evidence documents
     (exemption certificates). Never served to platform roles (T13); deleted
@@ -583,3 +627,10 @@ def _guard_certificate_evidence_write_once(session, flush_context, instances):
             hist = sa_inspect(obj).attrs["evidence_file_id"].history
             if hist.deleted and hist.deleted[0] is not None:
                 raise TaxRecordFrozenError(f"Exemption certificate {obj.id} already has its evidence document.")
+
+ADDRESS_RESOLUTION_FROZEN_FIELDS = ("organization_id", "address_id", "resolver_name", "source", "dataset_version",
+                                    "status", "precision", "candidates", "jurisdiction_codes", "resolved_by",
+                                    "resolved_at")
+PSEUDONYM_KEY_FROZEN_FIELDS = ("organization_id", "fingerprint", "reason", "proposed_by", "created_at")
+register_tenant_record_guard(TaxAddressResolution.__table__, ADDRESS_RESOLUTION_FROZEN_FIELDS)
+register_tenant_record_guard(TaxPseudonymKeyRecord.__table__, PSEUDONYM_KEY_FROZEN_FIELDS)

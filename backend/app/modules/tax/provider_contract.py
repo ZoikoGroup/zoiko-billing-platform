@@ -189,6 +189,10 @@ PROVIDER_REGISTRY: dict = {}
 
 def provider_definition(name: str) -> Optional[ProviderDefinition]:
     return PROVIDER_REGISTRY.get(name)
+#: What the payload's "buyer" may carry (Phase 4c): the place-of-supply
+#: address, a pseudonymous customer reference and the exemption claims.
+ALLOWED_BUYER_FIELDS = frozenset({"address", "customer_ref", "exemptions"})
+
 ALLOWED_LINE_FIELDS = frozenset({
     "line_id", "quantity", "net_amount", "line_discount", "document_discount", "tax_code", "is_tax_inclusive",
     "components",

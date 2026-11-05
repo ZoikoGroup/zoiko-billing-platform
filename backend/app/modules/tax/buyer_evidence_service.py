@@ -87,9 +87,15 @@ class BuyerEvidenceService:
                 query = query.filter(model.superseded_at.is_(None))
             return query.order_by(model.id).all()
 
+        from app.modules.tax.address_resolver import latest_resolution, view_resolution
+
+        def address(a):
+            r = latest_resolution(self.db, organization_id, a.id)
+            return {**view_address(a), "resolution": view_resolution(r) if r is not None else None}
+
         return {
             "customer_id": customer_id,
-            "addresses": [view_address(a) for a in q(CustomerTaxAddress)],
+            "addresses": [address(a) for a in q(CustomerTaxAddress)],
             "tax_ids": [view_tax_id(t) for t in q(CustomerTaxId)],
             "exemption_certificates": [view_certificate(c) for c in q(CustomerExemptionCertificate)],
         }

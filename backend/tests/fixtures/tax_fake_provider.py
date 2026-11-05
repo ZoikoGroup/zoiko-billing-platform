@@ -28,6 +28,7 @@ from decimal import Decimal
 from app.modules.tax.engines import ComponentResult, EngineRequest, LineResult
 from app.modules.tax.enums import RoundingMode, TaxOutcome
 from app.modules.tax.provider_contract import (
+    ALLOWED_BUYER_FIELDS,
     ALLOWED_COMMIT_FIELDS,
     PROVIDER_REGISTRY,
     ProviderDefinition,
@@ -69,6 +70,7 @@ class FakeTaxProvider(ProviderAdapter):
         self.adjustments: list = []
         self.test_calls: list = []
         self.credentials_ok = True
+        self.rates: dict = {}
 
     # ── fault injection ──
     @property
@@ -91,10 +93,17 @@ class FakeTaxProvider(ProviderAdapter):
     def capabilities(self) -> ProviderCapabilities:
         return ProviderCapabilities(markets=(("GB", "VAT"),), void=True, link_reference=self.link, mode=self.mode)
 
+    def rate_for(self, activation) -> Decimal:
+        """Plumbing rates per (jurisdiction code, tax type): test values, not law."""
+        key = (activation.jurisdiction.code if activation.jurisdiction else None,
+               activation.tax_type.code if activation.tax_type else None)
+        return Decimal(self.rates.get(key, self.rate))
+
     def determine(self, request: EngineRequest) -> LineResult:
         if self._fires("determine_error"):
             raise ProviderError(f"simulated outage (credential {self.secret[:3]}…)")
-        components = [ComponentResult(component_code=f"FAKE:{a.jurisdiction_id}:{a.tax_type_id}", rate_percent=self.rate,
+        components = [ComponentResult(component_code=f"FAKE:{a.jurisdiction_id}:{a.tax_type_id}",
+                                      rate_percent=self.rate_for(a),
                                       rate_source="PROVIDER", jurisdiction_id=a.jurisdiction_id,
                                       tax_type_id=a.tax_type_id, activation_id=a.id)
                       for a in request.activations]
@@ -108,6 +117,9 @@ class FakeTaxProvider(ProviderAdapter):
         unexpected = set(payload) - ALLOWED_COMMIT_FIELDS
         if unexpected:
             raise ProviderRefused(f"unexpected payload fields {sorted(unexpected)}")
+        unexpected = set(payload.get("buyer") or {}) - ALLOWED_BUYER_FIELDS
+        if unexpected:
+            raise ProviderRefused(f"unexpected buyer fields {sorted(unexpected)}")
         if self._fires("commit_error"):
             raise ProviderRefused("simulated refusal")
         if self._fires("rate_limited"):

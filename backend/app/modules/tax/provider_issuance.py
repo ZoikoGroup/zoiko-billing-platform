@@ -207,6 +207,7 @@ def build_commit_payload(db: Session, quote: TaxQuote, row: TaxProviderOutbox) -
     seller = db.get(SellerLegalEntity, quote.seller_entity_id) if quote.seller_entity_id else None
     supply = dict(quote.supply_address or {})
     supply.pop("address_id", None)
+    supply.pop("resolution_id", None)
     return {
         "idempotency_key": row.idempotency_key,
         "document_reference": row.document_reference,
@@ -216,7 +217,7 @@ def build_commit_payload(db: Session, quote: TaxQuote, row: TaxProviderOutbox) -
         "seller": {"country_code": getattr(seller, "country_code", None),
                    "subdivision_code": getattr(seller, "subdivision_code", None),
                    "registered_jurisdictions": registered_jurisdictions(db, quote)},
-        "buyer": {"address": supply},
+        "buyer": _buyer_payload(db, quote, row, supply),
         "lines": [{
             "line_id": line.document_line_id, "quantity": str(line.quantity),
             "net_amount": str(line.taxable_base), "line_discount": str(line.line_discount_unrounded),
@@ -227,6 +228,30 @@ def build_commit_payload(db: Session, quote: TaxQuote, row: TaxProviderOutbox) -
         } for line in quote.lines],
         "totals": {"tax": str(quote.tax_amount), "total": str(quote.total_amount)},
     }
+
+
+def _buyer_payload(db: Session, quote: TaxQuote, row: TaxProviderOutbox, supply: dict) -> dict:
+    """The buyer: address, pseudonymous reference and exemption claims
+    (jurisdiction, tax type and reason only; no certificate numbers or files)."""
+    from app.modules.billing.models import Invoice
+    from app.modules.tax.registry_models import TaxJurisdiction, TaxTypeDefinition
+
+    from app.modules.tax.pseudonym import customer_pseudonym
+
+    buyer = {"address": supply}
+    invoice = db.get(Invoice, row.invoice_id) if row.invoice_id else None
+    ref = customer_pseudonym(quote.organization_id, getattr(invoice, "customer_id", None))
+    if ref:
+        buyer["customer_ref"] = ref
+    if quote.exemption_claims:
+        exemptions = []
+        for c in quote.exemption_claims:
+            j = db.get(TaxJurisdiction, c["jurisdiction_id"])
+            t = db.get(TaxTypeDefinition, c["tax_type_id"]) if c.get("tax_type_id") else None
+            exemptions.append({"jurisdiction_code": j.code if j else None, "tax_type": t.code if t else None,
+                               "reason_code": c.get("reason_code")})
+        buyer["exemptions"] = exemptions
+    return buyer
 
 
 def registered_jurisdictions(db: Session, quote: TaxQuote) -> list:
@@ -376,7 +401,9 @@ class ProviderIssuanceService:
             raise ProviderIssuanceBlocked(
                 f"The {quote.provider_name} connection is estimate-only: it can quote but can never issue. "
                 "The invoice stays a draft.")
-        problem = self.health.circuit_problem(quote.provider_name) or self.health.heartbeat_problem()
+        from app.modules.tax.pseudonym import PseudonymKeyService
+
+        problem = self.health.circuit_problem(quote.provider_name) or self.health.heartbeat_problem()             or PseudonymKeyService(self.db).problem(invoice.organization_id)
         if problem:
             self._refuse(quote, problem)
         key = idempotency_key(quote)
@@ -438,6 +465,14 @@ class ProviderIssuanceService:
         if self.health.circuit_problem(row.provider_name):
             row.next_attempt_at = now + timedelta(seconds=settings.TAX_PROVIDER_CB_COOLDOWN_SECONDS)
             row.last_error = "circuit open"
+            self.db.commit()
+            return row
+        from app.modules.tax.pseudonym import PseudonymKeyService
+
+        key_problem = PseudonymKeyService(self.db).problem(row.organization_id)
+        if key_problem:                                         # nothing is sent under an unacknowledged key
+            row.next_attempt_at = now + timedelta(seconds=settings.TAX_PROVIDER_CB_COOLDOWN_SECONDS)
+            row.last_error = key_problem
             self.db.commit()
             return row
 

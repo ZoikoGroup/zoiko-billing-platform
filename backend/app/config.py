@@ -392,6 +392,14 @@ class Settings(BaseSettings):
     TAX_PROVIDER_PRODUCTION_CREDENTIALS_ALLOWED: bool = False
     # Exemption-certificate evidence uploads (PDF, PNG, JPEG).
     TAX_EVIDENCE_MAX_BYTES: int = 5 * 1024 * 1024
+    # Phase 4c: HMAC key for the pseudonymous customer reference sent to a
+    # provider (never the customer id, name or email). Stable per deployment;
+    # rotating it needs the remapping step in TAX_PHASE4C.md. Unset = no
+    # customer reference is sent.
+    TAX_PROVIDER_PSEUDONYM_KEY: str = ""
+    # Phase 4c: how long a US address resolution stays valid. Older ones (or
+    # ones on a superseded resolver dataset) must be resolved again.
+    TAX_ADDRESS_RESOLUTION_VALID_DAYS: int = 365
 
     # ── ZB-COM-003: Trial-ending-soon warning (Prompt 4) ─────────────────
     # Days before trial_ends_at to fire the proactive warning email.

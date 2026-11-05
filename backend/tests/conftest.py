@@ -25,6 +25,8 @@ if not _settings.TAX_PROVIDER_ENCRYPTION_KEY:
     from cryptography.fernet import Fernet as _Fernet
 
     _settings.TAX_PROVIDER_ENCRYPTION_KEY = _Fernet.generate_key().decode()   # test-only, per session
+if not _settings.TAX_PROVIDER_PSEUDONYM_KEY:
+    _settings.TAX_PROVIDER_PSEUDONYM_KEY = "test-pseudonym-key-per-session"     # test-only
 from app.modules.organizations.models import Organization
 from app.modules.billing.models import (
     BillingCustomer,
