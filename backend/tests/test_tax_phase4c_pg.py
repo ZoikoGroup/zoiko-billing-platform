@@ -111,3 +111,23 @@ def test_pseudonym_key_record_is_frozen(pg, world):
     record = pg.query(TaxPseudonymKeyRecord).filter(TaxPseudonymKeyRecord.organization_id == world["org"].id).one()
     _rejects(pg, "UPDATE tax_pseudonym_key_records SET fingerprint = 'x' WHERE id = :id", {"id": record.id})
     _rejects(pg, "DELETE FROM tax_pseudonym_key_records WHERE id = :id", {"id": record.id})
+
+
+def test_manual_resolution_is_frozen_and_its_evidence_write_once(pg, world):
+    from app.modules.tax.address_resolver import ManualResolutionService
+
+    c, a = buyer(world, "5 Split Rd")                                  # AMBIGUOUS
+    svc = ManualResolutionService(pg)
+    row = svc.propose(world["org"].id, world["maker"].id, c.id, a.id,
+                      jurisdiction_codes=["US", "US-CA", "US-CA-LA", "US-CA-LA-D2"], reason="county lookup")
+    svc.attach_evidence(world["org"].id, world["maker"].id, row.id,
+                        content=b"%PDF-1.7\n1 0 obj << >> endobj\n%%EOF\n", media_type="application/pdf")
+    svc.decide(world["org"].id, world["checker"].id, row.id, approve=True)
+    pg.flush()
+    triggers = set(pg.execute(text("SELECT tgname FROM pg_trigger WHERE NOT tgisinternal")).scalars())
+    assert {"trg_tax_manual_resolution_requests_guard",
+            "trg_tax_manual_resolution_requests_evidence_write_once"} <= triggers
+    _rejects(pg, "UPDATE tax_manual_resolution_requests SET jurisdiction_codes = '[]' WHERE id = :id", {"id": row.id})
+    _rejects(pg, "UPDATE tax_manual_resolution_requests SET evidence_file_id = NULL WHERE id = :id", {"id": row.id})
+    _rejects(pg, "DELETE FROM tax_manual_resolution_requests WHERE id = :id", {"id": row.id})
+    _rejects(pg, "UPDATE tax_address_resolutions SET precision = 'ROOFTOP' WHERE id = :id", {"id": row.resolution_id})

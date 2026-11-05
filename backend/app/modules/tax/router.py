@@ -54,6 +54,7 @@ from app.modules.tax.policy_schemas import (
     RegimeChangeRequest,
     RegistrationCreate,
     RegistrationUpdate,
+    ManualResolutionCreate,
     TaxAddressCreate,
     TaxIdCreate,
     TaxIdVerification,
@@ -253,6 +254,27 @@ def propose_pseudonym_key_acknowledgement(data: ReasonRequest, db: Session = Dep
     from app.modules.tax.pseudonym import PseudonymKeyService, view_key_record
 
     return view_key_record(PseudonymKeyService(db).propose(organization_id, current_user.id, data.reason))
+
+
+@router.post("/pseudonym-key/remap-export", dependencies=[Depends(get_current_billing_admin)],
+             summary="Old -> new customer references for the provider, during a key rotation (CSV)")
+def pseudonym_key_remap_export(db: Session = Depends(get_db), organization_id: int = Depends(get_organization_id),
+                               current_user=Depends(get_current_user)):
+    import csv
+    import io
+
+    from fastapi.responses import Response
+
+    from app.modules.tax.pseudonym import PseudonymKeyService
+
+    rows = PseudonymKeyService(db).remap_export(organization_id, current_user.id)
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(["old_customer_ref", "new_customer_ref"])
+    writer.writerows(rows)
+    return Response(content=out.getvalue(), media_type="text/csv",
+                    headers={"Cache-Control": "no-store",
+                             "Content-Disposition": 'attachment; filename="pseudonym-remap.csv"'})
 
 
 def _decide_pseudonym_key(approve: bool):
@@ -510,6 +532,86 @@ def resolve_tax_address(customer_id: int, address_id: int, db: Session = Depends
     from app.modules.tax.address_resolver import resolve_address, view_resolution
 
     return view_resolution(resolve_address(db, organization_id, current_user.id, address_id, customer_id=customer_id))
+
+
+# ── Manual address resolution (Phase 4d): two people and evidence ──
+
+@router.get("/manual-resolutions", summary="Manual address resolutions (proposals and decisions)")
+def list_manual_resolutions(address_id: Optional[int] = Query(None), page: PageParams = Depends(),
+                            db: Session = Depends(get_db), organization_id: int = Depends(get_organization_id)):
+    from app.modules.tax.address_resolver import ManualResolutionService, view_manual_resolution
+
+    rows, next_cursor = paginate(ManualResolutionService(db).list(organization_id, address_id), page)
+    return {"items": [view_manual_resolution(r) for r in rows], "next_cursor": next_cursor}
+
+
+@router.post("/customers/{customer_id}/tax-addresses/{address_id}/manual-resolutions",
+             status_code=status.HTTP_201_CREATED, dependencies=[Depends(get_current_billing_admin)],
+             summary="Propose the districts for an address the resolver couldn't place")
+def propose_manual_resolution(customer_id: int, address_id: int, data: ManualResolutionCreate,
+                              db: Session = Depends(get_db), organization_id: int = Depends(get_organization_id),
+                              current_user=Depends(get_current_user)):
+    from app.modules.tax.address_resolver import ManualResolutionService, view_manual_resolution
+
+    return view_manual_resolution(ManualResolutionService(db).propose(
+        organization_id, current_user.id, customer_id, address_id, jurisdiction_codes=data.jurisdiction_codes,
+        reason=data.reason))
+
+
+@router.post("/manual-resolutions/{request_id}/evidence", dependencies=[Depends(get_current_billing_admin)],
+             summary="Attach the evidence document once (PDF, PNG or JPEG)")
+async def attach_manual_resolution_evidence(request_id: int, file: UploadFile = File(...),
+                                            sha256: Optional[str] = Form(None, max_length=64),
+                                            db: Session = Depends(get_db),
+                                            organization_id: int = Depends(get_organization_id),
+                                            current_user=Depends(get_current_user)):
+    from app.config import settings
+    from app.modules.tax.address_resolver import ManualResolutionService, view_manual_resolution
+
+    content = await file.read(settings.TAX_EVIDENCE_MAX_BYTES + 1)
+    return view_manual_resolution(ManualResolutionService(db).attach_evidence(
+        organization_id, current_user.id, request_id, content=content, media_type=file.content_type or "",
+        filename=file.filename, expected_sha256=sha256))
+
+
+@router.get("/manual-resolutions/{request_id}/evidence", summary="Download a manual resolution's evidence")
+def download_manual_resolution_evidence(request_id: int, db: Session = Depends(get_db),
+                                        organization_id: int = Depends(get_organization_id)):
+    from fastapi.responses import Response
+
+    from app.modules.tax.address_resolver import ManualResolutionService
+
+    stored = ManualResolutionService(db).evidence(organization_id, request_id)
+    return Response(content=stored.content, media_type=stored.media_type,
+                    headers={"X-Content-SHA256": stored.sha256, "Cache-Control": "no-store",
+                             "Content-Disposition": f'attachment; filename="manual-resolution-{request_id}"'})
+
+
+def _decide_manual_resolution(approve: bool):
+    def handler(request_id: int, data: DecisionRequest, db: Session = Depends(get_db),
+                organization_id: int = Depends(get_organization_id), current_user=Depends(get_current_user)):
+        from app.modules.tax.address_resolver import ManualResolutionService, view_manual_resolution
+
+        return view_manual_resolution(ManualResolutionService(db).decide(
+            organization_id, current_user.id, request_id, approve=approve, reason=data.reason))
+    return handler
+
+
+router.add_api_route("/manual-resolutions/{request_id}/approve", _decide_manual_resolution(True), methods=["POST"],
+                     dependencies=[Depends(get_current_finance_approver)],
+                     summary="Approve a manual resolution (different user)")
+router.add_api_route("/manual-resolutions/{request_id}/reject", _decide_manual_resolution(False), methods=["POST"],
+                     dependencies=[Depends(get_current_finance_approver)], summary="Reject a manual resolution")
+
+
+@router.post("/manual-resolutions/{request_id}/withdraw", dependencies=[Depends(get_current_billing_admin)],
+             summary="Withdraw a proposed manual resolution")
+def withdraw_manual_resolution(request_id: int, db: Session = Depends(get_db),
+                               organization_id: int = Depends(get_organization_id),
+                               current_user=Depends(get_current_user)):
+    from app.modules.tax.address_resolver import ManualResolutionService, view_manual_resolution
+
+    return view_manual_resolution(ManualResolutionService(db).withdraw(organization_id, current_user.id, request_id))
 
 
 @router.post("/customers/{customer_id}/tax-ids", status_code=status.HTTP_201_CREATED,

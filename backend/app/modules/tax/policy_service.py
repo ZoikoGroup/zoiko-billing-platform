@@ -54,6 +54,15 @@ MANDATORY_GATES = frozenset({
 })
 
 
+#: Gate 05 is about the external provider: it can be NOT_APPLICABLE for a
+#: native pack or tenant rate, never for a provider market (launch-gate gap G1).
+PROVIDER_MANDATORY_GATES = MANDATORY_GATES | {MarketGate.PROVIDER_CONTRACTS_AND_RECOVERY}
+
+
+def mandatory_gates(mode: TaxOperatingMode) -> frozenset:
+    return PROVIDER_MANDATORY_GATES if mode == TaxOperatingMode.PROVIDER_APPROVED else MANDATORY_GATES
+
+
 # ── ORM guard: content frozen once submitted; ACTIVE only -> SUPERSEDED ──
 
 _CONTENT = {TaxMarketAvailabilityVersion: AVAILABILITY_CONTENT_FIELDS, TaxCodeSetVersion: CODE_SET_CONTENT_FIELDS,
@@ -329,8 +338,8 @@ class MarketAvailabilityService(_VersionWorkflow):
         if row.mode in CALCULATING_MODES and statuses:
             for gate in MarketGate:
                 status = statuses.get(gate.name)
-                if gate in MANDATORY_GATES and status != GateStatus.PASSED:
-                    errors.append(f"A calculating mode requires gate {gate.name} PASSED (§13.2).")
+                if gate in mandatory_gates(row.mode) and status != GateStatus.PASSED:
+                    errors.append(f"A {row.mode.name} market requires gate {gate.name} PASSED (§13.2).")
                 elif gate not in MANDATORY_GATES and status not in (GateStatus.PASSED, GateStatus.NOT_APPLICABLE):
                     errors.append(f"A calculating mode requires gate {gate.name} PASSED or NOT_APPLICABLE (§13.2).")
 
@@ -557,6 +566,40 @@ def active_code_set(db: Session, code: str = "ZB-TC") -> Optional[TaxCodeSetVers
     return db.query(TaxCodeSetVersion).filter(
         TaxCodeSetVersion.code == code, TaxCodeSetVersion.status == PlatformVersionStatus.ACTIVE,
     ).first()
+
+
+#: What each published mode means to Sales, Support and tenants (§15: a
+#: capability registry with supported / limited / unsupported states).
+COVERAGE_STATES = {
+    TaxOperatingMode.NATIVE_RULEPACK_APPROVED: ("SUPPORTED", "Calculated by Zoiko's approved rule pack."),
+    TaxOperatingMode.PROVIDER_APPROVED: ("SUPPORTED", "Calculated through the contracted tax provider."),
+    TaxOperatingMode.TENANT_CONFIG_APPROVED: ("LIMITED", "Calculated from the tenant's own approved rate; "
+                                                         "the tenant is responsible for it."),
+    TaxOperatingMode.REFERENCE_ONLY: ("LIMITED", "Reference information only; tax is not calculated."),
+    TaxOperatingMode.SUSPENDED: ("UNSUPPORTED", "Temporarily suspended; tax is not calculated."),
+    TaxOperatingMode.UNSUPPORTED: ("UNSUPPORTED", "Not supported; tax is not calculated."),
+}
+COVERAGE_STATEMENT = ("Coverage is listed per jurisdiction, tax type and transaction class. Anything not listed is "
+                      "UNSUPPORTED. Zoiko Billing does not claim global tax compliance; a tenant's own "
+                      "registrations and approvals are still required.")
+
+
+def coverage(db: Session) -> list:
+    """Published market availability only (launch gate 07): no drafts, no
+    gate evidence, no tenant data."""
+    rows = db.query(TaxMarketAvailabilityVersion).filter(
+        TaxMarketAvailabilityVersion.status == PlatformVersionStatus.ACTIVE).all()
+    out = []
+    for r in rows:
+        state, meaning = COVERAGE_STATES.get(r.mode, ("UNSUPPORTED", "Not supported; tax is not calculated."))
+        out.append({
+            "jurisdiction_code": r.jurisdiction.code if r.jurisdiction else None,
+            "jurisdiction_name": r.jurisdiction.name if r.jurisdiction else None,
+            "tax_type": r.tax_type.code if r.tax_type else None,
+            "transaction_class": r.transaction_class.name, "mode": r.mode.name, "state": state,
+            "meaning": meaning, "published_at": r.published_at,
+        })
+    return sorted(out, key=lambda c: (c["jurisdiction_code"] or "", c["tax_type"] or "", c["transaction_class"]))
 
 
 def view_availability(row: TaxMarketAvailabilityVersion) -> dict:

@@ -379,6 +379,33 @@ Each issue's field names the address role, for example
 relevant certificate is expired, not yet valid, not ACTIVE, or has no
 evidence document.
 
+### Manual address resolution (Phase 4d)
+
+For an address whose latest resolution is AMBIGUOUS or NOT_FOUND.
+
+```
+GET  /manual-resolutions?address_id=&limit=&cursor=          -> {items: [ManualResolution], next_cursor}
+POST /customers/{id}/tax-addresses/{address_id}/manual-resolutions   (billing admin)
+     {"jurisdiction_codes": ["US", "US-CA", "US-CA-LA", "US-CA-LA-D2"], "reason": "..."}   -> 201
+POST /manual-resolutions/{id}/evidence   (billing admin)  multipart: file=<PDF|PNG|JPEG>, sha256=<optional>
+GET  /manual-resolutions/{id}/evidence                        -> the file (X-Content-SHA256; no-store)
+POST /manual-resolutions/{id}/approve|reject   (finance approver, not the proposer)  {"reason"?}
+POST /manual-resolutions/{id}/withdraw   (billing admin)
+```
+
+**ManualResolution:**
+
+```json
+{"id": 3, "address_id": 31, "jurisdiction_codes": ["US", "US-CA", "US-CA-LA", "US-CA-LA-D2"],
+ "reason": "...", "evidence_attached": true, "status": "APPROVED", "proposed_by": 7, "approved_by": 8,
+ "approved_at": "...", "decision_reason": null, "resolution_id": 12, "created_at": "..."}
+```
+
+- Approval needs the evidence attached. It writes a resolution with
+  `precision: "MANUAL"`, which then shows on the address in tax evidence.
+- **Errors (400):** the address is already resolved or was never resolved,
+  bad codes, an open proposal already exists, or the address was replaced.
+
 ### Pseudonym key (T-screen: Provider Connections)
 
 ```
@@ -400,6 +427,37 @@ POST /pseudonym-key/acknowledgements/{id}/approve|reject (finance approver, not 
 - `blocked_reason` is `"pseudonym key changed — remap required"` when
   provider quoting and issuing are blocked. Show it with the acknowledge
   action.
+- **The status also shows** `previous_fingerprint` and
+  `remap_export_available` (Phase 4d).
+- **When the remap export is available**, offer
+  `POST /pseudonym-key/remap-export` (billing admin). It returns a CSV of
+  `old_customer_ref,new_customer_ref` with `Cache-Control: no-store`. It
+  returns 400 when no rotation is in progress or the previous key isn't the
+  acknowledged one.
+
+## Published coverage (launch gate 07)
+
+```
+GET /api/v1/tax/coverage?state=SUPPORTED|LIMITED|UNSUPPORTED&limit=&cursor=     (any signed-in user)
+ -> {"statement": "...anything not listed is UNSUPPORTED... does not claim global tax compliance...",
+     "items": [Coverage], "next_cursor": null}
+```
+
+**Coverage:**
+
+```json
+{"jurisdiction_code": "GB", "jurisdiction_name": "United Kingdom", "tax_type": "VAT",
+ "transaction_class": "B2B_SERVICES", "mode": "NATIVE_RULEPACK_APPROVED", "state": "SUPPORTED",
+ "meaning": "Calculated by Zoiko's approved rule pack.", "published_at": "..."}
+```
+
+- **Published markets only.** No drafts, gate evidence or tenant data.
+- **States:**
+  - Native and provider modes are SUPPORTED.
+  - A tenant's own rate and reference-only markets are LIMITED.
+  - Suspended and unsupported markets are UNSUPPORTED.
+- **Show the statement** with the list. Sales/Support and tenants read this
+  page; never promise a market that isn't SUPPORTED here.
 
 ## Tests
 

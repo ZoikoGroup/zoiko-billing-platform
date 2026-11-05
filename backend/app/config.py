@@ -416,6 +416,11 @@ class Settings(BaseSettings):
     # (projects/<p>/secrets/<name>/versions/<n|latest>) instead of the plain
     # setting. Cached in memory for TAX_SECRET_CACHE_TTL_SECONDS.
     TAX_PROVIDER_PSEUDONYM_KEY_SECRET: str = ""
+    # Phase 4d: the key being rotated OUT, set only during a rotation so the
+    # remapping export can pair old and new customer references. Same rules
+    # as the current key (a numbered Secret Manager version in production).
+    TAX_PROVIDER_PSEUDONYM_KEY_PREVIOUS: str = ""
+    TAX_PROVIDER_PSEUDONYM_KEY_PREVIOUS_SECRET: str = ""
     TAX_PROVIDER_ENCRYPTION_KEY_SECRET: str = ""
     TAX_SECRET_CACHE_TTL_SECONDS: int = 300
     # Disabled (rotated-out) credential versions are destroyed by
