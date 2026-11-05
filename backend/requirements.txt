@@ -74,6 +74,10 @@ pytest>=8.0.0
 # ZB-TAX-ARCH-001 Phase 4d-0: provider credentials in GCP Secret Manager
 # (Application Default Credentials; imported only when the gcp store is used).
 google-cloud-secret-manager==2.20.2
+# ACCEPTED RESIDUAL RISK (extends the python-jose/pyasn1 note above):
 # google-auth pulls pyasn1-modules; 0.4.x needs pyasn1>=0.6.1, which python-jose
-# refuses (see the pyasn1 note above). 0.3.0 accepts pyasn1 0.4.x.
+# refuses, so pyasn1-modules is held at 0.3.0 (accepts pyasn1 0.4.x). Low
+# exposure: google-auth parses ASN.1 only for service-account key files, and we
+# authenticate with the VM's attached service account (key files are refused).
+# FOLLOW-UP: replace python-jose (e.g. PyJWT) so both pyasn1 pins can go.
 pyasn1-modules==0.3.0

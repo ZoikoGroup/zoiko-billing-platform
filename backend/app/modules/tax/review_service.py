@@ -39,6 +39,7 @@ _KINDS = {
     "CustomerExemptionCertificate": (ReviewItemKind.CERTIFICATE_EXPIRING, ReviewItemKind.CERTIFICATE_EXPIRED),
     "CustomerTaxId": (None, ReviewItemKind.TAX_ID_VERIFICATION_EXPIRED),
     "TaxAddressResolution": (None, ReviewItemKind.ADDRESS_RESOLUTION_STALE),
+    "TaxProviderConnection": (None, ReviewItemKind.CREDENTIAL_VERSIONS_NOT_DESTROYED),
 }
 
 
@@ -53,7 +54,8 @@ class TaxReviewService:
             TaxReviewItem.status == ReviewItemStatus.OPEN,
         ).first()
 
-    def _raise(self, now, organization_id, subject_type, subject_id, due: Optional[date], expired: bool, detail: str):
+    def _raise(self, now, organization_id, subject_type, subject_id, due: Optional[date], expired: bool, detail: str,
+               owner_role: Optional[str] = None):
         expiring_kind, expired_kind = _KINDS[subject_type]
         kind = expired_kind if expired else expiring_kind
         if expired and expiring_kind is not None:
@@ -64,7 +66,8 @@ class TaxReviewService:
         if self._open(organization_id, kind, subject_type, subject_id) is not None:
             return 0
         self.db.add(TaxReviewItem(organization_id=organization_id, kind=kind, subject_type=subject_type,
-                                  subject_id=subject_id, due_date=due, detail=detail, created_at=now))
+                                  subject_id=subject_id, due_date=due, detail=detail, owner_role=owner_role,
+                                  created_at=now))
         self.db.flush()
         return 1
 
@@ -124,7 +127,11 @@ class TaxReviewService:
         return item
 
 
-def view_review_item(i: TaxReviewItem) -> dict:
+def view_review_item(i: TaxReviewItem, now: Optional[datetime] = None) -> dict:
+    created = i.created_at if i.created_at is None or i.created_at.tzinfo else i.created_at.replace(tzinfo=timezone.utc)
+    end = i.resolved_at or now or datetime.now(timezone.utc)
+    end = end if end.tzinfo else end.replace(tzinfo=timezone.utc)
     return {"id": i.id, "kind": i.kind.name, "subject_type": i.subject_type, "subject_id": i.subject_id,
             "due_date": i.due_date, "detail": i.detail, "status": i.status.name, "created_at": i.created_at,
-            "resolved_at": i.resolved_at, "resolved_by": i.resolved_by}
+            "resolved_at": i.resolved_at, "resolved_by": i.resolved_by, "owner_role": i.owner_role,
+            "age_days": (end - created).days if created else None}

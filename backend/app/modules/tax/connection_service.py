@@ -168,10 +168,19 @@ class ProviderConnectionService:
         if not (reason or "").strip():
             raise BadRequestException("A reason is required.")
         failure = None
+        through = row.credential_version
         try:
             self._store_of(row).destroy(row)                     # every stored version
         except SecretStoreUnavailable as exc:
             failure = exc.message
+            # Reconciliation retries until destroyed; a person sees it meanwhile.
+            row.credential_destroy_through = through or row.credential_destroy_through
+            from app.modules.tax.review_service import TaxReviewService
+
+            TaxReviewService(self.db)._raise(
+                _now(), row.organization_id, "TaxProviderConnection", row.id, None, True,
+                f"Credential versions not destroyed for provider connection {row.id} (revoked: {reason.strip()}); "
+                "reconciliation retries until Secret Manager confirms.", owner_role="BILLING_ADMIN")
         # Frozen either way: a failed destroy never leaves the connection usable.
         row.credential_ref, row.credential_version, row.credential_previous_version = None, None, None
         row.credential_last4 = None
@@ -281,6 +290,53 @@ class ProviderConnectionService:
                   previous_version_disabled=retired)
         self.db.commit()
         return row
+
+
+def sweep_secret_versions(db: Session, now: Optional[datetime] = None) -> dict:
+    """Run by reconciliation (Phase 4d-0): retry destroying the versions of
+    revocations that failed (resolving their review items), and destroy
+    disabled versions past TAX_SECRET_DISABLED_VERSION_RETENTION_DAYS. Each
+    connection is isolated; failures wait for the next run."""
+    from datetime import timedelta
+
+    from app.modules.tax.enums import ReviewItemKind, ReviewItemStatus
+    from app.modules.tax.models import TaxReviewItem
+
+    now = now or _now()
+    stats = {"destroy_retried": 0, "disabled_destroyed": 0, "secret_failures": 0}
+    audit = BillingAuditService(db)
+    cutoff = now - timedelta(days=settings.TAX_SECRET_DISABLED_VERSION_RETENTION_DAYS)
+    rows = db.query(TaxProviderConnection).filter(
+        TaxProviderConnection.credential_store == "gcp",
+        (TaxProviderConnection.credential_destroy_through.isnot(None)) |
+        (TaxProviderConnection.credential_disabled_versions.isnot(None))).order_by(TaxProviderConnection.id).all()
+    for row in rows:
+        store = GcpSecretManagerStore(db)
+        try:
+            if row.credential_destroy_through is not None:
+                through = row.credential_destroy_through
+                store.destroy(row, through=through)
+                row.credential_destroy_through = None
+                for item in db.query(TaxReviewItem).filter(
+                        TaxReviewItem.organization_id == row.organization_id,
+                        TaxReviewItem.kind == ReviewItemKind.CREDENTIAL_VERSIONS_NOT_DESTROYED,
+                        TaxReviewItem.subject_id == row.id, TaxReviewItem.status == ReviewItemStatus.OPEN):
+                    item.status, item.resolved_at = ReviewItemStatus.RESOLVED, now
+                audit.log_no_commit(row.organization_id, None, BillingAuditAction.VOID, "TaxProviderConnection",
+                                    row.id, new_values={"credentials": "revoked versions destroyed (retry)",
+                                                        "through_version": through})
+                stats["destroy_retried"] += 1
+            destroyed = store.destroy_expired_disabled(row, cutoff)
+            if destroyed:
+                audit.log_no_commit(row.organization_id, None, BillingAuditAction.VOID, "TaxProviderConnection",
+                                    row.id, new_values={"credentials": "disabled versions destroyed",
+                                                        "versions": destroyed})
+                stats["disabled_destroyed"] += len(destroyed)
+            db.commit()
+        except SecretStoreUnavailable:
+            db.rollback()
+            stats["secret_failures"] += 1
+    return stats
 
 
 def view_connection(row: TaxProviderConnection) -> dict:

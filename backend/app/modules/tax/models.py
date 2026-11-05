@@ -475,6 +475,7 @@ class TaxReviewItem(Base):
     detail          = Column(Text, nullable=True)
     status          = Column(CaseInsensitiveEnum(ReviewItemStatus), nullable=False, index=True,
                              default=ReviewItemStatus.OPEN, server_default=ReviewItemStatus.OPEN.name)
+    owner_role      = Column(String(50), nullable=True)        # who acts on it (Phase 4d-0)
     created_at      = Column(DateTime(timezone=True), nullable=False)
     resolved_at     = Column(DateTime(timezone=True), nullable=True)
     resolved_by     = _user_fk()
