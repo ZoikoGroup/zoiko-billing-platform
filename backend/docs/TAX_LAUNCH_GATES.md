@@ -201,8 +201,8 @@ outbox, reconciliation, evidence and failing closed.
   - Every check in `tests/tax_provider_conformance` (`CHECKS`, plus the
     payload-minimality and credential-redaction checks) passes against the
     sandbox adapter, with none skipped without a written reason.
-  - The runner for this (`run_all`, named in the suite's docstring) is not
-    written yet; it is 4d work with the real adapter.
+  - Run it with `TAX_CONFORMANCE_SECRET=… python -m tests.tax_provider_conformance pkg.module:make_adapter`
+    (`run_all`, `TAX_PHASE4D.md`); attach the JSON report.
 - **Status:** ◐ **Plumbing built and passing** (T06/T07/T14 against the
   fake). Sandbox conformance is open: no provider yet.
 
@@ -256,7 +256,7 @@ NOT_APPLICABLE (G1, fixed).
 | **Pseudonym key set once** | GCP admin + security owner | `tax-provider-pseudonym-key` created in Secret Manager, and `TAX_PROVIDER_PSEUDONYM_KEY_SECRET` pins a **numbered** version (latest is refused). Set **before** the first US provider activation; approval is refused without it. Never rotated without the remap procedure (the remapping tool is deferred). | ☐ Open |
 | DPO items | DPO / counsel | (a) The data sent to the provider is minimised: address, `customer_ref` pseudonym, exemption jurisdiction, tax type and reason; no names, emails, certificate numbers or files. (b) A DPA with the provider and the resolver. (c) Evidence retention vs erasure for certificates and resolutions (open since Phase 2). (d) Data residency: the Secret Manager region and provider data location. | ☐ Open |
 | Address resolver (US) | Tax integrations owner | A resolver procured and registered in `ADDRESS_RESOLVERS`; rooftop/parcel precision confirmed (decision 2 of 4c); `dataset_version` reported | ☐ Open |
-| Deferred items acknowledged | Product owner | The manual two-person address resolution and the pseudonym remapping tool are deferred. Accept them as known limits or schedule them before go-live. | ☐ Decision |
+| Manual resolution and remap | Product owner | Both built (`TAX_PHASE4D.md`): two-person manual address resolution with evidence, and the pseudonym remap export. Rehearse the key-rotation procedure once in staging. | ◐ Built; rehearsal open |
 
 ### After the platform gates: per tenant
 - An approved, credentialed provider connection (two people).

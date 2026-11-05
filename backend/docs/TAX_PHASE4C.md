@@ -56,6 +56,8 @@ resolver and provider (4d) and the tax lead's sign-off.
 
 ## Deferred
 
+Both items below are now built: see `TAX_PHASE4D.md`.
+
 - **Manual address resolution.** For an address with no rooftop or parcel
   match: a person records the districts with evidence (for example, the
   authority's lookup result), and a second person approves. Until then such

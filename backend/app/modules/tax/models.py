@@ -390,6 +390,36 @@ class TaxAddressResolution(Base):
     resolved_at        = Column(DateTime(timezone=True), nullable=False)
 
 
+class TaxManualResolutionRequest(Base):
+    """Phase 4d: a person resolves an address the resolver couldn't place
+    precisely (latest resolution AMBIGUOUS or NOT_FOUND). Proposed with the
+    districts and a reason, an evidence document attached (e.g. the
+    authority's lookup result), and approved by a different finance
+    approver; the approval writes a RESOLVED resolution (precision MANUAL)."""
+    __tablename__ = "tax_manual_resolution_requests"
+
+    id                 = Column(Integer, primary_key=True, index=True)
+    organization_id    = _org_fk()
+    address_id         = _fk("customer_tax_addresses.id", nullable=False, index=True)
+    jurisdiction_codes = Column(JSON, nullable=False)
+    reason             = Column(Text, nullable=False)
+    evidence_file_id   = _fk("tax_evidence_files.id", nullable=True)
+    status             = Column(CaseInsensitiveEnum(TenantApprovalStatus), nullable=False, index=True,
+                                default=TenantApprovalStatus.PROPOSED,
+                                server_default=TenantApprovalStatus.PROPOSED.name)
+    proposed_by        = _user_fk()
+    approved_by        = _user_fk()
+    approved_at        = Column(DateTime(timezone=True), nullable=True)
+    decision_reason    = Column(Text, nullable=True)
+    resolution_id      = _fk("tax_address_resolutions.id", nullable=True)
+    created_at         = Column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        Index("uq_tax_manual_resolution_one_open", "address_id", unique=True,
+              sqlite_where=text("status = 'PROPOSED'"), postgresql_where=text("status = 'PROPOSED'")),
+    )
+
+
 class TaxPseudonymKeyRecord(Base):
     """Phase 4c: which TAX_PROVIDER_PSEUDONYM_KEY a tenant's provider records
     were made under, by fingerprint (never the key). A changed key blocks
@@ -633,5 +663,18 @@ ADDRESS_RESOLUTION_FROZEN_FIELDS = ("organization_id", "address_id", "resolver_n
                                     "status", "precision", "candidates", "jurisdiction_codes", "resolved_by",
                                     "resolved_at")
 PSEUDONYM_KEY_FROZEN_FIELDS = ("organization_id", "fingerprint", "reason", "proposed_by", "created_at")
+MANUAL_RESOLUTION_FROZEN_FIELDS = ("organization_id", "address_id", "jurisdiction_codes", "reason", "proposed_by",
+                                   "created_at")
 register_tenant_record_guard(TaxAddressResolution.__table__, ADDRESS_RESOLUTION_FROZEN_FIELDS)
 register_tenant_record_guard(TaxPseudonymKeyRecord.__table__, PSEUDONYM_KEY_FROZEN_FIELDS)
+register_tenant_record_guard(TaxManualResolutionRequest.__table__, MANUAL_RESOLUTION_FROZEN_FIELDS)
+
+
+@event.listens_for(Session, "before_flush")
+def _guard_manual_resolution_evidence_write_once(session, flush_context, instances):
+    """A manual resolution's evidence document is attached once."""
+    for obj in session.dirty:
+        if isinstance(obj, TaxManualResolutionRequest):
+            hist = sa_inspect(obj).attrs["evidence_file_id"].history
+            if hist.deleted and hist.deleted[0] is not None:
+                raise TaxRecordFrozenError(f"Manual resolution {obj.id} already has its evidence document.")

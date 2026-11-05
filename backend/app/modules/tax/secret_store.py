@@ -51,7 +51,7 @@ KEY_VERSION = "fernet-v1"
 #: A pinned Secret Manager version (never "latest" or an alias).
 NUMBERED_VERSION = re.compile(r"^projects/[^/]+/secrets/[^/]+/versions/[0-9]+$")
 #: Keys that must name a numbered version: a moving alias would silently change them.
-PINNED_KEYS = ("TAX_PROVIDER_PSEUDONYM_KEY",)
+PINNED_KEYS = ("TAX_PROVIDER_PSEUDONYM_KEY", "TAX_PROVIDER_PSEUDONYM_KEY_PREVIOUS")
 STORES = ("gcp", "fernet")
 SECRET_NAME_PREFIX = "tax-provider-"
 

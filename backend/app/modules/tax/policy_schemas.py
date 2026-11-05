@@ -188,6 +188,13 @@ class ImpactPreviewRequest(_Strict):
 
 # ── Tenant: buyer evidence ───────────────────────────────────────────────
 
+class ManualResolutionCreate(_Strict):
+    """Phase 4d: the districts for an address the resolver couldn't place,
+    country first (e.g. ["US", "US-CA", "US-CA-LA", "US-CA-LA-D1"])."""
+    jurisdiction_codes: list[str] = Field(..., min_length=1, max_length=10)
+    reason: str = Field(..., min_length=1, max_length=2000)
+
+
 class TaxAddressCreate(_Strict):
     role: AddressRole
     country_code: Optional[str] = Field(None, max_length=2)

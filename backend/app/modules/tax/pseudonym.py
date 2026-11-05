@@ -16,7 +16,13 @@ fingerprint of the key its provider records were made under (never the key):
     newly added key) blocks provider quoting and issuing:
     PROVIDER_UNAVAILABLE, "pseudonym key changed — remap required".
   * Two people acknowledge the new fingerprint (after remapping the
-    provider's records; the remapping tool is deferred) to lift the block.
+    provider's records) to lift the block.
+
+Remapping (Phase 4d): during a rotation, TAX_PROVIDER_PSEUDONYM_KEY_PREVIOUS
+(or its _SECRET) holds the outgoing key. The remap export checks that it is
+the acknowledged key, then lists old -> new references for every customer
+the provider holds records for (customers on provider transactions). The
+export is pseudonyms only, audited, never cached.
 """
 import hashlib
 import hmac
@@ -30,30 +36,36 @@ from app.core.exceptions import BadRequestException, ForbiddenException, NotFoun
 KEY_CHANGED = "pseudonym key changed — remap required"
 
 
-def _key() -> str:
+def _key(name: str = "TAX_PROVIDER_PSEUDONYM_KEY") -> str:
     """The key: the plain setting, or (4d-0) loaded from Secret Manager by
     resource name. Raises SecretStoreUnavailable when it can't be loaded."""
     from app.modules.tax.secret_store import config_secret
 
-    return config_secret("TAX_PROVIDER_PSEUDONYM_KEY")
+    return config_secret(name)
 
 
-def key_fingerprint() -> Optional[str]:
-    """A fingerprint of the current key (HMAC of a fixed label, so the key's
-    hash is never stored); None when the key is unset."""
-    key = _key()
+def _fingerprint_of(key: str) -> Optional[str]:
     if not key:
         return None
     return hmac.new(key.encode(), b"zoiko-tax-pseudonym-key-fingerprint", hashlib.sha256).hexdigest()[:32]
 
 
-def customer_pseudonym(organization_id: int, customer_id) -> Optional[str]:
-    """A stable, non-reversible customer reference for the provider. None
-    when the key is unset or there is no customer."""
-    key = _key()
+def key_fingerprint() -> Optional[str]:
+    """A fingerprint of the current key (HMAC of a fixed label, so the key's
+    hash is never stored); None when the key is unset."""
+    return _fingerprint_of(_key())
+
+
+def _pseudonym(key: str, organization_id: int, customer_id) -> Optional[str]:
     if not key or customer_id is None:
         return None
     return "zc_" + hmac.new(key.encode(), f"{organization_id}:{customer_id}".encode(), hashlib.sha256).hexdigest()[:32]
+
+
+def customer_pseudonym(organization_id: int, customer_id) -> Optional[str]:
+    """A stable, non-reversible customer reference for the provider. None
+    when the key is unset or there is no customer."""
+    return _pseudonym(_key(), organization_id, customer_id)
 
 
 def _now() -> datetime:
@@ -183,9 +195,49 @@ class PseudonymKeyService:
     def status(self, organization_id: int) -> dict:
         record = self.acknowledged(organization_id)
         current = key_fingerprint()
+        try:
+            previous = _fingerprint_of(_key("TAX_PROVIDER_PSEUDONYM_KEY_PREVIOUS"))
+        except Exception:
+            previous = None
         return {"key_set": current is not None, "current_fingerprint": current,
                 "acknowledged_fingerprint": record.fingerprint if record else None,
+                "previous_fingerprint": previous,
+                "remap_export_available": bool(record and previous and previous == record.fingerprint
+                                               and current and current != previous),
                 "blocked_reason": self.problem(organization_id)}
+
+    def remap_export(self, organization_id: int, actor_id: int) -> list:
+        """[(old_ref, new_ref)] for every customer the provider holds records
+        for, under the acknowledged (outgoing) key and the current key. The
+        outgoing key must be the acknowledged one: a wrong previous key would
+        produce a useless mapping, so it is refused."""
+        from app.modules.billing.models import BillingAuditAction, Invoice
+        from app.modules.tax.enums import OutboxState
+        from app.modules.tax.provider_models import TaxProviderOutbox
+
+        record = self.acknowledged(organization_id)
+        current, previous = _key(), _key("TAX_PROVIDER_PSEUDONYM_KEY_PREVIOUS")
+        if record is None or record.fingerprint is None:
+            raise BadRequestException("No acknowledged pseudonym key: nothing was sent under a key, nothing to remap.")
+        if not previous:
+            raise BadRequestException("Set TAX_PROVIDER_PSEUDONYM_KEY_PREVIOUS (the outgoing key) to export the remap.")
+        if _fingerprint_of(previous) != record.fingerprint:
+            raise BadRequestException("TAX_PROVIDER_PSEUDONYM_KEY_PREVIOUS is not the acknowledged key; the "
+                                      "provider's records were made under a different key.")
+        if not current or _fingerprint_of(current) == record.fingerprint:
+            raise BadRequestException("The current key is unchanged; there is nothing to remap.")
+        sent = {OutboxState.REMOTE_COMMITTED, OutboxState.DONE, OutboxState.VOIDED, OutboxState.UNCERTAIN,
+                OutboxState.REVIEW_REQUIRED}
+        customer_ids = sorted({cid for (cid,) in self.db.query(Invoice.customer_id).join(
+            TaxProviderOutbox, TaxProviderOutbox.invoice_id == Invoice.id).filter(
+            TaxProviderOutbox.organization_id == organization_id, TaxProviderOutbox.state.in_(list(sent)),
+            Invoice.customer_id.isnot(None)).distinct()})
+        rows = [(_pseudonym(previous, organization_id, cid), _pseudonym(current, organization_id, cid))
+                for cid in customer_ids]
+        self._audit(organization_id, actor_id, BillingAuditAction.EXPORT, record.id, remap_export=len(rows),
+                    from_fingerprint=record.fingerprint, to_fingerprint=_fingerprint_of(current))
+        self.db.commit()
+        return sorted(rows)
 
 
 def view_key_record(r) -> dict:

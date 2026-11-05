@@ -548,6 +548,11 @@ CRITICAL_COLUMNS: list[tuple[str, str, str, str]] = [
         "alembic/versions/f7a2c4e6b8d1_tax_phase4d0_secret_housekeeping.py",
         "ZB-TAX-ARCH-001 Phase 4d-0: revoked credential versions awaiting destruction",
     ),
+    (
+        "tax_manual_resolution_requests", "resolution_id",
+        "alembic/versions/b8e2d4f6a0c3_tax_phase4d_manual_resolution.py",
+        "ZB-TAX-ARCH-001 Phase 4d: two-person manual address resolutions",
+    ),
 ]
 
 

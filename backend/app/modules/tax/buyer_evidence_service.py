@@ -234,36 +234,16 @@ class BuyerEvidenceService:
         file signature must agree), within the size limit, hashed by the
         server (and checked against the client's hash when one is sent),
         stored write-once under the tenant."""
-        from app.config import settings
-
         row = self._get(CustomerExemptionCertificate, certificate_id, organization_id, "Exemption certificate")
         if row.evidence_file_id is not None:
             raise BadRequestException("This certificate already has its evidence document; it is write-once.")
-        media_type = (media_type or "").split(";")[0].strip().lower()
-        signature = EVIDENCE_TYPES.get(media_type)
-        if signature is None:
-            raise BadRequestException("Evidence must be a PDF, PNG or JPEG file.")
-        if not content:
-            raise BadRequestException("The evidence file is empty.")
-        if len(content) > settings.TAX_EVIDENCE_MAX_BYTES:
-            raise BadRequestException(f"The evidence file exceeds {settings.TAX_EVIDENCE_MAX_BYTES // (1024 * 1024)} MB.")
-        if not content.startswith(signature):
-            raise BadRequestException(f"The file content is not a valid {media_type} document.")
-        digest = hashlib.sha256(content).hexdigest()
-        if expected_sha256 and expected_sha256.strip().lower() != digest:
-            raise BadRequestException("The file's SHA-256 does not match the hash supplied with it.")
-        stored = self.db.query(TaxEvidenceFile).filter(TaxEvidenceFile.organization_id == organization_id,
-                                                       TaxEvidenceFile.sha256 == digest).first()
-        if stored is None:
-            stored = TaxEvidenceFile(organization_id=organization_id, sha256=digest, media_type=media_type,
-                                     size_bytes=len(content), filename=(filename or "")[:255] or None,
-                                     content=content, uploaded_by=actor_id, created_at=_now())
-            self.db.add(stored)
-            self.db.flush()
+        stored = store_evidence_file(self.db, organization_id, actor_id, content=content, media_type=media_type,
+                                     filename=filename, expected_sha256=expected_sha256)
         row.evidence_file_id = stored.id
         self.db.flush()
         self._log(organization_id, actor_id, BillingAuditAction.UPDATE, "CustomerExemptionCertificate", row.id,
-                  new_values={"evidence_sha256": digest, "media_type": media_type, "size_bytes": len(content)})
+                  new_values={"evidence_sha256": stored.sha256, "media_type": stored.media_type,
+                              "size_bytes": stored.size_bytes})
         self.db.commit()
         return row
 
@@ -284,6 +264,39 @@ class BuyerEvidenceService:
             self._log(organization_id, actor_id, BillingAuditAction.VOID, "CustomerExemptionCertificate", row.id)
             self.db.commit()
         return row
+
+
+def store_evidence_file(db: Session, organization_id: int, actor_id: Optional[int], *, content: bytes,
+                        media_type: str, filename: Optional[str] = None,
+                        expected_sha256: Optional[str] = None) -> TaxEvidenceFile:
+    """Validate and store a tenant evidence document (PDF, PNG or JPEG):
+    declared type and file signature agree, within the size limit, hashed by
+    the server (checked against the client's hash when sent), content-
+    addressed and write-once per tenant. Flushes; the caller commits."""
+    from app.config import settings
+
+    media_type = (media_type or "").split(";")[0].strip().lower()
+    signature = EVIDENCE_TYPES.get(media_type)
+    if signature is None:
+        raise BadRequestException("Evidence must be a PDF, PNG or JPEG file.")
+    if not content:
+        raise BadRequestException("The evidence file is empty.")
+    if len(content) > settings.TAX_EVIDENCE_MAX_BYTES:
+        raise BadRequestException(f"The evidence file exceeds {settings.TAX_EVIDENCE_MAX_BYTES // (1024 * 1024)} MB.")
+    if not content.startswith(signature):
+        raise BadRequestException(f"The file content is not a valid {media_type} document.")
+    digest = hashlib.sha256(content).hexdigest()
+    if expected_sha256 and expected_sha256.strip().lower() != digest:
+        raise BadRequestException("The file's SHA-256 does not match the hash supplied with it.")
+    stored = db.query(TaxEvidenceFile).filter(TaxEvidenceFile.organization_id == organization_id,
+                                              TaxEvidenceFile.sha256 == digest).first()
+    if stored is None:
+        stored = TaxEvidenceFile(organization_id=organization_id, sha256=digest, media_type=media_type,
+                                 size_bytes=len(content), filename=(filename or "")[:255] or None,
+                                 content=content, uploaded_by=actor_id, created_at=_now())
+        db.add(stored)
+        db.flush()
+    return stored
 
 
 def view_address(a: CustomerTaxAddress) -> dict:
