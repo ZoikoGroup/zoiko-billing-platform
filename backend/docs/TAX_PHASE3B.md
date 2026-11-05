@@ -325,6 +325,23 @@ New in 3b:
 
 **Production report figures** come from the product owner's team.
 
+## Post-merge deploy checks (54e2399, 2026-11-05)
+
+- **Deploy:** run 41959229740 succeeded. Its script runs under
+  `set -euo pipefail` and calls `alembic upgrade head` before the restart,
+  so `e4b8c1d6f2a9` was applied. The migration also passed CI's Postgres
+  round trip.
+- **Backend `/ready`:** not verified from outside; the public host serves
+  the frontend. The product owner's team is checking it on the server.
+- **Legacy smoke test:** this was a **local SQLite run, not production**. A
+  scripted legacy invoice was put through 54e2399 and 8c1c7a3 (the last
+  commit before governed tax). It had two lines, a 10% document discount and
+  20% tax, and was issued once by finalize and once by email, then re-sent.
+  - Status, totals, line amounts, tax date and tax rows were identical.
+  - The only difference was 1 tax row after the re-send instead of 2, which
+    is agreed fix (b).
+  - No invoice was created in production.
+
 ## Next: Phase 4
 
 - Specialist-provider markets (US, Canada) through the provider interface and

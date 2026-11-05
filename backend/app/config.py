@@ -369,6 +369,21 @@ class Settings(BaseSettings):
     # ZB-TAX-ARCH-001 Phase 3a: a governed tax quote must be committed within
     # this window; an expired quote is refused at issuance (re-quote).
     TAX_QUOTE_TTL_HOURS: int = 24
+    # ZB-TAX-ARCH-001 Phase 4a-1: provider issuance (outbox + reconciliation).
+    # Defaults are proposals; ops/SRE agree the values before a provider
+    # market goes live (launch gate 05).
+    TAX_PROVIDER_RECONCILIATION_ENABLED: bool = True      # own job; independent of the billing scheduler
+    TAX_PROVIDER_RECONCILIATION_INTERVAL_SECONDS: int = 300
+    TAX_PROVIDER_HEARTBEAT_STALE_INTERVALS: int = 3       # older than this many intervals blocks provider issuing
+    TAX_PROVIDER_GRACE_MINUTES: int = 15                  # retry local finalize, then void (never past quote expiry)
+    TAX_PROVIDER_INLINE_TIMEOUT_SECONDS: int = 10
+    TAX_PROVIDER_CB_FAILURES: int = 5
+    TAX_PROVIDER_CB_WINDOW_SECONDS: int = 60
+    TAX_PROVIDER_CB_COOLDOWN_SECONDS: int = 120
+    TAX_PROVIDER_DRIFT_WINDOW_HOURS: int = 24
+    # What identifies the invoice at the provider: "key_only" (link the number
+    # after commit) or "invoice_number". The tax lead decides; see the plan.
+    TAX_PROVIDER_DOCUMENT_REFERENCE: str = "key_only"
 
     # ── ZB-COM-003: Trial-ending-soon warning (Prompt 4) ─────────────────
     # Days before trial_ends_at to fire the proactive warning email.

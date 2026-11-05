@@ -1,0 +1,452 @@
+"""
+tests/test_tax_phase4a_outbox.py
+--------------------------------
+ZB-TAX-ARCH-001 Phase 4a-1: provider issuance through the transactional
+outbox, reconciliation, the circuit breaker and the fail-closed checks,
+against the fake provider. T10 (timeout after success, duplicate delivery,
+crash between steps), T16 (provider suspended, source revoked), T20 (batch
+isolation and idempotency), the kill switch at both transactions, committed
+tax dates, estimate-only mode, REVIEW_REQUIRED, drift, and the aggregate-only
+operations view.
+
+The world is the Phase 3a one: a GOVERNED GB entity whose B2B digital lines
+are routed to the fake provider.
+"""
+import json
+from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
+
+import pytest
+
+from app.core.exceptions import BadRequestException
+from app.modules.billing.models import Invoice, InvoiceStatus
+from app.modules.super_admin.kill_switch_service import TENANT_INVOICE_FINALIZATION, BillingKillSwitchService
+from app.modules.tax.enums import (
+    CircuitState,
+    DocumentReferencePolicy,
+    OutboxOperation,
+    OutboxState,
+    RemoteCommitState,
+    ReviewItemKind,
+    TaxOutcome,
+    TaxQuoteStatus,
+)
+from app.modules.tax.issuance_gate import GovernedIssuanceGate, TaxIssuanceBlocked
+from app.modules.tax.models import TaxReviewItem
+from app.modules.tax.provider_contract import ProviderMode
+from app.modules.tax.provider_issuance import (
+    ProviderHealth,
+    ProviderIssuanceBlocked,
+    ProviderIssuanceService,
+    aggregate_health,
+    beat_for_tests,
+    idempotency_key,
+)
+from app.modules.tax.provider_models import TaxJobHeartbeat, TaxProviderCircuit, TaxProviderOutbox
+from tests.test_tax_phase3a_governed import TAX_DATE, build_world, draft, finalize, invoice_service, quote
+
+
+@pytest.fixture()
+def w(db_session):
+    return build_world(db_session, org_code="P4A")
+
+
+def issuance(w, **kw):
+    return ProviderIssuanceService(w["db"], provider_lookup=lambda name: w["provider"], **kw)
+
+
+def provider_draft(w, price=100, **kw):
+    """A B2B digital line: routed to the fake provider (10%)."""
+    inv = draft(w, [(w["dig_product"], price, 1, False)], **kw)
+    q = quote(w, inv)
+    assert q.status == TaxQuoteStatus.QUOTED and q.engine_name == "fake-provider", (q.refusal_code, q.refusal_reason)
+    return inv, q
+
+
+def rows(w, inv=None):
+    q = w["db"].query(TaxProviderOutbox)
+    if inv is not None:
+        q = q.filter(TaxProviderOutbox.invoice_id == inv.id)
+    return q.order_by(TaxProviderOutbox.id).all()
+
+
+def pause(w):
+    BillingKillSwitchService(w["db"]).set_enabled(TENANT_INVOICE_FINALIZATION, False, reason="test",
+                                                  actor_id=w["reviewer"].id)
+    w["db"].commit()
+
+
+def resume_finalization(w):
+    BillingKillSwitchService(w["db"]).set_enabled(TENANT_INVOICE_FINALIZATION, True, reason="test",
+                                                  actor_id=w["reviewer"].id)
+    w["db"].commit()
+
+
+# ── happy path ──────────────────────────────────────────────────────────
+
+def test_provider_invoice_issues_through_the_outbox(w):
+    inv, q = provider_draft(w)
+    issued = finalize(w, inv)
+    assert issued.status == InvoiceStatus.SENT and issued.tax_quote_id == q.id
+    (row,) = [r for r in rows(w, inv) if r.operation == OutboxOperation.COMMIT]
+    assert row.state == OutboxState.DONE and row.idempotency_key == idempotency_key(q) == f"zb:{w['org'].id}:{inv.id}:{q.id}"
+    w["db"].refresh(q)
+    assert q.status == TaxQuoteStatus.COMMITTED and q.remote_commit_state == RemoteCommitState.COMMITTED
+    assert q.provider_correlation_id == row.provider_transaction_id
+    assert w["provider"].committed_keys() == [row.idempotency_key]
+    payload = w["provider"].payloads[0]
+    blob = json.dumps(payload)
+    customer = w["customer"]
+    for secret in (customer.email, customer.company_name, customer.display_name):
+        assert secret and secret not in blob                       # no customer identity leaves the platform
+
+
+# ── T10: timeouts, duplicates, crashes ──────────────────────────────────
+
+def test_t10_timeout_after_remote_success_commits_once(w):
+    inv, q = provider_draft(w)
+    w["provider"].fail_mode = "timeout_after_success"
+    pending = finalize(w, inv)
+    assert pending.status == InvoiceStatus.DRAFT
+    (row,) = rows(w, inv)
+    assert row.state == OutboxState.UNCERTAIN
+    issuance(w).reconcile()                                        # state lookup first, never a blind retry
+    w["db"].refresh(inv)
+    assert inv.status == InvoiceStatus.SENT
+    assert w["provider"].commit_calls == 1 and len(w["provider"].ledger) == 1
+
+
+def test_t10_timeout_before_success_recommits_with_the_same_key(w):
+    inv, q = provider_draft(w)
+    w["provider"].fail_mode = "timeout_before_success"
+    assert finalize(w, inv).status == InvoiceStatus.DRAFT
+    issuance(w).reconcile()
+    w["db"].refresh(inv)
+    assert inv.status == InvoiceStatus.SENT
+    assert w["provider"].commit_calls == 2 and list(w["provider"].ledger) == [idempotency_key(q)]
+
+
+def test_t10_duplicate_delivery_never_commits_twice(w):
+    inv, q = provider_draft(w)
+    svc = issuance(w)
+    row = svc.begin(inv, q, w["maker"].id)
+    svc.deliver(row.id)
+    svc.deliver(row.id)                                            # duplicate delivery of the same row
+    svc.reconcile()
+    svc.reconcile()
+    w["db"].refresh(inv)
+    assert inv.status == InvoiceStatus.SENT
+    assert w["provider"].commit_calls == 1 and len(w["provider"].ledger) == 1
+
+
+@pytest.mark.parametrize("crash_after", ["transaction_1", "remote_commit"])
+def test_t10_crash_between_steps_is_finished_by_reconciliation(w, crash_after):
+    inv, q = provider_draft(w)
+    svc = issuance(w)
+    row = svc.begin(inv, q, w["maker"].id)
+    if crash_after == "remote_commit":
+        svc.deliver(row.id)
+        assert rows(w, inv)[0].state == OutboxState.REMOTE_COMMITTED
+    w["db"].expire_all()                                           # the process "restarts"
+    issuance(w).reconcile()
+    w["db"].refresh(inv)
+    assert inv.status == InvoiceStatus.SENT and w["provider"].commit_calls == 1
+
+
+def test_t10_crash_during_transaction_2_rolls_back_and_is_retried(w):
+    inv, q = provider_draft(w)
+    calls = {"n": 0}
+
+    def crashing_finalizer(invoice, quote_, actor):
+        from app.modules.billing.services.invoice_service import InvoiceService
+
+        InvoiceService(w["db"]).complete_governed_issue(invoice, quote_, actor, commit=False)
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("simulated crash mid-transaction")
+
+    svc = issuance(w, finalizer=crashing_finalizer)
+    issued = svc.issue(inv, q, w["maker"].id)
+    assert issued.status == InvoiceStatus.DRAFT                    # rolled back as one unit
+    assert rows(w, inv)[0].state == OutboxState.REMOTE_COMMITTED
+    svc.reconcile()
+    w["db"].refresh(inv)
+    assert inv.status == InvoiceStatus.SENT and w["provider"].commit_calls == 1
+
+
+def test_locked_draft_cannot_be_edited_while_issuing(w):
+    inv, q = provider_draft(w)
+    issuance(w).begin(inv, q, w["maker"].id)
+    inv.items[0].unit_price = Decimal("1")
+    with pytest.raises(ProviderIssuanceBlocked, match="being issued"):
+        w["db"].flush()
+    w["db"].rollback()
+
+
+# ── kill switch at transaction 1 and transaction 2 ──────────────────────
+
+def test_kill_switch_at_transaction_1_sends_nothing(w):
+    inv, q = provider_draft(w)
+    pause(w)
+    with pytest.raises(BadRequestException):
+        issuance(w).issue(inv, q, w["maker"].id)
+    assert w["provider"].commit_calls == 0 and rows(w) == []
+
+
+def test_kill_switch_at_transaction_2_holds_then_voids_after_grace(w):
+    inv, q = provider_draft(w)
+    svc = issuance(w)
+    row = svc.begin(inv, q, w["maker"].id)
+    svc.deliver(row.id)
+    pause(w)
+    svc.finalize(row.id)
+    w["db"].refresh(inv)
+    assert inv.status == InvoiceStatus.DRAFT and rows(w, inv)[0].state == OutboxState.REMOTE_COMMITTED
+    later = issuance(w, now=lambda: datetime.now(timezone.utc) + timedelta(minutes=16))
+    later.finalize(row.id)
+    (row,) = rows(w, inv)
+    assert row.state == OutboxState.VOIDED and w["provider"].void_calls == 1
+    w["db"].refresh(q)
+    assert q.status == TaxQuoteStatus.VOIDED and q.remote_commit_state == RemoteCommitState.VOIDED
+    w["db"].refresh(inv)
+    assert inv.status == InvoiceStatus.DRAFT and inv.sent_at is None
+    inv.notes = "editable again"                                   # unlocked once voided
+    w["db"].commit()
+
+
+# ── committed dates and currency ────────────────────────────────────────
+
+def test_transaction_2_stamps_the_committed_tax_date_after_local_midnight(w):
+    inv, q = provider_draft(w)
+    # 23:30 UTC on 1 June is 00:30 on 2 June in London: the invoice keeps the committed date.
+    after_midnight = datetime(2026, 6, 1, 23, 30, tzinfo=timezone.utc)
+    issued = issuance(w, now=lambda: after_midnight).issue(inv, q, w["maker"].id)
+    assert issued.status == InvoiceStatus.SENT
+    assert issued.tax_date == q.tax_date == TAX_DATE and issued.currency == q.currency == "GBP"
+
+
+# ── estimate-only can quote, never issue ────────────────────────────────
+
+def test_estimate_only_mode_can_quote_but_never_issue(w):
+    w["provider"].mode = ProviderMode.ESTIMATE_ONLY
+    inv, q = provider_draft(w)                                     # quoting works
+    with pytest.raises(ProviderIssuanceBlocked, match="estimate-only"):
+        finalize(w, inv)
+    w["db"].refresh(inv)
+    assert inv.status == InvoiceStatus.DRAFT and w["provider"].commit_calls == 0
+    with pytest.raises(TaxIssuanceBlocked, match="has not committed"):
+        GovernedIssuanceGate(w["db"]).commit(inv, q, w["maker"].id)     # no SENT without a remote commit
+
+
+# ── fail closed: circuit, heartbeat, suspension (T16) ───────────────────
+
+def test_circuit_opens_after_repeated_failures_and_blocks(w):
+    w["provider"].fail = {"determine_error"}                       # persistent outage
+    inv = draft(w, [(w["dig_product"], 100, 1, False)])
+    for _ in range(5):
+        q = quote(w, inv)
+        assert q.status == TaxQuoteStatus.PROVIDER_UNAVAILABLE and q.tax_amount is None
+    assert w["db"].get(TaxProviderCircuit, "fake-provider").state == CircuitState.OPEN
+    w["provider"].fail = set()
+    q = quote(w, inv)                                              # still within the cool-down
+    assert q.status == TaxQuoteStatus.PROVIDER_UNAVAILABLE and "circuit open" in q.refusal_reason
+    with pytest.raises(TaxIssuanceBlocked):
+        finalize(w, inv)
+
+
+def test_stale_heartbeat_blocks_provider_issuing(w):
+    inv, q = provider_draft(w)
+    beat_for_tests(w["db"], at=datetime.now(timezone.utc) - timedelta(hours=1))
+    w["db"].commit()
+    with pytest.raises(ProviderIssuanceBlocked, match="reconciliation is not running"):
+        finalize(w, inv)
+    assert w["provider"].commit_calls == 0
+    w["db"].refresh(q)
+    assert q.status == TaxQuoteStatus.PROVIDER_UNAVAILABLE
+
+
+def test_t16_suspended_provider_freezes_quotes_and_issuing(w):
+    inv, q = provider_draft(w)
+    ProviderHealth(w["db"]).suspend("fake-provider", "contract ended")
+    w["db"].commit()
+    with pytest.raises(ProviderIssuanceBlocked, match="suspended"):
+        finalize(w, inv)
+    again = quote(w, inv)
+    assert again.status == TaxQuoteStatus.PROVIDER_UNAVAILABLE and "suspended" in again.refusal_reason
+    health = aggregate_health(w["db"])
+    assert health["providers"][0]["circuit"] == "SUSPENDED"
+
+
+# ── REVIEW_REQUIRED and reason codes ────────────────────────────────────
+
+def _hook(**changes):
+    def hook(request, result):
+        for key, value in changes.items():
+            setattr(result, key, value(request, result) if callable(value) else value)
+        return result
+    return hook
+
+
+@pytest.mark.parametrize("changes, fragment", [
+    ({"applied_jurisdiction_ids": lambda r, res: [9999]}, "no recorded registration"),
+    ({"provider_tax_date": date(2026, 5, 31)}, "tax date"),
+    ({"provider_currency": "EUR"}, "currency"),
+    ({"provider_line_tax": Decimal("10.00"),
+      "components": lambda r, res: [setattr(c, "provider_tax_amount", Decimal("9.99")) or c for c in res.components]},
+     "do not add up"),
+    ({"provider_line_tax": Decimal("0"), "reason_code": None}, "no reason"),
+    ({"provider_line_tax": Decimal("0"), "reason_code": "MYSTERY"}, "unrecognised reason MYSTERY"),
+])
+def test_provider_contradictions_are_review_required(w, changes, fragment):
+    w["provider"].result_hook = _hook(**changes)
+    q = quote(w, draft(w, [(w["dig_product"], 100, 1, False)]))
+    assert q.status == TaxQuoteStatus.REVIEW_REQUIRED and q.refusal_code == "PROVIDER_CONTRADICTS_CONTEXT"
+    assert fragment in q.refusal_reason and q.tax_amount is None
+
+
+def test_known_reason_code_maps_to_our_outcome(w):
+    w["provider"].rate = Decimal("0")
+    w["provider"].result_hook = _hook(provider_line_tax=Decimal("0"), reason_code="EXEMPT")
+    q = quote(w, draft(w, [(w["dig_product"], 100, 1, False)]))
+    assert q.status == TaxQuoteStatus.QUOTED and q.tax_amount == Decimal("0.00")
+    assert q.lines[0].outcome == TaxOutcome.EXEMPT and q.lines[0].explanation_code == "PROVIDER_EXEMPT"
+
+
+# ── drift ───────────────────────────────────────────────────────────────
+
+def test_drift_at_commit_is_review_required_and_not_issued(w):
+    inv, q = provider_draft(w)
+    w["provider"].remote_tax_delta = Decimal("0.01")
+    assert finalize(w, inv).status == InvoiceStatus.DRAFT
+    (row,) = rows(w, inv)
+    assert row.state == OutboxState.REVIEW_REQUIRED and "tax" in row.review_reason
+
+
+def test_drift_after_commit_raises_a_tenant_review_item(w):
+    inv, q = provider_draft(w)
+    finalize(w, inv)
+    w["provider"].remote_tax_delta = Decimal("1.00")
+    stats = issuance(w).reconcile()
+    assert stats["drift"] == 1
+    item = w["db"].query(TaxReviewItem).filter(TaxReviewItem.kind == ReviewItemKind.PROVIDER_DRIFT).one()
+    assert item.organization_id == w["org"].id and "tax" in item.detail
+    assert issuance(w).reconcile()["drift"] == 0                   # one open item, not one per run
+
+
+# ── invoice-number seam (tax lead decides) ──────────────────────────────
+
+def test_key_only_policy_links_the_invoice_number_after_commit(w, monkeypatch):
+    monkeypatch.setattr("app.config.settings.TAX_PROVIDER_DOCUMENT_REFERENCE", DocumentReferencePolicy.KEY_ONLY.value)
+    inv, q = provider_draft(w)
+    finalize(w, inv)
+    assert w["provider"].payloads[0]["document_reference"] == idempotency_key(q)
+    link = [r for r in rows(w, inv) if r.operation == OutboxOperation.LINK]
+    assert len(link) == 1 and link[0].state == OutboxState.PENDING
+    issuance(w).reconcile()
+    assert w["provider"].links == {rows(w, inv)[0].provider_transaction_id: inv.invoice_number}
+
+
+def test_invoice_number_policy_sends_the_reserved_number(w, monkeypatch):
+    monkeypatch.setattr("app.config.settings.TAX_PROVIDER_DOCUMENT_REFERENCE",
+                        DocumentReferencePolicy.INVOICE_NUMBER.value)
+    inv, q = provider_draft(w)
+    finalize(w, inv)
+    assert w["provider"].payloads[0]["document_reference"] == inv.invoice_number
+    assert [r.operation for r in rows(w, inv)] == [OutboxOperation.COMMIT]
+
+
+# ── email: nothing until SENT ───────────────────────────────────────────
+
+def test_email_waits_for_the_provider(w, monkeypatch):
+    sent = []
+    monkeypatch.setattr("app.services.email_service.send_invoice_email", lambda **kw: sent.append(kw) or True)
+    monkeypatch.setattr("app.modules.billing.services.pdf_service.generate_invoice_pdf", lambda *a, **kw: b"%PDF")
+    inv, q = provider_draft(w)
+    w["provider"].fail_mode = "timeout_after_success"
+    result = invoice_service(w).send_invoice_via_email(inv.id, w["org"].id, w["maker"].id)
+    assert result["status"] == "ISSUING" and result["email_delivered"] is False and sent == []
+    issuance(w).reconcile()
+    result = invoice_service(w).send_invoice_via_email(inv.id, w["org"].id, w["maker"].id)
+    assert result["email_delivered"] is True and len(sent) == 1 and w["provider"].commit_calls == 1
+
+
+# ── T20: batch, idempotency, isolation ──────────────────────────────────
+
+def test_t20_batch_issuance_is_idempotent_and_isolated(w):
+    from tests.conftest import make_invoice, make_organization
+
+    other = make_organization(w["db"], code="P4A-OTHER", name="Other tenant")
+    bystander = make_invoice(w["db"], other.id, w["customer"].id, status=InvoiceStatus.DRAFT, invoice_number="OTH-1")
+    w["db"].commit()
+    svc = issuance(w)
+    batch = [provider_draft(w, price=10 + n) for n in range(12)]
+    for inv, q in batch:
+        svc.begin(inv, q, w["maker"].id)                           # all queued, nothing delivered yet
+    svc.reconcile()
+    svc.reconcile()                                                # a second pass changes nothing
+    keys = [idempotency_key(q) for _, q in batch]
+    assert sorted(w["provider"].committed_keys()) == sorted(keys) and w["provider"].commit_calls == len(batch)
+    for inv, q in batch:
+        w["db"].refresh(inv)
+        w["db"].refresh(q)
+        assert inv.status == InvoiceStatus.SENT and inv.tax_amount == q.tax_amount
+    assert {r.organization_id for r in rows(w)} == {w["org"].id}
+    w["db"].refresh(bystander)
+    assert bystander.status == InvoiceStatus.DRAFT
+
+
+# ── operations: aggregate only (T13) ────────────────────────────────────
+
+def test_platform_health_view_is_aggregate_only(w):
+    inv, q = provider_draft(w)
+    w["provider"].fail_mode = "timeout_after_success"
+    finalize(w, inv)
+    health = aggregate_health(w["db"])
+    blob = json.dumps(health)
+    for identifier in (inv.invoice_number, w["customer"].email, w["customer"].company_name,
+                       idempotency_key(q), f'"organization_id"', f'"invoice_id"'):
+        assert identifier not in blob
+    (provider,) = health["providers"]
+    assert provider["provider"] == "fake-provider" and provider["counts"] == {"UNCERTAIN": 1}
+    assert provider["oldest_active_age_seconds"] is not None and health["reconciliation"]["last_ok"] is True
+
+
+def test_reconciliation_writes_a_heartbeat(w):
+    w["db"].query(TaxJobHeartbeat).delete()
+    w["db"].commit()
+    issuance(w).reconcile()
+    hb = w["db"].get(TaxJobHeartbeat, "tax_provider_reconciliation")
+    assert hb.last_ok is True and hb.last_finished_at is not None and set(hb.stats) >= {"delivered", "drift"}
+
+
+# ── T16: a revoked registry source freezes the packs that depend on it ──
+
+def test_t16_revoked_source_freezes_the_pack_with_no_false_coverage_claim(db_session):
+    from app.modules.tax.enums import AcquisitionMethod, RedistributionPermission, SourceTier
+    from app.modules.tax.registry_models import TaxAuthority
+    from app.modules.tax.registry_service import TaxRegistryPipeline
+    from app.modules.tax.rule_packs import UkVatDomesticServices
+    from app.modules.tax.tenant_tax_service import TenantTaxService
+    from tests import test_tax_phase3b_packs as p3b
+
+    w = p3b.build_world(db_session, org_code="P4AT16")
+    p3b.publish_pack(w, UkVatDomesticServices.code)
+    p3b.govern(w, w["uk"])
+    assert p3b.quote(w, p3b.draft(w, [(w["svc"], 100, 1)])).status == TaxQuoteStatus.QUOTED
+
+    # The licence for S11 is withdrawn: a new revision records DENIED usage rights.
+    pipeline = TaxRegistryPipeline(db_session)
+    authority = db_session.query(TaxAuthority).filter(TaxAuthority.code == "GB-HMRC").one()
+    revoked = pipeline.register_source_revision(
+        actor_id=w["reviewer"].id, authority_id=authority.id, source_tier=SourceTier.OFFICIAL_GUIDANCE,
+        acquisition_method=AcquisitionMethod.MANUAL_VERIFIED_EXTRACTION, permanent_url="https://example.test/S11",
+        title="Fixture source S11", citation="Fixture citation [S11]", language="en", handoff_ref="S11")
+    pipeline.attach_evidence(actor_id=w["reviewer"].id, revision_id=revoked.id, content=b"<p>S11 revoked</p>",
+                             media_type="text/html", filename="S11.html",
+                             redistribution_permission=RedistributionPermission.DENIED)
+    db_session.commit()
+
+    q = p3b.quote(w, p3b.draft(w, [(w["svc"], 100, 1)]))
+    assert q.status == TaxQuoteStatus.NEEDS_EVIDENCE and q.refusal_code == "NOT_DETERMINED" and q.tax_amount is None
+    report = TenantTaxService(db_session).regime_eligibility(w["org"].id, w["uk"].id, p3b.TAX_DATE)
+    assert report["backing_activations"] == [] and report["would_qualify"] is False

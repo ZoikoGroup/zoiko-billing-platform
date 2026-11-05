@@ -39,7 +39,16 @@ from app.config import settings
 from app.core.exceptions import BadRequestException, NotFoundException, ZoikoException
 from app.modules.billing.models import Invoice, InvoiceItem, Quotation, QuotationItem
 from app.modules.tax.context_builder import DOCUMENT_TYPES, TaxContextBuilder, _canonical
-from app.modules.tax.engines import ACTIVATION_FACTS, ROUTING_FACTS, EngineRequest, EngineResolver, LineInput, LineResult
+from app.modules.tax.engines import (
+    ACTIVATION_FACTS,
+    ROUTING_FACTS,
+    ComponentResult,
+    EngineRequest,
+    EngineResolver,
+    LineInput,
+    LineResult,
+)
+from app.modules.tax.provider_contract import REASON_CODES, ProviderError
 from app.modules.tax.enums import (
     EngineKind,
     EntityTaxRegime,
@@ -356,6 +365,17 @@ class TaxDeterminationService:
                            "Tax could not be determined: " + "; ".join(routing_problems or ["no engine applies"]),
                            issues=activation_issues, warnings=[i for i in warnings if i not in activation_issues])
 
+        # Provider engines fail closed: an open or suspended circuit, or any
+        # provider error, is PROVIDER_UNAVAILABLE. Never a fallback (§4a-1).
+        health = None
+        if engine.is_remote:
+            from app.modules.tax.provider_issuance import ProviderHealth
+
+            health = ProviderHealth(self.db, now=self.now)
+            problem = health.circuit_problem(engine.name)
+            if problem:
+                raise _Refusal(TaxQuoteStatus.PROVIDER_UNAVAILABLE, "PROVIDER_UNAVAILABLE", problem, warnings=warnings)
+
         # Buyers without business evidence get consumer treatment only where
         # the engine's rules say so; the line class is re-derived for them.
         for line in lines:
@@ -365,12 +385,23 @@ class TaxDeterminationService:
             _, acts = line.routing
             request = EngineRequest(db=self.db, tax_date=tax_date, currency=doc.currency, facts=facts, line=line.input,
                                     activations=acts, business_buyer=True if business else None)
-            result = engine.determine(request)
+            try:
+                result = engine.determine(request)
+            except ProviderError as exc:
+                if health is not None:
+                    health.record_failure(engine.name)
+                raise _Refusal(TaxQuoteStatus.PROVIDER_UNAVAILABLE, "PROVIDER_UNAVAILABLE",
+                               f"The tax provider could not determine tax: {exc}", warnings=warnings)
+            if engine.is_remote:
+                result = _check_provider_line(engine, line.input.line_number, acts, result, tax_date, doc.currency,
+                                              warnings)
             if result.outcome == TaxOutcome.NOT_DETERMINED or not result.components:
                 raise _Refusal(TaxQuoteStatus.NEEDS_EVIDENCE, result.explanation_code or "NOT_DETERMINED",
                                f"Line {line.input.line_number}: {result.legal_reason or 'tax could not be determined'}",
                                warnings=warnings)
             line.result = result
+        if health is not None:
+            health.record_success(engine.name)
 
         if engine.rounding_mode is None:
             raise _Refusal(TaxQuoteStatus.UNSUPPORTED, "ROUNDING_MODE_UNDECLARED",
@@ -455,6 +486,47 @@ class TaxDeterminationService:
                     is_reverse_charge=comp.is_reverse_charge,
                 ))
         self.db.flush()
+
+
+def _check_provider_line(engine, line_number: int, activations, result: LineResult, tax_date, currency,
+                         warnings) -> LineResult:
+    """REVIEW_REQUIRED when the provider contradicts our context: tax where we
+    hold no registration or obligation, another tax date or currency,
+    components that don't add up, or zero tax without a recognised reason."""
+    def review(reason):
+        raise _Refusal(TaxQuoteStatus.REVIEW_REQUIRED, "PROVIDER_CONTRADICTS_CONTEXT",
+                       f"Line {line_number}: {reason}", warnings=warnings)
+
+    if result.outcome == TaxOutcome.NOT_DETERMINED:
+        return result
+    held = {a.jurisdiction_id for a in activations}
+    applied = set(result.applied_jurisdiction_ids or []) | {c.jurisdiction_id for c in result.components
+                                                           if c.jurisdiction_id is not None}
+    if applied - held:
+        review("the provider applied tax in a jurisdiction where this entity has no recorded registration or "
+               "obligation.")
+    if result.provider_tax_date is not None and result.provider_tax_date != tax_date:
+        review(f"the provider used tax date {result.provider_tax_date}, not {tax_date}.")
+    if result.provider_currency is not None and result.provider_currency.upper() != (currency or "").upper():
+        review(f"the provider used currency {result.provider_currency}, not {currency}.")
+    amounts = [c.provider_tax_amount for c in result.components if c.provider_tax_amount is not None]
+    if result.provider_line_tax is not None and amounts and sum(amounts, Decimal("0")) != result.provider_line_tax:
+        review("the provider's components do not add up to its line total.")
+    taxed = any(Decimal(c.rate_percent) > 0 and not c.is_reverse_charge for c in result.components)
+    zero = (result.provider_line_tax == 0) if result.provider_line_tax is not None else not taxed
+    if zero and activations:
+        code = (result.reason_code or "").strip().upper()
+        if code not in REASON_CODES:
+            review(f"the provider returned no tax {'with unrecognised reason ' + code if code else 'and no reason'} "
+                   "although this entity holds a registration here.")
+        components = result.components or [ComponentResult(
+            component_code=f"{engine.name}:{code}", rate_percent=Decimal("0"), rate_source="PROVIDER",
+            jurisdiction_id=a.jurisdiction_id, tax_type_id=a.tax_type_id, activation_id=a.id, reporting_code=code)
+            for a in activations]
+        return LineResult(outcome=REASON_CODES[code], explanation_code=f"PROVIDER_{code}", components=components,
+                          legal_reason=f"{engine.name}: {code.replace('_', ' ').lower()}"
+                                       + (f" ({result.legal_reason})" if result.legal_reason else ""))
+    return result
 
 
 class _Refusal(Exception):

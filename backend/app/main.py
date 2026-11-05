@@ -158,8 +158,13 @@ async def lifespan(app: FastAPI):
         start_scheduler()
     else:
         logger.info("Recurring billing scheduler disabled (ENABLE_RECURRING_BILLING_SCHEDULER=false).")
+    # ZB-TAX-ARCH-001 Phase 4a-1: provider reconciliation has its own job,
+    # independent of the billing scheduler flag above.
+    from app.modules.tax import reconciliation_runner
+    reconciliation_runner.start()
     logger.info("Zoiko Billing Platform backend is ready.")
     yield
+    reconciliation_runner.shutdown()
     if settings.ENABLE_RECURRING_BILLING_SCHEDULER:
         from app.core.scheduler import shutdown_scheduler
         shutdown_scheduler()

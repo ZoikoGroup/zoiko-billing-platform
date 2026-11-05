@@ -22,7 +22,7 @@ from fastapi import APIRouter, Depends, File, Form, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.core.capabilities import require_capability
+from app.core.capabilities import require_any_capability, require_capability
 from app.core.dependencies import get_current_user
 from app.core.exceptions import BadRequestException
 from app.database import get_db
@@ -552,6 +552,52 @@ for _action, _cap, _step_up in (("validate", "tax_registry.write", False), ("sub
         f"/rule-packs/{{version_id}}/{_action}", _rule_pack_action(_action, _cap, _step_up),
         methods=["POST"], summary=f"{_action.capitalize()} a rule-pack version",
     )
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# Phase 4a-1 — provider operations: aggregate health only (T13); no
+# organization, invoice or customer identifiers. Suspension freezes a
+# provider (T16): its quotes and issuing become PROVIDER_UNAVAILABLE.
+# ═════════════════════════════════════════════════════════════════════════
+
+@admin_router.get("/provider-health", summary="Aggregate provider issuing health (counts, oldest age, circuit)")
+def provider_health(db: Session = Depends(get_db),
+                    _user=Depends(require_any_capability("tax_registry.read", "reliability.read"))):
+    from app.modules.tax.provider_issuance import aggregate_health
+
+    return aggregate_health(db)
+
+
+def _provider_freeze(action: str):
+    def handler(provider_name: str, db: Session = Depends(get_db),
+                current_user=Depends(require_capability("tax_registry.approve")),
+                data: Optional[PolicyActionRequest] = None):
+        from app.modules.tax.provider_issuance import ProviderHealth, aggregate_health
+
+        data = data or PolicyActionRequest()
+        require_tax_step_up(db, current_user, StepUpRequest(code=data.code, recovery_code=data.recovery_code))
+        if action == "suspend" and not (data.reason or "").strip():
+            raise BadRequestException("A reason is required.")
+        health = ProviderHealth(db)
+        if action == "suspend":
+            health.suspend(provider_name, data.reason.strip())
+        else:
+            health.resume(provider_name)
+        from app.modules.super_admin.audit_service import PlatformAuditService
+        from app.modules.super_admin.models import PlatformAuditAction
+
+        PlatformAuditService(db).log_no_commit(actor_id=current_user.id, actor_role="super_admin",
+                                               action=PlatformAuditAction.UPDATE, entity_type="TaxProviderCircuit",
+                                               entity_id=None, reason=data.reason,
+                                               metadata={"provider": provider_name, "action": action})
+        db.commit()
+        return aggregate_health(db)
+    return handler
+
+
+for _action in ("suspend", "resume"):
+    admin_router.add_api_route(f"/provider-health/{{provider_name}}/{_action}", _provider_freeze(_action),
+                               methods=["POST"], summary=f"{_action.capitalize()} a tax provider (T16)")
 
 
 # ═════════════════════════════════════════════════════════════════════════
