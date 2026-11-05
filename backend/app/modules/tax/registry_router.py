@@ -117,6 +117,23 @@ def list_jurisdictions(
     return {"items": items, "next_cursor": next_cursor}
 
 
+@reference_router.get("/coverage", summary="Published tax coverage (supported / limited / unsupported)")
+def tax_coverage(
+    state: Optional[str] = Query(None, pattern="^(SUPPORTED|LIMITED|UNSUPPORTED)$"),
+    page: PageParams = Depends(),
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+):
+    """Launch gate 07: what is approved, for Sales, Support and tenants.
+    Published availability only; no drafts, gate evidence or tenant data."""
+    from app.modules.tax.policy_service import COVERAGE_STATEMENT, coverage
+
+    items = [c for c in coverage(db) if state is None or c["state"] == state]
+    items, next_cursor = paginate(items, page,
+                                  key=lambda c: f"{c['jurisdiction_code']}|{c['tax_type']}|{c['transaction_class']}")
+    return {"statement": COVERAGE_STATEMENT, "items": items, "next_cursor": next_cursor}
+
+
 @reference_router.get("/rates", response_model=RateLookupResponse,
                       summary="Reference rate lookup (never an amount owed)")
 def lookup_rates(

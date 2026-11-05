@@ -23,6 +23,12 @@ the product owner.
   `PROVIDER_APPROVED` or `TENANT_CONFIG_APPROVED`, three gates must be
   PASSED: **01, 02 and 04**. The other gates must be PASSED or
   NOT_APPLICABLE (`policy_service.MANDATORY_GATES`).
+- **Provider markets also need gate 05.** For `PROVIDER_APPROVED`, gate
+  **05** must be PASSED as well; it can't be waived
+  (`policy_service.mandatory_gates`).
+- **Coverage is visible.** Published coverage (supported / limited /
+  unsupported) is readable by every signed-in user through
+  `GET /api/v1/tax/coverage`, for gate 07.
 - **Publishing takes two people.** A TAX_REVIEWER drafts, validates and
   submits. A different TAX_PUBLISHER approves and publishes, with MFA
   step-up. Everything is audited.
@@ -36,14 +42,12 @@ the product owner.
 This needs `tax_registry.read`. Check that the gate's status and
 `evidence_ref` match the evidence filed.
 
-### Gaps found while writing this checklist (to fix before the first go-live)
+### Gaps found while writing this checklist (both fixed)
 
-| # | Gap | Why it matters | Proposed fix |
+| # | Gap | Fix | Tests |
 |---|---|---|---|
-| G1 | **Gate 05 can be set NOT_APPLICABLE on a `PROVIDER_APPROVED` market.** It is not in `MANDATORY_GATES`. | A provider market could be published with no provider contract or SLA evidence. | Make gate 05 mandatory (PASSED) whenever the mode is `PROVIDER_APPROVED`. It stays N/A-with-note for native packs. Small change to `policy_service.validate`, plus a test. |
-| G2 | **Gate 07 says "visible to Sales/Support", but market availability is readable only by tax roles** (`tax_registry.read` = TAX_REVIEWER, TAX_PUBLISHER). | Sales and Support can't see what is supported, limited or unsupported, so they may over-promise ("global compliance"). | A read-only coverage view of **published** availability only (jurisdiction, tax type, class, mode, effective dates; no tenant data, no evidence refs), granted to SUPPORT_OPERATOR and a Sales role. |
-
-Neither gap is fixed in this file. They need a decision.
+| G1 | Gate 05 could be set NOT_APPLICABLE on a `PROVIDER_APPROVED` market, so a provider market could be published with no contract or SLA evidence. | `mandatory_gates(mode)`: for `PROVIDER_APPROVED`, gate 05 must be PASSED (with evidence). Native packs and tenant rates may still mark it NOT_APPLICABLE with a note. Validation says "A PROVIDER_APPROVED market requires gate PROVIDER_CONTRACTS_AND_RECOVERY PASSED". | `tests/privacy/test_tax_phase4d0_gates.py`: N/A, NOT_STARTED and FAILED are refused for a provider market; PASSED validates; N/A-with-note validates for a native market. |
+| G2 | Gate 07 needs coverage visible to Sales/Support, but market availability was readable only by tax roles. | `GET /api/v1/tax/coverage`, for any signed-in user (platform roles and tenant users; there is no separate Sales platform role, so Sales uses a Support or tenant-side account). It returns **published** markets only: jurisdiction, tax type, class, mode, a state (SUPPORTED / LIMITED / UNSUPPORTED) with a plain meaning, and `published_at`. There are no drafts, no gate evidence and no tenant data. Its statement says anything not listed is UNSUPPORTED and that there is no global-compliance claim. It is paged (B3) and filterable by `state`. | Same file: published only, no evidence, every platform role and tenant users can read, sign-in required, state filter, paging. |
 
 ---
 
@@ -137,8 +141,11 @@ external provider".
   - GB · VAT and AU · GST, both B2B_SERVICES and B2C_SERVICES, published as
     `NATIVE_RULEPACK_APPROVED` only after gates 01–06.
   - Visible to Sales/Support.
-- **Verify:** the published availability versions; the Sales/Support view.
-- **Status:** ☐ **Open.** Blocked by gap G2.
+- **Verify:** the published availability versions;
+  `GET /api/v1/tax/coverage` shows exactly the approved cells (Sales/Support
+  read it there).
+- **Status:** ☐ **Open.** The visibility path exists; nothing is published
+  yet.
 
 ### After the platform gates: per tenant
 - The tenant entity's registration (number, validity) is recorded.
@@ -212,7 +219,8 @@ outbox, reconciliation, evidence and failing closed.
   expected values.
 
 ### Gate 05: provider contracts, SLA, failure/rollback, reconciliation
-This gate must PASS for provider markets; see gap G1.
+This gate must PASS for provider markets: validation refuses
+NOT_APPLICABLE (G1, fixed).
 
 | Item | Evidence | Verify | Status |
 |---|---|---|---|
@@ -238,7 +246,7 @@ This gate must PASS for provider markets; see gap G1.
 - **Evidence:**
   - Each Canadian and US cell published as `PROVIDER_APPROVED` only after
     gates 01–06.
-  - Visible to Sales/Support (gap G2).
+  - Visible to Sales/Support through `GET /api/v1/tax/coverage`.
 - **Status:** ☐ **Open.**
 
 ### Provider-specific go-live items (part of gates 05 and 07)
@@ -269,9 +277,9 @@ This gate must PASS for provider markets; see gap G1.
 | 02 Provenance and freshness | ☐ | ☐ | ☐ | ☐ |
 | 03 Resolution and determination tests | ◐ CI | ◐ CI | ◐ fake only | ◐ fake only |
 | 04 Golden tests signed off | ☐ | ☐ | ☐ | ☐ |
-| 05 Provider contract, SLA, recovery | N/A (note) | N/A (note) | ☐ (+ G1) | ☐ (+ G1) |
+| 05 Provider contract, SLA, recovery | N/A (note) | N/A (note) | ☐ (must PASS) | ☐ (must PASS) |
 | 06 UI and audit evidence | ◐ backend | ◐ backend | ◐ backend | ◐ backend |
-| 07 Availability and visibility | ☐ (+ G2) | ☐ (+ G2) | ☐ (+ G2) | ☐ (+ G2) |
+| 07 Availability and visibility | ☐ | ☐ | ☐ | ☐ |
 
 ☐ open · ◐ partly done (built, evidence or sign-off pending) · N/A only with a note
 

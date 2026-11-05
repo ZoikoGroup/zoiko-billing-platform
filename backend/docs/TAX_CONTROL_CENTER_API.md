@@ -401,6 +401,30 @@ POST /pseudonym-key/acknowledgements/{id}/approve|reject (finance approver, not 
   provider quoting and issuing are blocked. Show it with the acknowledge
   action.
 
+## Published coverage (launch gate 07)
+
+```
+GET /api/v1/tax/coverage?state=SUPPORTED|LIMITED|UNSUPPORTED&limit=&cursor=     (any signed-in user)
+ -> {"statement": "...anything not listed is UNSUPPORTED... does not claim global tax compliance...",
+     "items": [Coverage], "next_cursor": null}
+```
+
+**Coverage:**
+
+```json
+{"jurisdiction_code": "GB", "jurisdiction_name": "United Kingdom", "tax_type": "VAT",
+ "transaction_class": "B2B_SERVICES", "mode": "NATIVE_RULEPACK_APPROVED", "state": "SUPPORTED",
+ "meaning": "Calculated by Zoiko's approved rule pack.", "published_at": "..."}
+```
+
+- **Published markets only.** No drafts, gate evidence or tenant data.
+- **States:**
+  - Native and provider modes are SUPPORTED.
+  - A tenant's own rate and reference-only markets are LIMITED.
+  - Suspended and unsupported markets are UNSUPPORTED.
+- **Show the statement** with the list. Sales/Support and tenants read this
+  page; never promise a market that isn't SUPPORTED here.
+
 ## Tests
 
 `tests/privacy/test_tax_control_center_api.py` (24) covers:
