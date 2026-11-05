@@ -1,7 +1,8 @@
 """tests/test_tax_phase4c_pg.py
 ----------------------------
 ZB-TAX-ARCH-001 Phase 4c guarantees only PostgreSQL provides: address
-resolutions are write-once evidence, a quote's exemption claims are frozen,
+resolutions are write-once evidence (dataset version included), pseudonym key
+records are frozen, a quote's exemption claims are frozen,
 and a US quote through resolved districts and a certificate claim runs
 against every trigger.
 
@@ -79,7 +80,8 @@ def test_phase4c_table_column_and_triggers_exist(pg):
                                   "WHERE table_name = 'tax_quotes'")).scalars())
     assert "exemption_claims" in columns
     triggers = set(pg.execute(text("SELECT tgname FROM pg_trigger WHERE NOT tgisinternal")).scalars())
-    assert "trg_tax_address_resolutions_guard" in triggers
+    assert {"trg_tax_address_resolutions_guard", "trg_tax_pseudonym_key_records_guard"} <= triggers
+    assert "tax_pseudonym_key_records" in tables
 
 
 def test_address_resolution_is_write_once(pg, world):
@@ -87,6 +89,7 @@ def test_address_resolution_is_write_once(pg, world):
     r = pg.query(TaxAddressResolution).filter(TaxAddressResolution.address_id == a.id).one()
     _rejects(pg, "UPDATE tax_address_resolutions SET jurisdiction_codes = '[]' WHERE id = :id", {"id": r.id})
     _rejects(pg, "UPDATE tax_address_resolutions SET status = 'AMBIGUOUS' WHERE id = :id", {"id": r.id})
+    _rejects(pg, "UPDATE tax_address_resolutions SET dataset_version = 'other' WHERE id = :id", {"id": r.id})
     _rejects(pg, "DELETE FROM tax_address_resolutions WHERE id = :id", {"id": r.id})
 
 
@@ -100,3 +103,11 @@ def test_us_quote_with_districts_and_a_claim_on_postgres(pg, world):
     assert q2.status == TaxQuoteStatus.QUOTED and q2.exemption_claims
     pg.flush()
     _rejects(pg, "UPDATE tax_quotes SET exemption_claims = NULL WHERE id = :id", {"id": q2.id})
+
+
+def test_pseudonym_key_record_is_frozen(pg, world):
+    from app.modules.tax.models import TaxPseudonymKeyRecord
+
+    record = pg.query(TaxPseudonymKeyRecord).filter(TaxPseudonymKeyRecord.organization_id == world["org"].id).one()
+    _rejects(pg, "UPDATE tax_pseudonym_key_records SET fingerprint = 'x' WHERE id = :id", {"id": record.id})
+    _rejects(pg, "DELETE FROM tax_pseudonym_key_records WHERE id = :id", {"id": record.id})

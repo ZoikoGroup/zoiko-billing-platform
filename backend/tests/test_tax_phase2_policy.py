@@ -645,6 +645,10 @@ def test_fingerprint_is_deterministic_and_changes_with_every_input(w):
     changed("exemption certificate", lambda: ev.add_certificate(
         org.id, w["proposer"].id, customer.id, certificate_number="C1", jurisdiction_id=w["gb"].id,
         scope_description="s", valid_from=date(2026, 1, 1), evidence_ref="e"))
+    # Goods are supplied at the ship-to (Phase 4c), so record one first.
+    changed("shipping address", lambda: ev.record_address(org.id, w["proposer"].id, customer.id,
+                                                          role=AddressRole.SHIPPING, country_code="GB",
+                                                          subdivision_code="SCT"))
     changed("classification version", lambda: classify(w, prod, code="GOODS-GEN"))
     changed("activation", lambda: approve(w, propose(w, effective_from=date(2026, 2, 1))))
     from app.modules.billing.models import InvoiceItem

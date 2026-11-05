@@ -207,6 +207,7 @@ def build_commit_payload(db: Session, quote: TaxQuote, row: TaxProviderOutbox) -
     seller = db.get(SellerLegalEntity, quote.seller_entity_id) if quote.seller_entity_id else None
     supply = dict(quote.supply_address or {})
     supply.pop("address_id", None)
+    supply.pop("resolution_id", None)
     return {
         "idempotency_key": row.idempotency_key,
         "document_reference": row.document_reference,
@@ -229,26 +230,13 @@ def build_commit_payload(db: Session, quote: TaxQuote, row: TaxProviderOutbox) -
     }
 
 
-def customer_pseudonym(organization_id: int, customer_id) -> Optional[str]:
-    """A stable, non-reversible customer reference for the provider (plan
-    change 9): HMAC-SHA256 under TAX_PROVIDER_PSEUDONYM_KEY. None when the
-    key is unset or there is no customer."""
-    import hashlib
-    import hmac
-
-    from app.config import settings
-
-    key = (getattr(settings, "TAX_PROVIDER_PSEUDONYM_KEY", "") or "").strip()
-    if not key or customer_id is None:
-        return None
-    return "zc_" + hmac.new(key.encode(), f"{organization_id}:{customer_id}".encode(), hashlib.sha256).hexdigest()[:32]
-
-
 def _buyer_payload(db: Session, quote: TaxQuote, row: TaxProviderOutbox, supply: dict) -> dict:
     """The buyer: address, pseudonymous reference and exemption claims
     (jurisdiction, tax type and reason only; no certificate numbers or files)."""
     from app.modules.billing.models import Invoice
     from app.modules.tax.registry_models import TaxJurisdiction, TaxTypeDefinition
+
+    from app.modules.tax.pseudonym import customer_pseudonym
 
     buyer = {"address": supply}
     invoice = db.get(Invoice, row.invoice_id) if row.invoice_id else None
@@ -413,7 +401,9 @@ class ProviderIssuanceService:
             raise ProviderIssuanceBlocked(
                 f"The {quote.provider_name} connection is estimate-only: it can quote but can never issue. "
                 "The invoice stays a draft.")
-        problem = self.health.circuit_problem(quote.provider_name) or self.health.heartbeat_problem()
+        from app.modules.tax.pseudonym import PseudonymKeyService
+
+        problem = self.health.circuit_problem(quote.provider_name) or self.health.heartbeat_problem()             or PseudonymKeyService(self.db).problem(invoice.organization_id)
         if problem:
             self._refuse(quote, problem)
         key = idempotency_key(quote)
@@ -475,6 +465,14 @@ class ProviderIssuanceService:
         if self.health.circuit_problem(row.provider_name):
             row.next_attempt_at = now + timedelta(seconds=settings.TAX_PROVIDER_CB_COOLDOWN_SECONDS)
             row.last_error = "circuit open"
+            self.db.commit()
+            return row
+        from app.modules.tax.pseudonym import PseudonymKeyService
+
+        key_problem = PseudonymKeyService(self.db).problem(row.organization_id)
+        if key_problem:                                         # nothing is sent under an unacknowledged key
+            row.next_attempt_at = now + timedelta(seconds=settings.TAX_PROVIDER_CB_COOLDOWN_SECONDS)
+            row.last_error = key_problem
             self.db.commit()
             return row
 

@@ -38,6 +38,7 @@ _KINDS = {
     "EntityTaxRegistration": (ReviewItemKind.REGISTRATION_EXPIRING, ReviewItemKind.REGISTRATION_EXPIRED),
     "CustomerExemptionCertificate": (ReviewItemKind.CERTIFICATE_EXPIRING, ReviewItemKind.CERTIFICATE_EXPIRED),
     "CustomerTaxId": (None, ReviewItemKind.TAX_ID_VERIFICATION_EXPIRED),
+    "TaxAddressResolution": (None, ReviewItemKind.ADDRESS_RESOLUTION_STALE),
 }
 
 

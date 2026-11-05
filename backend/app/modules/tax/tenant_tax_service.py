@@ -361,6 +361,13 @@ class TenantTaxService:
         now = _now()
         if approve:
             problems = self.approval_problems(row)
+            if row.mode == TaxOperatingMode.PROVIDER_APPROVED:
+                from app.modules.tax.pseudonym import key_fingerprint
+
+                jurisdiction = self.db.get(TaxJurisdiction, row.jurisdiction_id)
+                if jurisdiction is not None and jurisdiction.country_code == "US" and key_fingerprint() is None:
+                    problems.append("TAX_PROVIDER_PSEUDONYM_KEY is not set (US provider markets send a "
+                                    "pseudonymous customer reference)")
             if problems:
                 raise BadRequestException("Activation cannot be approved: " + "; ".join(problems) + ".")
             availability = current_availability(self.db, row.jurisdiction_id, row.tax_type_id, row.transaction_class)
@@ -385,6 +392,10 @@ class TenantTaxService:
         row.approved_at = now
         row.decision_reason = reason
         self.db.flush()
+        if approve and row.mode == TaxOperatingMode.PROVIDER_APPROVED:
+            from app.modules.tax.pseudonym import PseudonymKeyService
+
+            PseudonymKeyService(self.db).baseline_on_activation(organization_id, row)
         self._log(organization_id, actor_id, BillingAuditAction.APPROVE if approve else BillingAuditAction.REJECT,
                   "EntityTaxActivation", row.id, new_values={"status": row.status.name})
         self.db.commit()

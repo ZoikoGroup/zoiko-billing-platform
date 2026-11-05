@@ -397,6 +397,9 @@ class Settings(BaseSettings):
     # rotating it needs the remapping step in TAX_PHASE4C.md. Unset = no
     # customer reference is sent.
     TAX_PROVIDER_PSEUDONYM_KEY: str = ""
+    # Phase 4c: how long a US address resolution stays valid. Older ones (or
+    # ones on a superseded resolver dataset) must be resolved again.
+    TAX_ADDRESS_RESOLUTION_VALID_DAYS: int = 365
 
     # ── ZB-COM-003: Trial-ending-soon warning (Prompt 4) ─────────────────
     # Days before trial_ends_at to fire the proactive warning email.

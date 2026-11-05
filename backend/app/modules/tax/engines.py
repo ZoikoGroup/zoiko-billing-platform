@@ -47,7 +47,9 @@ ROUTING_FACTS = frozenset({
     "LINE_PRODUCT_MISSING", "PRODUCT_CLASSIFICATION_MISSING", "CUSTOMER_MISSING", "BUYER_COUNTRY_MISSING",
     "JURISDICTION_NOT_IN_REGISTRY", "PRICING_MODE_MIXED",
     # Phase 4c: raised only for resolved-address countries (US).
-    "BUYER_STREET_ADDRESS_MISSING", "ADDRESS_NOT_RESOLVED", "ADDRESS_AMBIGUOUS",
+    "BUYER_STREET_ADDRESS_MISSING", "ADDRESS_NOT_RESOLVED", "ADDRESS_AMBIGUOUS", "ADDRESS_RESOLUTION_STALE",
+    # Goods are supplied where they are shipped: no ship-to, no jurisdiction.
+    "SHIPPING_ADDRESS_MISSING",
 })
 
 #: Countries whose tax is sub-national: the buyer's state or province is a

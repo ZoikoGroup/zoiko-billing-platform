@@ -320,7 +320,8 @@ owner and age.
 
 ## Phase 4c endpoints (tenant, `/api/v1/tax`)
 
-Phase 4b (Canada) adds no endpoints. Phase 4c adds one route and one field.
+Phase 4b (Canada) adds no endpoints. Phase 4c adds the address-resolution
+route, the pseudonym-key routes, one address role and one field.
 
 ### Resolving a US tax address (T-screen: Customer tax evidence)
 
@@ -334,9 +335,9 @@ POST /customers/{customer_id}/tax-addresses/{address_id}/resolve   (billing admi
 **Resolution:**
 
 ```json
-{"id": 9, "address_id": 31, "resolver": "fake-resolver", "source": "fake-2026.11", "status": "RESOLVED",
- "precision": "ROOFTOP", "candidates": 1,
- "jurisdiction_codes": ["US", "US-CA", "US-CA-LA", "US-CA-LA-D1"], "resolved_at": "..."}
+{"id": 9, "address_id": 31, "resolver": "fake-resolver", "source": "fake-2026.11",
+ "dataset_version": "fake-2026.11", "status": "RESOLVED", "precision": "ROOFTOP", "candidates": 1,
+ "jurisdiction_codes": ["US", "US-CA", "US-CA-LA", "US-CA-LA-D1"], "resolved_at": "...", "valid_until": "..."}
 ```
 
 - `status`: `RESOLVED`, `AMBIGUOUS` or `NOT_FOUND`. Only `RESOLVED` with
@@ -348,6 +349,11 @@ POST /customers/{customer_id}/tax-addresses/{address_id}/resolve   (billing admi
 **Added field.** `GET /customers/{id}/tax-evidence` → each item in
 `addresses[]` gains `"resolution": Resolution | null`, the latest one.
 
+**New address role.** `POST /customers/{id}/tax-addresses` accepts
+`"role": "SERVICE_LOCATION"` as well as `BILLING` and `SHIPPING`. The quote's
+place of supply is ship-to for goods, else the service location if recorded,
+else billing. Resolve whichever address that is.
+
 **New quote issue codes (US buyers):**
 
 | Code | What the UI should prompt |
@@ -355,10 +361,37 @@ POST /customers/{customer_id}/tax-addresses/{address_id}/resolve   (billing admi
 | `BUYER_STREET_ADDRESS_MISSING` | enter a street line |
 | `ADDRESS_NOT_RESOLVED` | resolve the address |
 | `ADDRESS_AMBIGUOUS` | correct the address and resolve it again |
+| `ADDRESS_RESOLUTION_STALE` | resolve the address again (expired, or a newer dataset) |
+| `SHIPPING_ADDRESS_MISSING` | goods need a ship-to address |
+
+Each issue's field names the address role, for example
+`buyer.addresses.SHIPPING.resolution`.
 
 **New refusal code:** `EXEMPTION_CERTIFICATE_INVALID` (NEEDS_EVIDENCE). A
 relevant certificate is expired, not yet valid, not ACTIVE, or has no
 evidence document.
+
+### Pseudonym key (T-screen: Provider Connections)
+
+```
+GET  /pseudonym-key                                   -> {key_set, current_fingerprint, acknowledged_fingerprint,
+                                                          blocked_reason}
+GET  /pseudonym-key/acknowledgements?limit=&cursor=   -> {items: [KeyRecord], next_cursor}
+POST /pseudonym-key/acknowledgements (billing admin)  {"reason": "..."} -> 201 KeyRecord (PROPOSED)
+POST /pseudonym-key/acknowledgements/{id}/approve|reject (finance approver, not the proposer) {"reason"?}
+```
+
+**KeyRecord:**
+
+```json
+{"id": 2, "fingerprint": "3f9c...", "reason": "remapped at the provider", "status": "APPROVED",
+ "proposed_by": 7, "approved_by": 8, "approved_at": "...", "decision_reason": null, "created_at": "..."}
+```
+
+- Fingerprints only; the key is never returned.
+- `blocked_reason` is `"pseudonym key changed — remap required"` when
+  provider quoting and issuing are blocked. Show it with the acknowledge
+  action.
 
 ## Tests
 

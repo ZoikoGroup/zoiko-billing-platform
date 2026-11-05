@@ -15,6 +15,7 @@ from app.modules.tax.address_resolver import (
 
 class FakeAddressResolver(AddressResolver):
     name = "fake-resolver"
+    dataset_version = "fake-2026.11"
 
     def __init__(self):
         self.table: dict = {}            # line1 -> Resolution

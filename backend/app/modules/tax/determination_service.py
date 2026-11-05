@@ -352,8 +352,8 @@ class TaxDeterminationService:
         # Buyer status matters only to an engine that applies: with no engine,
         # the routing problem (e.g. an expired registration) is the reason.
         required = set(engine.required_facts if engine else ROUTING_FACTS)
-        billing = ((facts.get("buyer") or {}).get("addresses") or {}).get("BILLING") or {}
-        if billing.get("country_code") in SUBNATIONAL_COUNTRIES:
+        supply = ((facts.get("buyer") or {}).get("place_of_supply") or {}).get("address") or {}
+        if supply.get("country_code") in SUBNATIONAL_COUNTRIES:
             required.add("BUYER_SUBDIVISION_MISSING")
         if engine is not None and not engine.unresolved_buyer_as_consumer:
             required.add("BUYER_STATUS_UNRESOLVED")
@@ -377,7 +377,9 @@ class TaxDeterminationService:
             from app.modules.tax.provider_issuance import ProviderHealth
 
             health = ProviderHealth(self.db, now=self.now)
-            problem = health.circuit_problem(engine.name)
+            from app.modules.tax.pseudonym import PseudonymKeyService
+
+            problem = health.circuit_problem(engine.name) or PseudonymKeyService(self.db).problem(organization_id)
             if problem:
                 raise _Refusal(TaxQuoteStatus.PROVIDER_UNAVAILABLE, "PROVIDER_UNAVAILABLE", problem, warnings=warnings)
             # Phase 4c (T14): exemption certificates are evidence, never an
@@ -546,18 +548,25 @@ class TaxDeterminationService:
         self.db.flush()
 
 
-def place_of_supply(facts: dict) -> Optional[dict]:
-    """The buyer address this quote was determined with, and its role.
+_SUPPLY_ROLES = {"SHIPPING": PlaceOfSupplyRole.SHIP_TO, "SERVICE_LOCATION": PlaceOfSupplyRole.SERVICE_LOCATION,
+                 "BILLING": PlaceOfSupplyRole.BILLING_FALLBACK}
 
-    Jurisdictions are resolved from the billing address today (context
-    builder), so the role is BILLING_FALLBACK. Ship-to and service-location
-    precedence arrives with address resolution (4c); the stored role then
-    says which one applied."""
-    billing = ((facts.get("buyer") or {}).get("addresses") or {}).get("BILLING")
-    if not billing:
+
+def place_of_supply(facts: dict) -> Optional[dict]:
+    """The buyer address this quote was determined with, and its role: the
+    context builder's place of supply (ship-to for goods, the service
+    location where recorded, billing as the recorded fallback). Its
+    jurisdictions are the ones quoted, and it is what the provider receives."""
+    chosen = (facts.get("buyer") or {}).get("place_of_supply")
+    if not chosen or not chosen.get("address"):
         return None
-    return {"role": PlaceOfSupplyRole.BILLING_FALLBACK.name, "address_id": billing.get("id"),
-            **{k: billing.get(k) for k in ("line1", "line2", "city", "subdivision_code", "postal_code", "country_code")}}
+    address = chosen["address"]
+    out = {"role": _SUPPLY_ROLES[chosen["role"]].name, "address_id": address.get("id"),
+           **{k: address.get(k) for k in ("line1", "line2", "city", "subdivision_code", "postal_code", "country_code")}}
+    resolution = address.get("resolution")
+    if resolution:
+        out["resolution_id"] = resolution["id"]
+    return out
 
 
 def _ancestry(db, jurisdiction_id) -> list:

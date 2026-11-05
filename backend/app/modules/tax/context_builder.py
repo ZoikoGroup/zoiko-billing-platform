@@ -253,34 +253,57 @@ class TaxContextBuilder:
         elif billing.confidence == AddressConfidence.DERIVED:
             issue(ContextIssueKind.UNVERIFIED, "BUYER_ADDRESS_DERIVED", "buyer.addresses.BILLING",
                   "The buyer's billing location was derived from legacy free text and has not been confirmed.")
-        if billing is not None and billing.country_code and not billing.subdivision_code:
-            issue(ContextIssueKind.MISSING, "BUYER_SUBDIVISION_MISSING", "buyer.addresses.BILLING.subdivision_code",
+        # Place of supply (Phase 4c): ship-to for goods, the service location
+        # where recorded for services, the billing address only as the
+        # recorded fallback. Jurisdictions, resolution and the provider all
+        # use this one address.
+        if SupplyCategory.GOODS in categories:
+            supply_role = AddressRole.SHIPPING
+            if by_role.get(AddressRole.SHIPPING) is None:
+                issue(ContextIssueKind.MISSING, "SHIPPING_ADDRESS_MISSING", "buyer.addresses.SHIPPING",
+                      "Goods lines need a structured shipping location.")
+        elif by_role.get(AddressRole.SERVICE_LOCATION) is not None:
+            supply_role = AddressRole.SERVICE_LOCATION
+        else:
+            supply_role = AddressRole.BILLING
+        supply = by_role.get(supply_role)
+        path = f"buyer.addresses.{supply_role.name}"
+        if supply is not None and supply.country_code and not supply.subdivision_code:
+            issue(ContextIssueKind.MISSING, "BUYER_SUBDIVISION_MISSING", f"{path}.subdivision_code",
                   "No state/province is recorded; sub-national rules cannot be resolved.")
         from app.modules.tax.address_resolver import ADDRESS_RESOLUTION_COUNTRIES
 
-        if billing is not None and billing.country_code in ADDRESS_RESOLUTION_COUNTRIES:
+        if supply is not None and supply.country_code in ADDRESS_RESOLUTION_COUNTRIES:
             # Phase 4c (T07): a ZIP alone never resolves; the street address must
-            # be resolved to one district by an address resolver.
-            from app.modules.tax.address_resolver import latest_resolution
+            # be resolved to one district, recently and on the current dataset.
+            from app.modules.tax.address_resolver import latest_resolution, resolution_staleness
 
-            resolution = latest_resolution(self.db, organization_id, billing.id)
-            address_facts["BILLING"]["resolution"] = None if resolution is None else {
+            label = supply_role.name.lower().replace("_", " ")
+            resolution = latest_resolution(self.db, organization_id, supply.id)
+            address_facts[supply_role.name]["resolution"] = None if resolution is None else {
                 "id": resolution.id, "status": resolution.status, "precision": resolution.precision,
                 "source": resolution.source, "resolver": resolution.resolver_name,
-                "jurisdiction_codes": resolution.jurisdiction_codes}
-            if not (billing.line1 or "").strip():
-                issue(ContextIssueKind.MISSING, "BUYER_STREET_ADDRESS_MISSING", "buyer.addresses.BILLING.line1",
+                "dataset_version": resolution.dataset_version, "jurisdiction_codes": resolution.jurisdiction_codes}
+            stale = resolution_staleness(resolution, now) if resolution is not None else None
+            if not (supply.line1 or "").strip():
+                issue(ContextIssueKind.MISSING, "BUYER_STREET_ADDRESS_MISSING", f"{path}.line1",
                       "A street address is required: a postal code alone never resolves the tax jurisdiction.")
             elif resolution is None:
-                issue(ContextIssueKind.MISSING, "ADDRESS_NOT_RESOLVED", "buyer.addresses.BILLING.resolution",
-                      "The billing address has not been resolved to a tax district yet.")
+                issue(ContextIssueKind.MISSING, "ADDRESS_NOT_RESOLVED", f"{path}.resolution",
+                      f"The {label} address has not been resolved to a tax district yet.")
             elif resolution.status != "RESOLVED":
-                issue(ContextIssueKind.AMBIGUOUS, "ADDRESS_AMBIGUOUS", "buyer.addresses.BILLING.resolution",
-                      f"The billing address resolved {resolution.status.lower()} "
+                issue(ContextIssueKind.AMBIGUOUS, "ADDRESS_AMBIGUOUS", f"{path}.resolution",
+                      f"The {label} address resolved {resolution.status.lower()} "
                       f"({resolution.candidates} candidates, precision {resolution.precision}); correct it.")
-        if SupplyCategory.GOODS in categories and by_role.get(AddressRole.SHIPPING) is None:
-            issue(ContextIssueKind.MISSING, "SHIPPING_ADDRESS_MISSING", "buyer.addresses.SHIPPING",
-                  "Goods lines need a structured shipping location.")
+            elif stale:
+                address_facts[supply_role.name]["resolution"]["stale"] = stale
+                issue(ContextIssueKind.EXPIRED, "ADDRESS_RESOLUTION_STALE", f"{path}.resolution",
+                      f"The {label} address resolution is stale ({stale}); resolve it again.")
+                from app.modules.tax.review_service import TaxReviewService
+
+                TaxReviewService(self.db)._raise(now, organization_id, "TaxAddressResolution", resolution.id, None,
+                                                 True, f"Address resolution {resolution.id} is stale: {stale}.")
+        place_of_supply = None if supply is None else {"role": supply_role.name, "address": address_facts[supply_role.name]}
 
         tax_ids = self.db.query(CustomerTaxId).filter(
             CustomerTaxId.organization_id == organization_id, CustomerTaxId.customer_id == customer.id,
@@ -322,6 +345,7 @@ class TaxContextBuilder:
         return {
             "customer_id": customer.id,
             "addresses": address_facts,
+            "place_of_supply": place_of_supply,
             "tax_ids": id_facts,
             "business_status": business_status,
             "business_evidence_tax_id_ids": business_evidence,
@@ -331,7 +355,7 @@ class TaxContextBuilder:
         }
 
     def _jurisdictions(self, buyer: dict, issue) -> list:
-        billing = (buyer.get("addresses") or {}).get("BILLING")
+        billing = (buyer.get("place_of_supply") or {}).get("address")
         if not billing or not billing.get("country_code"):
             return []
         codes = [billing["country_code"]]

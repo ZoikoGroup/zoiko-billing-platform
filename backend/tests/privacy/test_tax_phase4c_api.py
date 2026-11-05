@@ -62,3 +62,37 @@ def test_other_tenants_cannot_resolve_an_address(db_session, client_for, world):
     client = client_for(_tenant_user(db_session, other, UserRole.BILLING_ADMIN, "admin@p4cx.example"))
     assert client.post(_url(c, a)).status_code == 404
     assert world["resolver"].calls == []
+
+
+# ── pseudonym key over HTTP ─────────────────────────────────────────────
+
+def test_pseudonym_key_status_and_two_person_acknowledgement_over_http(db_session, client_for, world, monkeypatch):
+    from app.config import settings
+
+    maker = client_for(world["maker"])
+    status = maker.get("/api/v1/tax/pseudonym-key").json()
+    assert status["key_set"] is True and status["blocked_reason"] is None
+    assert settings.TAX_PROVIDER_PSEUDONYM_KEY not in str(status)
+    monkeypatch.setattr(settings, "TAX_PROVIDER_PSEUDONYM_KEY", "rotated-over-http")
+    assert maker.get("/api/v1/tax/pseudonym-key").json()["blocked_reason"] == "pseudonym key changed — remap required"
+    assert maker.post("/api/v1/tax/pseudonym-key/acknowledgements", json={}).status_code == 422   # reason required
+    ack = maker.post("/api/v1/tax/pseudonym-key/acknowledgements", json={"reason": "remapped"})
+    assert ack.status_code == 201 and ack.json()["status"] == "PROPOSED"
+    url = f"/api/v1/tax/pseudonym-key/acknowledgements/{ack.json()['id']}/approve"
+    assert maker.post(url, json={}).status_code == 403                     # not a finance approver
+    approved = client_for(world["checker"]).post(url, json={})
+    assert approved.status_code == 200 and approved.json()["status"] == "APPROVED"
+    maker = client_for(world["maker"])
+    assert maker.get("/api/v1/tax/pseudonym-key").json()["blocked_reason"] is None
+    page = maker.get("/api/v1/tax/pseudonym-key/acknowledgements?limit=1").json()
+    assert len(page["items"]) == 1 and page["next_cursor"]
+    assert "rotated-over-http" not in str(page)
+
+
+@pytest.mark.parametrize("role", [PlatformRole.PLATFORM_ADMINISTRATOR, PlatformRole.TAX_PUBLISHER,
+                                  PlatformRole.SUPPORT_OPERATOR])
+def test_platform_roles_cannot_reach_pseudonym_key_records(db_session, client_for, world, role):
+    staff = client_for(make_super_admin(db_session, f"{role.value}@p4ck.example", role))
+    for url in ("/api/v1/tax/pseudonym-key", "/api/v1/tax/pseudonym-key/acknowledgements"):
+        assert staff.get(url).status_code == 403, (role, url)
+    assert staff.post("/api/v1/tax/pseudonym-key/acknowledgements", json={"reason": "x"}).status_code == 403

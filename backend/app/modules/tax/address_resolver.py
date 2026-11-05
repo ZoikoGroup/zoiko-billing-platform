@@ -19,7 +19,7 @@ Rules:
 import enum
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -53,11 +53,15 @@ class Resolution:
     precision: Optional[ResolutionPrecision] = None
     jurisdiction_codes: tuple = ()          # e.g. ("US", "US-CA", "US-CA-LOSANGELES", "US-CA-DIST-123")
     candidates: int = 0
-    source: str = ""                        # the resolver's dataset / version
+    source: str = ""                        # the resolver / data source
+    dataset_version: Optional[str] = None   # the dataset this answer came from, when the resolver says
 
 
 class AddressResolver(ABC):
     name: str
+    #: The resolver's current dataset version, when it reports one. A stored
+    #: resolution on another version is stale.
+    dataset_version: Optional[str] = None
 
     @abstractmethod
     def resolve(self, address: dict) -> Resolution:
@@ -96,7 +100,8 @@ def resolve_address(db: Session, organization_id: int, actor_id: Optional[int], 
         status = ResolutionStatus.AMBIGUOUS                        # not precise enough to pick one district
     row = TaxAddressResolution(
         organization_id=organization_id, address_id=address.id, resolver_name=resolver.name,
-        source=result.source or resolver.name, status=status.name,
+        source=result.source or resolver.name, dataset_version=result.dataset_version or resolver.dataset_version,
+        status=status.name,
         precision=result.precision.name if result.precision else None, candidates=result.candidates,
         jurisdiction_codes=list(result.jurisdiction_codes) if status == ResolutionStatus.RESOLVED else [],
         resolved_by=actor_id, resolved_at=datetime.now(timezone.utc))
@@ -121,7 +126,31 @@ def latest_resolution(db: Session, organization_id: int, address_id: int):
         TaxAddressResolution.address_id == address_id).order_by(TaxAddressResolution.id.desc()).first()
 
 
+def _aware(value: datetime) -> datetime:
+    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+
+
+def valid_until(r) -> datetime:
+    from app.config import settings
+
+    return _aware(r.resolved_at) + timedelta(days=settings.TAX_ADDRESS_RESOLUTION_VALID_DAYS)
+
+
+def resolution_staleness(r, now: datetime) -> Optional[str]:
+    """Why a resolution can no longer be used, or None: past its validity
+    window, or made on a dataset the resolver has since replaced."""
+    until = valid_until(r)
+    if _aware(now) >= until:
+        return f"expired on {until.date().isoformat()}"
+    resolver = ADDRESS_RESOLVERS.get(r.resolver_name)
+    current = getattr(resolver, "dataset_version", None) if resolver is not None else None
+    if current is not None and r.dataset_version != current:
+        return f"dataset {r.dataset_version or 'unknown'} superseded by {current}"
+    return None
+
+
 def view_resolution(r) -> dict:
     return {"id": r.id, "address_id": r.address_id, "resolver": r.resolver_name, "source": r.source,
-            "status": r.status, "precision": r.precision, "candidates": r.candidates,
-            "jurisdiction_codes": r.jurisdiction_codes, "resolved_at": r.resolved_at}
+            "dataset_version": r.dataset_version, "status": r.status, "precision": r.precision,
+            "candidates": r.candidates, "jurisdiction_codes": r.jurisdiction_codes, "resolved_at": r.resolved_at,
+            "valid_until": valid_until(r)}

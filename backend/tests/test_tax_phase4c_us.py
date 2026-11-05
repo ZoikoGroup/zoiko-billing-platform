@@ -41,7 +41,8 @@ from app.modules.tax.legal_entity_service import LegalEntityService
 from app.modules.tax.models import TaxAddressResolution, TaxRecordFrozenError, TaxReviewItem
 from app.modules.tax.policy_service import MarketAvailabilityService, TaxCodeSetService
 from app.modules.tax.provider_contract import ProviderMode
-from app.modules.tax.provider_issuance import beat_for_tests, customer_pseudonym
+from app.modules.tax.provider_issuance import beat_for_tests
+from app.modules.tax.pseudonym import customer_pseudonym
 from app.modules.tax.registry_models import TaxAuthority, TaxComponent, TaxJurisdiction, TaxTypeDefinition
 from app.modules.tax.tenant_tax_service import TenantTaxService
 from tests.conftest import make_customer, make_organization
@@ -50,6 +51,7 @@ from tests.fixtures.tax_fake_resolver import register_fake_resolver
 from tests.test_tax_phase3a_governed import GATES, TAX_DATE, _user, draft, product
 
 SERVICES = (TransactionClass.B2B_SERVICES, TransactionClass.B2C_SERVICES)
+CLASSES = SERVICES + (TransactionClass.B2B_GOODS, TransactionClass.B2C_GOODS)
 STATE, COUNTY, D1, D2 = "US-CA", "US-CA-LA", "US-CA-LA-D1", "US-CA-LA-D2"
 #: Plumbing rates: fake-provider fixtures, NOT legal values.
 STATE_RATE = Decimal("6")
@@ -62,8 +64,8 @@ def _district_rules(world):
     """The fake's plumbing behaviour: a district component on top of the
     state's, chosen from the buyer's resolved districts."""
     def hook(request, result):
-        billing = ((request.facts.get("buyer") or {}).get("addresses") or {}).get("BILLING") or {}
-        codes = ((billing.get("resolution") or {}).get("jurisdiction_codes")) or []
+        supply = ((request.facts.get("buyer") or {}).get("place_of_supply") or {}).get("address") or {}
+        codes = ((supply.get("resolution") or {}).get("jurisdiction_codes")) or []
         for code in codes:
             if code in DISTRICT_RATES:
                 result.components.append(ComponentResult(
@@ -98,7 +100,10 @@ def build_us(db, code="P4CUS"):
                              country_code="US", subdivision_code="CA", parent_id=state.id)
     db.add(county)
     db.flush()
-    jurisdictions = {"US": us, STATE: state, COUNTY: county}
+    nevada = TaxJurisdiction(code="US-NV", name="Nevada", level=JurisdictionLevel.STATE_PROVINCE, country_code="US",
+                             subdivision_code="NV", parent_id=us.id)                # no registration there
+    db.add(nevada)
+    jurisdictions = {"US": us, STATE: state, COUNTY: county, "US-NV": nevada}
     for d in (D1, D2):
         j = TaxJurisdiction(code=d, name=f"District {d[-2:]} (fixture)", level=JurisdictionLevel.DISTRICT,
                             country_code="US", subdivision_code="CA", parent_id=county.id)
@@ -117,7 +122,7 @@ def build_us(db, code="P4CUS"):
     w["jurisdictions"], w["tax_types"] = jurisdictions, tax_types
 
     avail = MarketAvailabilityService(db)
-    for cls in SERVICES:
+    for cls in CLASSES:
         row = avail.draft(actor_id=w["reviewer"].id, jurisdiction_id=state.id, tax_type_id=tax_types["SALES"].id,
                           transaction_class=cls, mode=TaxOperatingMode.PROVIDER_APPROVED, gates=GATES)
         avail.validate(actor_id=w["reviewer"].id, version_id=row.id)
@@ -128,6 +133,8 @@ def build_us(db, code="P4CUS"):
     cs = codes.draft(actor_id=w["reviewer"].id)
     codes.upsert_code(actor_id=w["reviewer"].id, version_id=cs.id, code="SVC", name="Services",
                       supply_category=SupplyCategory.SERVICES)
+    codes.upsert_code(actor_id=w["reviewer"].id, version_id=cs.id, code="GDS", name="Goods",
+                      supply_category=SupplyCategory.GOODS)
     codes.validate(actor_id=w["reviewer"].id, version_id=cs.id)
     codes.submit(actor_id=w["reviewer"].id, version_id=cs.id, reason="fixture")
     codes.approve(actor_id=w["publisher"].id, version_id=cs.id)
@@ -150,35 +157,42 @@ def build_us(db, code="P4CUS"):
     reg = tenant.create_registration(org.id, w["maker"].id, seller_entity_id=entity.id, jurisdiction_id=state.id,
                                      tax_type_id=tax_types["SALES"].id, registration_number="SR-FX-1234",
                                      valid_from=date(2020, 1, 1))
-    for cls in SERVICES:
+    for cls in CLASSES:
         act = tenant.propose_activation(org.id, w["maker"].id, seller_entity_id=entity.id, jurisdiction_id=state.id,
                                         tax_type_id=tax_types["SALES"].id, transaction_class=cls,
                                         mode=TaxOperatingMode.PROVIDER_APPROVED, effective_from=date(2025, 1, 1),
                                         registration_id=reg.id, provider_connection_id=conn.id)
         tenant.decide_activation(org.id, w["checker"].id, act.id, approve=True)
     w["svc"] = product(w, "SVC-US", "SVC")
+    w["goods"] = product(w, "GDS-US", "GDS")
     resolver = register_fake_resolver()
     resolver.add("100 First St", ("US", STATE, COUNTY, D1))
     resolver.add("900 Ninth St", ("US", STATE, COUNTY, D2))
     resolver.add("5 Split Rd", ("US", STATE, COUNTY, D1), candidates=2)
     resolver.add("7 Centroid Ave", ("US", STATE, COUNTY, D2), precision=ResolutionPrecision.ZIP_CENTROID)
+    resolver.add("1 Desert Rd", ("US", "US-NV"))
     w["resolver"] = resolver
     beat_for_tests(db)
     db.commit()
     return w
 
 
-def buyer(w, line1, resolve=True):
+def buyer(w, line1, resolve=True, subdivision="CA"):
     db = w["db"]
     c = make_customer(db, w["org"].id, code=f"US-{len(w.setdefault('buyers', []))}",
                       email=f"b{len(w['buyers'])}@us.example")
     w["buyers"].append(c)
-    a = BuyerEvidenceService(db).record_address(w["org"].id, w["maker"].id, c.id, role=AddressRole.BILLING,
-                                                country_code="US", subdivision_code="CA", postal_code=ZIP,
-                                                city="Los Angeles", line1=line1)
+    return c, address(w, c, AddressRole.BILLING, line1, resolve=resolve, subdivision=subdivision)
+
+
+def address(w, c, role, line1, resolve=True, subdivision="CA"):
+    db = w["db"]
+    a = BuyerEvidenceService(db).record_address(w["org"].id, w["maker"].id, c.id, role=role, country_code="US",
+                                                subdivision_code=subdivision, postal_code=ZIP, city="Somewhere",
+                                                line1=line1)
     if resolve and line1:
         resolve_address(db, w["org"].id, w["maker"].id, a.id)
-    return c, a
+    return a
 
 
 @pytest.fixture()
@@ -188,8 +202,8 @@ def w(db_session):
     ADDRESS_RESOLVERS.clear()
 
 
-def quote_for(w, customer, price=100):
-    inv = draft(w, [(w["svc"], price, 1, False)], customer=customer, currency="USD")
+def quote_for(w, customer, price=100, item="svc"):
+    inv = draft(w, [(w[item], price, 1, False)], customer=customer, currency="USD")
     return inv, TaxDeterminationService(w["db"]).create_quote(w["org"].id, w["maker"].id, "invoice", inv.id)
 
 
@@ -295,10 +309,7 @@ def test_state_registration_covers_its_districts_but_not_another_tax_type(w):
 
 # ── T14 (plumbing): certificates are evidence, never an automatic 0% ────
 
-def test_t14_valid_certificate_with_evidence_is_claimed_and_exempt(w, monkeypatch):
-    from app.config import settings
-
-    monkeypatch.setattr(settings, "TAX_PROVIDER_PSEUDONYM_KEY", "test-pseudonym-key", raising=False)
+def test_t14_valid_certificate_with_evidence_is_claimed_and_exempt(w):
     c, _ = buyer(w, "100 First St")
     cert = certificate(w, c)
     w["after"] = exempt
@@ -345,10 +356,7 @@ def test_t14_provider_exemption_without_a_certificate_is_review_required(w):
 
 
 def test_t14_a_certificate_for_another_state_is_ignored(w):
-    other = TaxJurisdiction(code="US-NV", name="Nevada", level=JurisdictionLevel.STATE_PROVINCE, country_code="US",
-                            subdivision_code="NV", parent_id=w["jurisdictions"]["US"].id)
-    w["db"].add(other)
-    w["db"].commit()
+    other = w["jurisdictions"]["US-NV"]
     c, _ = buyer(w, "100 First St")
     BuyerEvidenceService(w["db"]).add_certificate(w["org"].id, w["maker"].id, c.id, certificate_number="NV-1",
                                                   jurisdiction_id=other.id, scope_description="Resale",
@@ -368,3 +376,164 @@ def test_customer_pseudonym_is_stable_keyed_and_absent_without_a_key(monkeypatch
     assert a == customer_pseudonym(1, 2) and a != customer_pseudonym(1, 3) and a != customer_pseudonym(2, 2)
     monkeypatch.setattr(settings, "TAX_PROVIDER_PSEUDONYM_KEY", "k2", raising=False)
     assert customer_pseudonym(1, 2) != a
+
+
+# ── place of supply: the address used is the one resolved and sent ──────
+
+def test_billed_in_one_state_shipped_to_another_uses_the_ship_to_district(w):
+    c, _ = buyer(w, "1 Desert Rd", subdivision="NV")                       # billed in Nevada
+    ship = address(w, c, AddressRole.SHIPPING, "900 Ninth St")              # shipped to a CA district
+    inv, q = quote_for(w, c, item="goods")
+    assert q.status == TaxQuoteStatus.QUOTED, (q.refusal_code, q.refusal_reason, q.issues)
+    assert q.tax_amount == Decimal("8.25")
+    assert q.supply_address["role"] == "SHIP_TO" and q.supply_address["address_id"] == ship.id
+    assert w["jurisdictions"][D2].id in {c.jurisdiction_id for line in q.lines for c in line.components}
+    svc = InvoiceService(w["db"])
+    svc.governed_gate = GovernedIssuanceGate(w["db"])
+    assert svc.finalize_invoice(inv.id, w["org"].id, w["maker"].id).status == InvoiceStatus.SENT
+    sent = w["provider"].payloads[0]["buyer"]["address"]
+    assert (sent["role"], sent["line1"], sent["subdivision_code"]) == ("SHIP_TO", "900 Ninth St", "CA")
+    assert "address_id" not in sent and "resolution_id" not in sent
+
+
+def test_an_unresolved_ship_to_blocks_even_when_billing_is_resolved(w):
+    c, _ = buyer(w, "100 First St")
+    address(w, c, AddressRole.SHIPPING, "900 Ninth St", resolve=False)
+    _, q = quote_for(w, c, item="goods")
+    assert q.status == TaxQuoteStatus.NEEDS_EVIDENCE and q.tax_amount is None
+    assert any(i["code"] == "ADDRESS_NOT_RESOLVED" and "SHIPPING" in str(i) for i in q.issues)
+
+
+def test_goods_without_a_ship_to_never_fall_back_to_billing(w):
+    c, _ = buyer(w, "100 First St")
+    _, q = quote_for(w, c, item="goods")
+    assert q.status == TaxQuoteStatus.NEEDS_EVIDENCE and q.tax_amount is None
+    assert any(i["code"] == "SHIPPING_ADDRESS_MISSING" for i in q.issues)
+
+
+def test_services_use_a_recorded_service_location_over_billing(w):
+    c, _ = buyer(w, "100 First St")                                         # billing: district 1
+    location = address(w, c, AddressRole.SERVICE_LOCATION, "900 Ninth St")  # performed in district 2
+    _, q = quote_for(w, c)
+    assert q.status == TaxQuoteStatus.QUOTED and q.tax_amount == Decimal("8.25")
+    assert q.supply_address["role"] == "SERVICE_LOCATION" and q.supply_address["address_id"] == location.id
+
+
+def test_services_without_a_service_location_record_the_billing_fallback(w):
+    c, a = buyer(w, "100 First St")
+    _, q = quote_for(w, c)
+    assert q.supply_address["role"] == "BILLING_FALLBACK" and q.supply_address["address_id"] == a.id
+
+
+# ── resolution expiry and dataset version ───────────────────────────────
+
+def _stale_item(w, resolution_id):
+    return w["db"].query(TaxReviewItem).filter(TaxReviewItem.subject_type == "TaxAddressResolution",
+                                               TaxReviewItem.subject_id == resolution_id).one_or_none()
+
+
+def test_an_expired_resolution_blocks_and_raises_a_review_item(w, monkeypatch):
+    from app.config import settings
+
+    c, a = buyer(w, "100 First St")
+    r = w["db"].query(TaxAddressResolution).filter(TaxAddressResolution.address_id == a.id).one()
+    assert r.dataset_version == "fake-2026.11"
+    monkeypatch.setattr(settings, "TAX_ADDRESS_RESOLUTION_VALID_DAYS", 0)
+    _, q = quote_for(w, c)
+    assert q.status == TaxQuoteStatus.NEEDS_EVIDENCE and q.tax_amount is None
+    assert any(i["code"] == "ADDRESS_RESOLUTION_STALE" and "expired" in str(i) for i in q.issues)
+    item = _stale_item(w, r.id)
+    assert item.kind == ReviewItemKind.ADDRESS_RESOLUTION_STALE and item.organization_id == w["org"].id
+
+
+def test_a_newer_dataset_makes_a_resolution_stale_until_resolved_again(w):
+    c, a = buyer(w, "100 First St")
+    r = w["db"].query(TaxAddressResolution).filter(TaxAddressResolution.address_id == a.id).one()
+    w["resolver"].dataset_version = "fake-2026.12"
+    _, q = quote_for(w, c)
+    assert q.status == TaxQuoteStatus.NEEDS_EVIDENCE
+    assert any(i["code"] == "ADDRESS_RESOLUTION_STALE" and "superseded by fake-2026.12" in str(i) for i in q.issues)
+    assert _stale_item(w, r.id) is not None
+    resolve_address(w["db"], w["org"].id, w["maker"].id, a.id)
+    _, q = quote_for(w, c)
+    assert q.status == TaxQuoteStatus.QUOTED and q.tax_amount == Decimal("7.00")
+
+
+# ── the pseudonym key: fingerprinted, guarded ───────────────────────────
+
+def test_a_us_provider_activation_cannot_be_approved_without_the_key(w, monkeypatch):
+    from app.config import settings
+
+    tenant = TenantTaxService(w["db"])
+    nv, sales = w["jurisdictions"]["US-NV"], w["tax_types"]["SALES"]
+    reg = tenant.create_registration(w["org"].id, w["maker"].id, seller_entity_id=w["entity"].id,
+                                     jurisdiction_id=nv.id, tax_type_id=sales.id, registration_number="NV-FX-1",
+                                     valid_from=date(2020, 1, 1))
+    avail = MarketAvailabilityService(w["db"])
+    row = avail.draft(actor_id=w["reviewer"].id, jurisdiction_id=nv.id, tax_type_id=sales.id,
+                      transaction_class=TransactionClass.B2C_SERVICES, mode=TaxOperatingMode.PROVIDER_APPROVED,
+                      gates=GATES)
+    avail.validate(actor_id=w["reviewer"].id, version_id=row.id)
+    avail.submit(actor_id=w["reviewer"].id, version_id=row.id, reason="fixture")
+    avail.approve(actor_id=w["publisher"].id, version_id=row.id)
+    avail.publish(actor_id=w["publisher"].id, version_id=row.id)
+    act = tenant.propose_activation(w["org"].id, w["maker"].id, seller_entity_id=w["entity"].id,
+                                    jurisdiction_id=nv.id, tax_type_id=sales.id,
+                                    transaction_class=TransactionClass.B2C_SERVICES,
+                                    mode=TaxOperatingMode.PROVIDER_APPROVED, effective_from=date(2025, 1, 1),
+                                    registration_id=reg.id, provider_connection_id=w["connection"].id)
+    monkeypatch.setattr(settings, "TAX_PROVIDER_PSEUDONYM_KEY", "")
+    with pytest.raises(BadRequestException, match="TAX_PROVIDER_PSEUDONYM_KEY is not set"):
+        tenant.decide_activation(w["org"].id, w["checker"].id, act.id, approve=True)
+
+
+def test_the_key_is_recorded_by_fingerprint_only(w):
+    from app.config import settings
+    from app.modules.tax.models import TaxPseudonymKeyRecord
+    from app.modules.tax.pseudonym import PseudonymKeyService, key_fingerprint
+
+    (record,) = w["db"].query(TaxPseudonymKeyRecord).filter(TaxPseudonymKeyRecord.organization_id == w["org"].id).all()
+    assert record.status.name == "APPROVED" and record.fingerprint == key_fingerprint()
+    assert (record.proposed_by, record.approved_by) == (w["maker"].id, w["checker"].id)
+    key = settings.TAX_PROVIDER_PSEUDONYM_KEY
+    status = PseudonymKeyService(w["db"]).status(w["org"].id)
+    assert key not in str(status) and key not in record.fingerprint and status["blocked_reason"] is None
+
+
+def test_a_changed_key_blocks_provider_issuing_until_two_people_acknowledge(w, monkeypatch):
+    from app.config import settings
+    from app.core.exceptions import ForbiddenException
+    from app.modules.tax.pseudonym import KEY_CHANGED, PseudonymKeyService
+
+    c, _ = buyer(w, "100 First St")
+    inv, q = quote_for(w, c)
+    assert q.status == TaxQuoteStatus.QUOTED
+    monkeypatch.setattr(settings, "TAX_PROVIDER_PSEUDONYM_KEY", "a-rotated-key")
+    _, blocked = quote_for(w, c)
+    assert blocked.status == TaxQuoteStatus.PROVIDER_UNAVAILABLE and blocked.refusal_reason == KEY_CHANGED
+    svc = InvoiceService(w["db"])
+    svc.governed_gate = GovernedIssuanceGate(w["db"])
+    with pytest.raises(Exception, match="remap required"):
+        svc.finalize_invoice(inv.id, w["org"].id, w["maker"].id)
+    assert w["provider"].payloads == []
+
+    keys = PseudonymKeyService(w["db"])
+    ack = keys.propose(w["org"].id, w["maker"].id, "provider customer records remapped")
+    with pytest.raises(ForbiddenException):
+        keys.decide(w["org"].id, w["maker"].id, ack.id, approve=True)
+    assert keys.problem(w["org"].id) == KEY_CHANGED                         # still blocked while proposed
+    keys.decide(w["org"].id, w["checker"].id, ack.id, approve=True)
+    assert keys.problem(w["org"].id) is None
+    inv2, q2 = quote_for(w, c)
+    assert q2.status == TaxQuoteStatus.QUOTED
+    assert svc.finalize_invoice(inv2.id, w["org"].id, w["maker"].id).status == InvoiceStatus.SENT
+
+
+def test_removing_the_key_also_blocks(w, monkeypatch):
+    from app.config import settings
+    from app.modules.tax.pseudonym import KEY_CHANGED
+
+    c, _ = buyer(w, "100 First St")
+    monkeypatch.setattr(settings, "TAX_PROVIDER_PSEUDONYM_KEY", "")
+    _, q = quote_for(w, c)
+    assert q.status == TaxQuoteStatus.PROVIDER_UNAVAILABLE and q.refusal_reason == KEY_CHANGED
