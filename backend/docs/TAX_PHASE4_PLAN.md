@@ -282,6 +282,115 @@ and committed quotes are never altered.
 - Provider contract (gate 05).
 - The tax lead's decision on the invoice number option.
 
+## Tax Control Center UI (proposal: estimate only, not built until approved)
+
+**Today:**
+- The governed-tax frontend has two pieces: the invoice tax panel and
+  Taxes → Exceptions.
+- Every setup step is API-only: the platform registry and the tenant's
+  tax set-up.
+- The APIs already exist. Each screen below names the routes it uses, and
+  backend gaps are listed separately.
+
+The Tax Control Center maps to handoff §11 in two parts. Both follow §11.1:
+- Default to the user's legal entity and enabled jurisdictions; no global
+  rate catalogue forced on tenants.
+- Progressive disclosure.
+- Side-by-side revision review, without implying a draft is final.
+- Status is never shown by colour alone (WCAG 2.2 AA).
+- No tenant data in platform views.
+
+### Part 1: Platform tax-ops console (`/super-admin/tax`)
+
+**Who:** TAX_REVIEWER (maker) and TAX_PUBLISHER (checker and tax lead).
+Operations roles (`reliability.read`) see the provider health view only.
+
+**Rules:**
+- **Maker-checker:** the server refuses self-approval. The UI hides
+  Approve and Publish on anything you authored or submitted, and explains
+  why.
+- **MFA step-up:** a modal before every approve, publish, suspend or resume
+  (the existing `code` / `recovery_code` fields).
+- **No tenant data on any screen:** only aggregates for reports and
+  provider health.
+
+| # | Screen (§11 destination) | Content and actions | APIs (existing) | Sign-off |
+|---|---|---|---|---|
+| P1 | Overview (Taxes → Overview, platform side) | Registry readiness; queues awaiting *my* action; provider health summary; last refresh and provenance | `GET /readiness`, `/provider-health`, the list endpoints below | |
+| P2 | Source register | Source revisions per authority and handoff ref; register a revision; **evidence capture** (upload, server SHA-256 shown, redistribution permission); revoke (a new revision with DENIED); "reference only" badges | `GET/POST /source-revisions`, `POST /source-revisions/{id}/evidence`, `GET /api/v1/tax/source-revisions/{id}` | **Yes** (S11, S16) |
+| P3 | Rates and change review (Jurisdictions & Rates; Change Review) | Staged rates; stage, amend, adopt (AI proposals), validate, submit, approve or reject, publish. **Old and new side by side**: effective date, authority citation, conflict and escalation alerts, future-effective timeline. | `/staged-rates` and its actions | **Yes** (GB/AU rates) |
+| P4 | Jurisdictions & rates explorer | Country and subnational explorer: status, tax type, product scope, from/to dates, official source, reviewer, `as_of` / `known_at` time travel, "reference only" badge | `GET /api/v1/tax/jurisdictions`, `/rates` | |
+| P5 | Tax-code catalogue | Code-set versions; code editor (supply category, registry scope); validate, submit, approve, publish; diff against the active version | `/tax-code-sets` and its actions | |
+| P6 | Market availability | Matrix of jurisdiction × tax type × transaction class with the mode; the seven launch gates per cell, with evidence refs and notes; validate, submit, approve, publish | `/market-availability` and its actions | **Yes** (gates for GB/AU) |
+| P7 | Rule packs | Catalogue (the declarations in code); register; attach the golden-test report; source-dependency status (live); validate, submit, approve, publish; **the TAX_PHASE3B sign-off checklist shown next to the pack** | `/rule-packs`, `/rule-packs/catalogue` and actions | **Yes** |
+| P8 | Approvals inbox | Everything IN_APPROVAL across rates, code sets, availability and packs; "submitted by you" items read-only; audit trail per item | the list endpoints today; one combined endpoint (gap B1) | **Yes** |
+| P9 | Provider operations | Counts per state, oldest age, circuit, heartbeat; suspend or resume with a reason and MFA | `/provider-health` and suspend/resume | |
+| P10 | Findings reports (aggregate) | Over-collection and duplicate rows, totals only | `/reports/*` | |
+
+### Part 2: Tenant Settings → Taxes (`/billing/settings/taxes`)
+
+**Who:** org_admin and billing_admin propose; finance_approver approves. A
+different user must approve: the server enforces it, and the UI hides
+Approve on your own proposals. Only tenant users have access; super-admins
+are refused (T13).
+
+| # | Screen (§11 destination) | Content and actions | APIs (existing) |
+|---|---|---|---|
+| T1 | Overview (Settings → Taxes → Overview) | Seller-entity switcher; regime and eligibility checklist; supported jurisdictions and activations; registration status and expiries; open review items (T14); Exceptions count; last refresh and provenance | `/legal-entities`, `/regime-eligibility`, `/activations`, `/registrations`, `/review-items`, `/exceptions` |
+| T2 | Legal entities | Entities, default entity, jurisdiction-locked fields explained | `/legal-entities` (existing CRUD and set-default) |
+| T3 | Entity registrations (Entity Registrations) | Registrations (number, validity, verification, evidence ref); legal bases (propose, approve, reject, withdraw); certificate references; private and scoped to the entity | `/registrations`, `/legal-bases` and actions |
+| T4 | Activations | Propose per market (only the modes the platform offers, with the reason shown); approve, reject, withdraw; effective-state viewer by date | `/activations` and actions, `/activations/{id}/effective` |
+| T5 | Regime | Eligibility checklist; request GOVERNED; leave GOVERNED with two-person approval (product question 6, built in 4a-2) | `/regime-eligibility`, `POST /regime` |
+| T6 | Product classification (Product Classification) | Products to tax codes with the review queue, owner, change history; **bulk impact preview** before approving | `/tax-codes`, `/product-classifications`, `/impact-preview`, actions |
+| T7 | Customer tax evidence (in the customer profile) | Tax addresses with street lines and role; tax IDs with verification and retire; exemption certificates (used in 4c) with revoke | `/customers/{id}/tax-evidence`, `/tax-addresses`, `/tax-ids`, `/exemption-certificates` |
+| T8 | Review items (T14) | Expiring and expired registrations, certificates and tax IDs; provider drift items; resolve | `/review-items`, `/resolve` |
+| T9 | Reference rates (read-only) | Jurisdictions & Rates for the entity's enabled jurisdictions only, with a "reference only" badge | `/jurisdictions`, `/rates` |
+| T10 | Reports | Tenant over-collection and duplicate-row detail | `/reports/*` |
+| — | Exceptions, invoice tax panel | Already built (3b); the provider-transactions view and Provider Connections come in 4a-2 | |
+
+### Backend gaps found while mapping
+
+| Gap | Size |
+|---|---|
+| **B1** Combined approvals-inbox endpoint (IN_APPROVAL across version types, maker flagged); optional, since the console can merge the lists | ≈ 0.5 d |
+| **B2** Jurisdictions, authorities and components have no create or amend API (seed script only). New markets need either an admin API with maker-checker or a reviewed seed. Not needed for the GB/AU sign-off. | ≈ 2 d (if wanted) |
+| **B3** List endpoints have no pagination (fine at today's volumes) | ≈ 0.5 d |
+
+### Sign-off subset: schedule early
+
+The tax lead's pack sign-off (TAX_PHASE3B checklist) needs only platform
+screens:
+- **Shared foundations:** console shell, capability-aware navigation, the
+  MFA step-up modal, a maker-checker action bar, and a version timeline
+  with audit.
+- **Screens:** P2 Source register, P3 Rates, P6 Market availability,
+  P7 Rule packs, P8 Approvals inbox.
+
+This subset can ship as its own PR before 4a-2, so the UK and Australia
+packs can be signed off while 4a-2 is built. **A pilot tenant switching to
+GOVERNED** additionally needs T2–T7, or the API meanwhile.
+
+### Estimates (frontend engineering days; tests and accessibility included)
+
+| Block | Days |
+|---|---|
+| Shared foundations (console shell and navigation, MFA step-up modal, maker-checker action bar, version and audit timeline, status badges) | 5 |
+| **Sign-off subset:** P2 (2.5), P3 (4.5), P6 (3), P7 (3), P8 (2 incl. B1) | **15** |
+| Rest of the console: P1 (1.5), P4 (2), P5 (2.5), P9 (1), P10 (0.5) | 7.5 |
+| Tenant shared components (propose/approve bar, "not your own" hints, entity switcher) | 2 |
+| Tenant screens: T1 (2.5), T2 (1.5), T3 (3), T4 (3), T5 (1.5), T6 (3.5), T7 (3), T8 (1), T9 (1), T10 (1) | 21 |
+| Docs and an end-to-end walkthrough of the sign-off path | 1.5 |
+| **Total** | **≈ 52** (sign-off subset with foundations ≈ **20**) |
+
+B2 is excluded. Each block is one PR on `feature/global-tax`, stopping for
+review.
+
+**Proposed order** (for decision):
+1. Sign-off subset (≈ 20 d).
+2. 4a-2.
+3. Tenant screens T1–T7.
+4. Rest of the console.
+
 ## Estimates (engineering days)
 
 | Sub-phase | Days |
