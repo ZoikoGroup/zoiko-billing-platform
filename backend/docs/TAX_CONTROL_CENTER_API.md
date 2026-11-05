@@ -1,4 +1,4 @@
-# Tax Control Center — API Contract (B1, B3, Phase 4a-2)
+# Tax Control Center — API Contract (B1, B3, Phase 4a-2, Phase 4c)
 
 The backend for the Tax Control Center frontend (plan:
 `TAX_PHASE4_PLAN.md`, "Tax Control Center UI"). It contains two gaps:
@@ -317,6 +317,48 @@ or `{"available": false, "detail": "..."}`.
 `GET /exceptions` and `GET /invoices/{id}/tax-summary` (the `issuance`
 block) keep showing provider issuing that is overdue or needs review, with
 owner and age.
+
+## Phase 4c endpoints (tenant, `/api/v1/tax`)
+
+Phase 4b (Canada) adds no endpoints. Phase 4c adds one route and one field.
+
+### Resolving a US tax address (T-screen: Customer tax evidence)
+
+```
+POST /customers/{customer_id}/tax-addresses/{address_id}/resolve   (billing admin, no body)
+     -> 201 Resolution
+     400: no street line (a ZIP alone never resolves), or no resolver is available yet
+     404: the address is not this customer's, or not this organization's
+```
+
+**Resolution:**
+
+```json
+{"id": 9, "address_id": 31, "resolver": "fake-resolver", "source": "fake-2026.11", "status": "RESOLVED",
+ "precision": "ROOFTOP", "candidates": 1,
+ "jurisdiction_codes": ["US", "US-CA", "US-CA-LA", "US-CA-LA-D1"], "resolved_at": "..."}
+```
+
+- `status`: `RESOLVED`, `AMBIGUOUS` or `NOT_FOUND`. Only `RESOLVED` with
+  `ROOFTOP` or `PARCEL` precision and exactly one candidate counts. Anything
+  else is stored as `AMBIGUOUS` (or `NOT_FOUND`) with no jurisdiction codes.
+- Each call adds a new, write-once row. The latest one for the address is
+  used. Recording a new address needs a new resolution.
+
+**Added field.** `GET /customers/{id}/tax-evidence` → each item in
+`addresses[]` gains `"resolution": Resolution | null`, the latest one.
+
+**New quote issue codes (US buyers):**
+
+| Code | What the UI should prompt |
+|---|---|
+| `BUYER_STREET_ADDRESS_MISSING` | enter a street line |
+| `ADDRESS_NOT_RESOLVED` | resolve the address |
+| `ADDRESS_AMBIGUOUS` | correct the address and resolve it again |
+
+**New refusal code:** `EXEMPTION_CERTIFICATE_INVALID` (NEEDS_EVIDENCE). A
+relevant certificate is expired, not yet valid, not ACTIVE, or has no
+evidence document.
 
 ## Tests
 

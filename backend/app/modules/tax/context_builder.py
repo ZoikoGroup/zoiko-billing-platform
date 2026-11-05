@@ -256,6 +256,28 @@ class TaxContextBuilder:
         if billing is not None and billing.country_code and not billing.subdivision_code:
             issue(ContextIssueKind.MISSING, "BUYER_SUBDIVISION_MISSING", "buyer.addresses.BILLING.subdivision_code",
                   "No state/province is recorded; sub-national rules cannot be resolved.")
+        from app.modules.tax.address_resolver import ADDRESS_RESOLUTION_COUNTRIES
+
+        if billing is not None and billing.country_code in ADDRESS_RESOLUTION_COUNTRIES:
+            # Phase 4c (T07): a ZIP alone never resolves; the street address must
+            # be resolved to one district by an address resolver.
+            from app.modules.tax.address_resolver import latest_resolution
+
+            resolution = latest_resolution(self.db, organization_id, billing.id)
+            address_facts["BILLING"]["resolution"] = None if resolution is None else {
+                "id": resolution.id, "status": resolution.status, "precision": resolution.precision,
+                "source": resolution.source, "resolver": resolution.resolver_name,
+                "jurisdiction_codes": resolution.jurisdiction_codes}
+            if not (billing.line1 or "").strip():
+                issue(ContextIssueKind.MISSING, "BUYER_STREET_ADDRESS_MISSING", "buyer.addresses.BILLING.line1",
+                      "A street address is required: a postal code alone never resolves the tax jurisdiction.")
+            elif resolution is None:
+                issue(ContextIssueKind.MISSING, "ADDRESS_NOT_RESOLVED", "buyer.addresses.BILLING.resolution",
+                      "The billing address has not been resolved to a tax district yet.")
+            elif resolution.status != "RESOLVED":
+                issue(ContextIssueKind.AMBIGUOUS, "ADDRESS_AMBIGUOUS", "buyer.addresses.BILLING.resolution",
+                      f"The billing address resolved {resolution.status.lower()} "
+                      f"({resolution.candidates} candidates, precision {resolution.precision}); correct it.")
         if SupplyCategory.GOODS in categories and by_role.get(AddressRole.SHIPPING) is None:
             issue(ContextIssueKind.MISSING, "SHIPPING_ADDRESS_MISSING", "buyer.addresses.SHIPPING",
                   "Goods lines need a structured shipping location.")
@@ -290,7 +312,8 @@ class TaxContextBuilder:
         cert_facts = []
         for c in certificates:
             cert_facts.append({"id": c.id, "jurisdiction_id": c.jurisdiction_id, "tax_type_id": c.tax_type_id,
-                               "valid_from": c.valid_from, "expires_at": c.expires_at, "status": c.status})
+                               "valid_from": c.valid_from, "expires_at": c.expires_at, "status": c.status,
+                               "reason_code": c.reason_code, "evidence_attached": c.evidence_file_id is not None})
             if c.status == CertificateStatus.ACTIVE and tax_date is not None and c.expires_at is not None \
                     and c.expires_at <= tax_date:
                 issue(ContextIssueKind.EXPIRED, "EXEMPTION_CERTIFICATE_EXPIRED", f"buyer.exemption_certificates[{c.id}]",
@@ -314,10 +337,20 @@ class TaxContextBuilder:
         codes = [billing["country_code"]]
         if billing.get("subdivision_code"):
             codes.append(f"{billing['country_code']}-{billing['subdivision_code']}")
+        resolution = billing.get("resolution")
+        if "resolution" in billing:
+            # Resolved-address countries (US): only the resolved districts count.
+            if not resolution or resolution["status"] != "RESOLVED":
+                return []
+            codes = list(dict.fromkeys(resolution["jurisdiction_codes"]))
         found = {j.code: j for j in self.db.query(TaxJurisdiction).filter(TaxJurisdiction.code.in_(codes))}
         if billing["country_code"] not in found:
             issue(ContextIssueKind.MISSING, "JURISDICTION_NOT_IN_REGISTRY", "jurisdictions",
                   f"{billing['country_code']} is not in the tax reference registry.")
+        elif resolution and [c for c in codes if c not in found]:
+            issue(ContextIssueKind.MISSING, "JURISDICTION_NOT_IN_REGISTRY", "jurisdictions",
+                  "Resolved districts are not in the tax reference registry: "
+                  + ", ".join(c for c in codes if c not in found))
         return [{"id": found[c].id, "code": c, "timezone": found[c].timezone} for c in codes if c in found]
 
     def _obligations(self, organization_id, entity, jurisdictions, business_status, categories, tax_date, issue):

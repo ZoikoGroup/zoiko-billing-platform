@@ -216,7 +216,7 @@ def build_commit_payload(db: Session, quote: TaxQuote, row: TaxProviderOutbox) -
         "seller": {"country_code": getattr(seller, "country_code", None),
                    "subdivision_code": getattr(seller, "subdivision_code", None),
                    "registered_jurisdictions": registered_jurisdictions(db, quote)},
-        "buyer": {"address": supply},
+        "buyer": _buyer_payload(db, quote, row, supply),
         "lines": [{
             "line_id": line.document_line_id, "quantity": str(line.quantity),
             "net_amount": str(line.taxable_base), "line_discount": str(line.line_discount_unrounded),
@@ -227,6 +227,43 @@ def build_commit_payload(db: Session, quote: TaxQuote, row: TaxProviderOutbox) -
         } for line in quote.lines],
         "totals": {"tax": str(quote.tax_amount), "total": str(quote.total_amount)},
     }
+
+
+def customer_pseudonym(organization_id: int, customer_id) -> Optional[str]:
+    """A stable, non-reversible customer reference for the provider (plan
+    change 9): HMAC-SHA256 under TAX_PROVIDER_PSEUDONYM_KEY. None when the
+    key is unset or there is no customer."""
+    import hashlib
+    import hmac
+
+    from app.config import settings
+
+    key = (getattr(settings, "TAX_PROVIDER_PSEUDONYM_KEY", "") or "").strip()
+    if not key or customer_id is None:
+        return None
+    return "zc_" + hmac.new(key.encode(), f"{organization_id}:{customer_id}".encode(), hashlib.sha256).hexdigest()[:32]
+
+
+def _buyer_payload(db: Session, quote: TaxQuote, row: TaxProviderOutbox, supply: dict) -> dict:
+    """The buyer: address, pseudonymous reference and exemption claims
+    (jurisdiction, tax type and reason only; no certificate numbers or files)."""
+    from app.modules.billing.models import Invoice
+    from app.modules.tax.registry_models import TaxJurisdiction, TaxTypeDefinition
+
+    buyer = {"address": supply}
+    invoice = db.get(Invoice, row.invoice_id) if row.invoice_id else None
+    ref = customer_pseudonym(quote.organization_id, getattr(invoice, "customer_id", None))
+    if ref:
+        buyer["customer_ref"] = ref
+    if quote.exemption_claims:
+        exemptions = []
+        for c in quote.exemption_claims:
+            j = db.get(TaxJurisdiction, c["jurisdiction_id"])
+            t = db.get(TaxTypeDefinition, c["tax_type_id"]) if c.get("tax_type_id") else None
+            exemptions.append({"jurisdiction_code": j.code if j else None, "tax_type": t.code if t else None,
+                               "reason_code": c.get("reason_code")})
+        buyer["exemptions"] = exemptions
+    return buyer
 
 
 def registered_jurisdictions(db: Session, quote: TaxQuote) -> list:

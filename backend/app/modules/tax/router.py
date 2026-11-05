@@ -455,6 +455,16 @@ def record_tax_address(customer_id: int, data: TaxAddressCreate, db: Session = D
         organization_id, current_user.id, customer_id, **data.model_dump()))
 
 
+@router.post("/customers/{customer_id}/tax-addresses/{address_id}/resolve", status_code=status.HTTP_201_CREATED,
+             summary="Resolve a US tax address to its tax districts (Phase 4c)",
+             dependencies=[Depends(get_current_billing_admin)])
+def resolve_tax_address(customer_id: int, address_id: int, db: Session = Depends(get_db),
+                        organization_id: int = Depends(get_organization_id), current_user=Depends(get_current_user)):
+    from app.modules.tax.address_resolver import resolve_address, view_resolution
+
+    return view_resolution(resolve_address(db, organization_id, current_user.id, address_id, customer_id=customer_id))
+
+
 @router.post("/customers/{customer_id}/tax-ids", status_code=status.HTTP_201_CREATED,
              summary="Record a buyer tax ID (stored exactly as given)", dependencies=[Depends(get_current_billing_admin)])
 def add_customer_tax_id(customer_id: int, data: TaxIdCreate, db: Session = Depends(get_db),

@@ -28,6 +28,7 @@ from decimal import Decimal
 from app.modules.tax.engines import ComponentResult, EngineRequest, LineResult
 from app.modules.tax.enums import RoundingMode, TaxOutcome
 from app.modules.tax.provider_contract import (
+    ALLOWED_BUYER_FIELDS,
     ALLOWED_COMMIT_FIELDS,
     PROVIDER_REGISTRY,
     ProviderDefinition,
@@ -116,6 +117,9 @@ class FakeTaxProvider(ProviderAdapter):
         unexpected = set(payload) - ALLOWED_COMMIT_FIELDS
         if unexpected:
             raise ProviderRefused(f"unexpected payload fields {sorted(unexpected)}")
+        unexpected = set(payload.get("buyer") or {}) - ALLOWED_BUYER_FIELDS
+        if unexpected:
+            raise ProviderRefused(f"unexpected buyer fields {sorted(unexpected)}")
         if self._fires("commit_error"):
             raise ProviderRefused("simulated refusal")
         if self._fires("rate_limited"):

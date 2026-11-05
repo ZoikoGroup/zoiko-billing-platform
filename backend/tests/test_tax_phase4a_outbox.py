@@ -306,10 +306,11 @@ def test_provider_contradictions_are_review_required(w, changes, fragment):
 
 def test_known_reason_code_maps_to_our_outcome(w):
     w["provider"].rate = Decimal("0")
-    w["provider"].result_hook = _hook(provider_line_tax=Decimal("0"), reason_code="EXEMPT")
+    # (EXEMPT additionally needs a valid certificate on file: Phase 4c tests.)
+    w["provider"].result_hook = _hook(provider_line_tax=Decimal("0"), reason_code="ZERO_RATED")
     q = quote(w, draft(w, [(w["dig_product"], 100, 1, False)]))
     assert q.status == TaxQuoteStatus.QUOTED and q.tax_amount == Decimal("0.00")
-    assert q.lines[0].outcome == TaxOutcome.EXEMPT and q.lines[0].explanation_code == "PROVIDER_EXEMPT"
+    assert q.lines[0].outcome == TaxOutcome.ZERO_RATED and q.lines[0].explanation_code == "PROVIDER_ZERO_RATED"
 
 
 # ── drift ───────────────────────────────────────────────────────────────
