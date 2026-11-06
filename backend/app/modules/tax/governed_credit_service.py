@@ -63,11 +63,7 @@ class GovernedCreditService:
                 .filter(CreditNoteTaxLine.tax_quote_line_id == quote_line_id,
                         CreditNote.status != CreditNoteStatus.VOIDED).all())
 
-    def create(self, organization_id: int, actor_id: int, invoice_id: int, *, lines: list,
-               credit_note_type: CreditNoteType = CreditNoteType.PARTIAL_CREDIT, reason: Optional[str] = None,
-               issue_date: Optional[date] = None) -> CreditNote:
-        from app.modules.billing.services.credit_note_service import CreditNoteService
-
+    def _snapshot(self, organization_id: int, invoice_id: int):
         inv = self._invoice(organization_id, invoice_id)
         if inv.tax_quote_id is None:
             raise BadRequestException("This invoice has no governed tax snapshot; use the standard credit-note flow.")
@@ -76,6 +72,13 @@ class GovernedCreditService:
         quote = self.db.get(TaxQuote, inv.tax_quote_id)
         if quote is None or quote.status != TaxQuoteStatus.COMMITTED:
             raise BadRequestException("The invoice's tax snapshot is not committed.")
+        return inv, quote
+
+    def _plan(self, organization_id: int, invoice_id: int, lines: list):
+        """The reversal, computed from the committed snapshot without writing
+        anything. create() and preview() both use it, so a preview is exactly
+        what would be credited."""
+        inv, quote = self._snapshot(organization_id, invoice_id)
         if not lines:
             raise BadRequestException("Choose at least one invoice line to credit.")
 
@@ -107,18 +110,21 @@ class GovernedCreditService:
             completes = credited_before + fraction >= ONE - Decimal("0.0000001")
             planned.append((qline, fraction, prior, completes))
 
-        rows, subtotal, tax = [], Decimal("0"), Decimal("0")
+        rows, subtotal, tax, per_line = [], Decimal("0"), Decimal("0"), []
         for qline, fraction, prior, completes in planned:
             base_u = -Decimal(qline.taxable_base_unrounded) * fraction
             prior_base_rounded = sum((Decimal(r.credited_base) for r in _one_per_credit_note(prior)), Decimal("0"))
             base_r = (-Decimal(qline.taxable_base) - prior_base_rounded) if completes else _round(base_u, decimals, mode)
             subtotal += base_r
+            line_view = {"qline": qline, "fraction": fraction, "credited_base": base_r, "components": []}
+            per_line.append(line_view)
             for comp in qline.components:
                 tax_u = -Decimal(comp.tax_unrounded) * fraction
                 prior_tax_rounded = sum((Decimal(r.credited_tax) for r in prior if r.tax_quote_component_id == comp.id),
                                         Decimal("0"))
                 tax_r = (-Decimal(comp.tax_amount) - prior_tax_rounded) if completes else _round(tax_u, decimals, mode)
                 tax += tax_r
+                line_view["components"].append((comp, tax_r))
                 rows.append(dict(invoice_id=inv.id, tax_quote_id=quote.id, tax_quote_line_id=qline.id,
                                  tax_quote_component_id=comp.id, credited_base_unrounded=_q6(base_u, mode),
                                  credited_tax_unrounded=_q6(tax_u, mode), credited_base=base_r, credited_tax=tax_r))
@@ -127,6 +133,83 @@ class GovernedCreditService:
         total = -(subtotal + tax)
         if total <= 0:
             raise BadRequestException("The selected lines net to no credit.")
+        return inv, quote, rows, subtotal, tax, total, per_line
+
+    def preview(self, organization_id: int, invoice_id: int, *, lines: list) -> dict:
+        """What a credit note for these lines would reverse. Read-only."""
+        from app.modules.billing.models import InvoiceItem
+
+        inv, quote, _rows, subtotal, tax, total, per_line = self._plan(organization_id, invoice_id, lines)
+        items = {i.id: i for i in self.db.query(InvoiceItem).filter(InvoiceItem.invoice_id == inv.id)}
+        return {
+            "invoice_id": inv.id, "invoice_number": inv.invoice_number, "currency": inv.currency,
+            "provider_committed": quote.remote_commit_state == RemoteCommitState.COMMITTED,
+            "subtotal": -subtotal, "tax_amount": -tax, "total_amount": total,
+            "lines": [{
+                "invoice_item_id": v["qline"].document_line_id, "line_number": v["qline"].line_number,
+                "description": getattr(items.get(v["qline"].document_line_id), "description", None),
+                "fraction": v["fraction"], "credited_net": -v["credited_base"],
+                "outcome": v["qline"].outcome.name, "legal_reason": v["qline"].legal_reason,
+                "transaction_class": getattr(v["qline"].transaction_class, "name", None),
+                "components": [{"component_code": c.component_code, "label": c.label, "rate_percent": c.rate_percent,
+                                "credited_tax": -t, "is_reverse_charge": bool(c.is_reverse_charge)}
+                               for c, t in v["components"]],
+            } for v in per_line],
+        }
+
+    def creditable(self, organization_id: int, invoice_id: int) -> dict:
+        """The invoice's snapshot lines with what is already credited, and
+        its governed credit notes with the provider ADJUST state."""
+        from app.modules.billing.models import InvoiceItem
+        from app.modules.tax.enums import OutboxOperation
+        from app.modules.tax.provider_models import TaxProviderOutbox
+
+        inv, quote = self._snapshot(organization_id, invoice_id)
+        items = {i.id: i for i in self.db.query(InvoiceItem).filter(InvoiceItem.invoice_id == inv.id)}
+        out_lines = []
+        for q in sorted(quote.lines, key=lambda x: x.line_number):
+            base_u = Decimal(q.taxable_base_unrounded)
+            credited = Decimal("0")
+            if base_u != 0:
+                credited = sum((-Decimal(r.credited_base_unrounded) for r in _one_per_credit_note(self._prior(q.id))),
+                               Decimal("0")) / base_u
+            credited = min(max(credited, Decimal("0")), ONE)
+            item = items.get(q.document_line_id)
+            out_lines.append({
+                "invoice_item_id": q.document_line_id, "line_number": q.line_number,
+                "description": getattr(item, "description", None), "quantity": q.quantity,
+                "net": q.taxable_base, "tax_amount": q.tax_amount, "line_total": q.line_total,
+                "credited_fraction": credited.quantize(Decimal("0.0000000001")),
+                "remaining_fraction": (ONE - credited).quantize(Decimal("0.0000000001")),
+                "outcome": q.outcome.name, "legal_reason": q.legal_reason,
+                "components": [{"component_code": c.component_code, "label": c.label, "rate_percent": c.rate_percent,
+                                "tax_amount": c.tax_amount} for c in q.components],
+            })
+        notes = []
+        rows = (self.db.query(CreditNote).filter(CreditNote.invoice_id == inv.id,
+                                                 CreditNote.organization_id == organization_id)
+                .order_by(CreditNote.id).all())
+        for note in rows:
+            if not self.db.query(CreditNoteTaxLine).filter(CreditNoteTaxLine.credit_note_id == note.id).first():
+                continue                                          # not a governed credit note
+            adjust = (self.db.query(TaxProviderOutbox).filter(TaxProviderOutbox.credit_note_id == note.id,
+                                                              TaxProviderOutbox.operation == OutboxOperation.ADJUST)
+                      .order_by(TaxProviderOutbox.id.desc()).first())
+            notes.append({"id": note.id, "credit_note_number": note.credit_note_number, "status": note.status.name,
+                          "total_amount": note.total_amount, "tax_amount": note.tax_amount,
+                          "adjust": None if adjust is None else {"transaction_id": adjust.id,
+                                                                 "state": adjust.state.name,
+                                                                 "last_error": adjust.last_error}})
+        return {"invoice_id": inv.id, "invoice_number": inv.invoice_number, "status": inv.status.name,
+                "currency": inv.currency, "provider_committed": quote.remote_commit_state == RemoteCommitState.COMMITTED,
+                "lines": out_lines, "credit_notes": notes}
+
+    def create(self, organization_id: int, actor_id: int, invoice_id: int, *, lines: list,
+               credit_note_type: CreditNoteType = CreditNoteType.PARTIAL_CREDIT, reason: Optional[str] = None,
+               issue_date: Optional[date] = None) -> CreditNote:
+        from app.modules.billing.services.credit_note_service import CreditNoteService
+
+        inv, quote, rows, subtotal, tax, total, _view = self._plan(organization_id, invoice_id, lines)
         credit_note = CreditNoteService(self.db).create_credit_note(
             organization_id, actor_id, customer_id=inv.customer_id, credit_note_number="auto",
             credit_note_type=credit_note_type, total_amount=total, issue_date=issue_date or _now().date(),

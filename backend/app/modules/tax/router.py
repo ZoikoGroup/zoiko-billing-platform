@@ -840,6 +840,22 @@ def list_tax_exceptions(limit: int = Query(200, ge=1, le=500),
     return TaxExceptionService(db).list_exceptions(organization_id, limit=limit, after_invoice_id=decode_cursor(cursor))
 
 
+@router.get("/invoices/{invoice_id}/credit-notes/creditable",
+            summary="A governed invoice's lines, what is already credited, and its credit notes (with provider ADJUST state)",
+            dependencies=[Depends(get_current_billing_admin)])
+def governed_creditable(invoice_id: int, db: Session = Depends(get_db),
+                        organization_id: int = Depends(get_organization_id)):
+    return GovernedCreditService(db).creditable(organization_id, invoice_id)
+
+
+@router.post("/invoices/{invoice_id}/credit-notes/preview",
+             summary="Preview a governed credit note from the original snapshot (nothing is written)",
+             dependencies=[Depends(get_current_billing_admin)])
+def preview_governed_credit_note(invoice_id: int, data: GovernedCreditCreate, db: Session = Depends(get_db),
+                                 organization_id: int = Depends(get_organization_id)):
+    return GovernedCreditService(db).preview(organization_id, invoice_id, lines=[l.model_dump() for l in data.lines])
+
+
 @router.post("/invoices/{invoice_id}/credit-notes", status_code=status.HTTP_201_CREATED,
              summary="Credit a governed invoice from its tax snapshot", dependencies=[Depends(get_current_billing_admin)])
 def create_governed_credit_note(

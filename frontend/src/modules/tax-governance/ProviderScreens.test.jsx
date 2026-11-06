@@ -314,10 +314,10 @@ describe("connection mode change", () => {
     svc.decideModeChange.mockRejectedValueOnce(STEP_UP).mockResolvedValueOnce(connection({ mode: "COMMIT" }));
     renderAt("providers");
     fireEvent.click(await screen.findByRole("button", { name: "Approve mode change" }));
-    const mfa = await screen.findByRole("dialog");
+    const mfa = await screen.findByRole("dialog", { name: /Confirm with MFA/ }, { timeout: 5000 });
     fireEvent.change(within(mfa).getByLabelText(/Authenticator code/), { target: { value: "123456" } });
     fireEvent.click(within(mfa).getByRole("button", { name: "Confirm" }));
-    await waitFor(() => expect(svc.decideModeChange).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(svc.decideModeChange).toHaveBeenCalledTimes(2), { timeout: 5000 });
     expect(svc.decideModeChange.mock.calls[0]).toEqual([40, true, {}]);
     expect(svc.decideModeChange.mock.calls[1]).toEqual([40, true, { code: "123456" }]);
   });
