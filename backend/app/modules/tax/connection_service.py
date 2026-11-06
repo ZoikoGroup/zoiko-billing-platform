@@ -53,6 +53,12 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _aware(value: Optional[datetime]) -> Optional[datetime]:
+    if value is None:
+        return None
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
 class ProviderConnectionService:
     def __init__(self, db: Session, secrets: Optional[SecretStore] = None):
         self.db = db
@@ -135,6 +141,80 @@ class ProviderConnectionService:
             raise BadRequestException(f"Provider connection {row.id} is {row.status.name}, not PROPOSED.")
         row.status, row.updated_at = ConnectionStatus.WITHDRAWN, _now()
         self._log(row, actor_id, BillingAuditAction.UPDATE, withdrawn=True)
+        self.db.commit()
+        return row
+
+    # ── mode change (Phase 5c): ESTIMATE_ONLY <-> COMMIT, two people ──
+    def mode_change_problem(self, row: TaxProviderConnection, target: ProviderMode) -> Optional[str]:
+        """Why this connection can't move to `target` now, or None. Going to
+        COMMIT is the connection's go-live step: it must be usable (approved,
+        credentials in the configured store, production only once allowed)
+        and have passed a test with its current credential. Going back to
+        ESTIMATE_ONLY is always allowed while the connection is live."""
+        if row.status not in (ConnectionStatus.APPROVED, ConnectionStatus.SUSPENDED):
+            return f"Provider connection {row.id} is {row.status.name}; only an approved connection changes mode."
+        if row.mode == target.name:
+            return f"The connection is already {target.name}."
+        if target == ProviderMode.COMMIT:
+            problem = self.usable_problem(row)
+            if problem:
+                return f"Commit mode needs a usable connection: {problem}."
+            if row.credential_previous_version is not None:
+                return "A credential rotation is waiting for a successful test; run Test connection first."
+            checked, rotated = _aware(row.health_checked_at), _aware(row.credential_rotated_at)
+            if not row.health_ok or checked is None or (rotated is not None and checked < rotated):
+                return "Commit mode needs a passing Test connection with the current credential."
+        return None
+
+    def request_mode_change(self, organization_id: int, actor_id: int, connection_id: int, mode: ProviderMode,
+                            reason: str) -> TaxProviderConnection:
+        row = self.get(organization_id, connection_id)
+        if not (reason or "").strip():
+            raise BadRequestException("A reason is required.")
+        if row.mode_change_to is not None:
+            raise BadRequestException(f"A change to {row.mode_change_to} is already waiting for a decision.")
+        problem = self.mode_change_problem(row, mode)
+        if problem:
+            raise BadRequestException(problem)
+        now = _now()
+        row.mode_change_to, row.mode_change_requested_by = mode.name, actor_id
+        row.mode_change_requested_at, row.mode_change_reason, row.updated_at = now, reason.strip(), now
+        self._log(row, actor_id, BillingAuditAction.UPDATE,
+                  mode_change={"event": "requested", "from": row.mode, "to": mode.name, "reason": reason.strip()})
+        self.db.commit()
+        return row
+
+    def decide_mode_change(self, organization_id: int, actor_id: int, connection_id: int, *, approve: bool,
+                           reason: Optional[str] = None, step_up: str = "verified") -> TaxProviderConnection:
+        """A different finance approver decides. Approving re-checks the
+        gates and changes the mode in place: the same connection and
+        credentials. Rows already in the outbox carry on as they are."""
+        row = self.get(organization_id, connection_id)
+        if row.mode_change_to is None:
+            raise BadRequestException("There is no mode change waiting for a decision.")
+        self._checker(row.mode_change_requested_by, actor_id, "requested this mode change")
+        target, previous, now = ProviderMode[row.mode_change_to], row.mode, _now()
+        if approve:
+            problem = self.mode_change_problem(row, target)
+            if problem:
+                raise BadRequestException(problem)
+            row.mode, row.mode_changed_by, row.mode_changed_at = target.name, actor_id, now
+        row.mode_change_to = row.mode_change_requested_by = row.mode_change_requested_at = None
+        row.mode_change_reason, row.updated_at = None, now
+        self._log(row, actor_id, BillingAuditAction.APPROVE if approve else BillingAuditAction.REJECT,
+                  mode_change={"event": "approved" if approve else "rejected", "from": previous, "to": target.name,
+                               "reason": reason, "step_up": step_up if approve else None})
+        self.db.commit()
+        return row
+
+    def withdraw_mode_change(self, organization_id: int, actor_id: int, connection_id: int) -> TaxProviderConnection:
+        row = self.get(organization_id, connection_id)
+        if row.mode_change_to is None:
+            raise BadRequestException("There is no mode change waiting for a decision.")
+        target = row.mode_change_to
+        row.mode_change_to = row.mode_change_requested_by = row.mode_change_requested_at = None
+        row.mode_change_reason, row.updated_at = None, _now()
+        self._log(row, actor_id, BillingAuditAction.UPDATE, mode_change={"event": "withdrawn", "to": target})
         self.db.commit()
         return row
 
@@ -350,5 +430,9 @@ def view_connection(row: TaxProviderConnection) -> dict:
                         "last4": row.credential_last4, "store": row.credential_store,
                         "rotation_pending_test": row.credential_previous_version is not None},
         "health": {"ok": row.health_ok, "checked_at": row.health_checked_at, "detail": row.health_detail},
+        "mode_change": ({"to": row.mode_change_to, "requested_by": row.mode_change_requested_by,
+                         "requested_at": row.mode_change_requested_at, "reason": row.mode_change_reason}
+                        if row.mode_change_to else None),
+        "mode_changed_by": row.mode_changed_by, "mode_changed_at": row.mode_changed_at,
         "created_at": row.created_at, "updated_at": row.updated_at,
     }

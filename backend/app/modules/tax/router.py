@@ -50,6 +50,8 @@ from app.modules.tax.policy_schemas import (
     LegalBasisCreate,
     ProviderConnectionCreate,
     ProviderCredentialsSet,
+    ProviderModeChangeDecision,
+    ProviderModeChangeRequest,
     ReasonRequest,
     RegimeChangeRequest,
     RegistrationCreate,
@@ -1018,6 +1020,66 @@ for _action, _dep, _summary in (
 ):
     router.add_api_route(f"/provider-connections/{{connection_id}}/{_action}", _connection_action(_action),
                          methods=["POST"], dependencies=[Depends(_dep)], summary=_summary)
+
+
+@router.post("/provider-connections/{connection_id}/mode-change",
+             summary="Propose a mode change (safe mode estimate-only <-> commit) on the same connection",
+             dependencies=[Depends(get_current_billing_admin)])
+def request_connection_mode_change(connection_id: int, data: ProviderModeChangeRequest, db: Session = Depends(get_db),
+                                   organization_id: int = Depends(get_organization_id),
+                                   current_user=Depends(get_current_user)):
+    from app.modules.tax.connection_service import ProviderConnectionService, view_connection
+    from app.modules.tax.provider_contract import ProviderMode
+
+    return view_connection(ProviderConnectionService(db).request_mode_change(
+        organization_id, current_user.id, connection_id, ProviderMode[data.mode], data.reason))
+
+
+@router.post("/provider-connections/{connection_id}/mode-change/approve",
+             summary="Approve a mode change (a different finance approver; MFA step-up)",
+             dependencies=[Depends(get_current_finance_approver)])
+def approve_connection_mode_change(connection_id: int, data: Optional[ProviderModeChangeDecision] = None,
+                                   db: Session = Depends(get_db), organization_id: int = Depends(get_organization_id),
+                                   current_user=Depends(get_current_user)):
+    from app.config import settings, step_up_bypass_active
+    from app.modules.tax.connection_service import ProviderConnectionService, view_connection
+    from app.modules.tax.registry_router import require_tax_step_up
+    from app.modules.tax.registry_schemas import StepUpRequest
+
+    data = data or ProviderModeChangeDecision()
+    svc = ProviderConnectionService(db)
+    row = svc.get(organization_id, connection_id)                     # 404 before asking for a factor
+    if row.mode_change_to is None:
+        raise BadRequestException("There is no mode change waiting for a decision.")
+    svc._checker(row.mode_change_requested_by, current_user.id, "requested this mode change")
+    # Before any change: verify_step_up commits the session.
+    require_tax_step_up(db, current_user, StepUpRequest(code=data.code, recovery_code=data.recovery_code))
+    step_up = ("not_required" if not settings.TAX_REGISTRY_STEP_UP_REQUIRED
+               else "bypassed" if step_up_bypass_active() else "verified")
+    return view_connection(svc.decide_mode_change(organization_id, current_user.id, connection_id, approve=True,
+                                                  reason=data.reason, step_up=step_up))
+
+
+@router.post("/provider-connections/{connection_id}/mode-change/reject", summary="Reject a mode change",
+             dependencies=[Depends(get_current_finance_approver)])
+def reject_connection_mode_change(connection_id: int, data: ReasonRequest, db: Session = Depends(get_db),
+                                  organization_id: int = Depends(get_organization_id),
+                                  current_user=Depends(get_current_user)):
+    from app.modules.tax.connection_service import ProviderConnectionService, view_connection
+
+    return view_connection(ProviderConnectionService(db).decide_mode_change(
+        organization_id, current_user.id, connection_id, approve=False, reason=data.reason))
+
+
+@router.post("/provider-connections/{connection_id}/mode-change/withdraw", summary="Withdraw a pending mode change",
+             dependencies=[Depends(get_current_billing_admin)])
+def withdraw_connection_mode_change(connection_id: int, db: Session = Depends(get_db),
+                                    organization_id: int = Depends(get_organization_id),
+                                    current_user=Depends(get_current_user)):
+    from app.modules.tax.connection_service import ProviderConnectionService, view_connection
+
+    return view_connection(ProviderConnectionService(db).withdraw_mode_change(organization_id, current_user.id,
+                                                                              connection_id))
 
 
 @router.put("/provider-connections/{connection_id}/credentials",

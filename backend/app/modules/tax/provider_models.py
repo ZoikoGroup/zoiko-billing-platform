@@ -168,13 +168,76 @@ class TaxProviderConnection(Base):
     health_ok             = Column(Boolean, nullable=True)
     health_checked_at     = Column(DateTime(timezone=True), nullable=True)
     health_detail         = Column(Text, nullable=True)
+    # Phase 5c: a governed mode change (ESTIMATE_ONLY <-> COMMIT) on the same
+    # connection and credentials. The pending proposal, then the decider.
+    mode_change_to           = Column(String(20), nullable=True)          # ProviderMode name
+    mode_change_requested_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    mode_change_requested_at = Column(DateTime(timezone=True), nullable=True)
+    mode_change_reason       = Column(Text, nullable=True)
+    mode_changed_by          = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    mode_changed_at          = Column(DateTime(timezone=True), nullable=True)
     created_at            = Column(DateTime(timezone=True), nullable=False)
     updated_at            = Column(DateTime(timezone=True), nullable=True)
 
 
-CONNECTION_FROZEN_FIELDS = ("organization_id", "seller_entity_id", "provider_name", "environment", "mode",
+#: `mode` is not here: it has its own guard (below) that lets it change only
+#: through an approved mode change decided by a second person (Phase 5c).
+CONNECTION_FROZEN_FIELDS = ("organization_id", "seller_entity_id", "provider_name", "environment",
                             "proposed_by", "created_at")
 register_tenant_record_guard(TaxProviderConnection.__table__, CONNECTION_FROZEN_FIELDS)
+
+PG_CONNECTION_MODE_GUARD = [
+    """
+    CREATE OR REPLACE FUNCTION tax_provider_connection_mode_guard() RETURNS trigger AS $$
+    BEGIN
+      IF NEW.mode IS DISTINCT FROM OLD.mode THEN
+        IF OLD.mode_change_to IS NULL OR NEW.mode IS DISTINCT FROM OLD.mode_change_to
+           OR OLD.mode_change_requested_by IS NULL OR NEW.mode_changed_by IS NULL
+           OR NEW.mode_changed_by = OLD.mode_change_requested_by
+           OR NEW.mode_changed_at IS NOT DISTINCT FROM OLD.mode_changed_at THEN
+          RAISE EXCEPTION 'provider connection % changes mode only through an approved mode change decided by a second person', OLD.id
+            USING ERRCODE = 'integrity_constraint_violation';
+        END IF;
+      END IF;
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql
+    """,
+    """
+    CREATE TRIGGER trg_tax_provider_connections_mode_guard
+      BEFORE UPDATE ON tax_provider_connections
+      FOR EACH ROW EXECUTE FUNCTION tax_provider_connection_mode_guard()
+    """,
+]
+for _stmt in PG_CONNECTION_MODE_GUARD:
+    event.listen(TaxProviderConnection.__table__, "after_create", DDL(_stmt).execute_if(dialect="postgresql"))
+
+
+def _before(state, key):
+    """The value an attribute had before this flush's change."""
+    hist = state.attrs[key].history
+    if hist.has_changes():
+        return hist.deleted[0] if hist.deleted else None
+    return getattr(state.object, key)
+
+
+@event.listens_for(Session, "before_flush")
+def _guard_connection_mode(session, flush_context, instances):
+    """ORM twin of the mode trigger: `mode` changes only to the pending
+    target, with a new decider who is not the requester."""
+    from app.modules.tax.models import TaxRecordFrozenError
+
+    for obj in session.dirty:
+        if not isinstance(obj, TaxProviderConnection):
+            continue
+        state = sa_inspect(obj)
+        if not state.attrs["mode"].history.has_changes():
+            continue
+        target, requester = _before(state, "mode_change_to"), _before(state, "mode_change_requested_by")
+        if (target is None or obj.mode != target or requester is None or obj.mode_changed_by is None
+                or obj.mode_changed_by == requester or not state.attrs["mode_changed_at"].history.has_changes()):
+            raise TaxRecordFrozenError(f"Provider connection {obj.id} changes mode only through an approved mode "
+                                       "change decided by a second person.")
 
 
 class TaxProviderSecret(Base):

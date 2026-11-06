@@ -113,3 +113,12 @@ export const providerHealthAction = (provider, action, body = {}) =>
   api.post(`${BASE}/provider-health/${encodeURIComponent(provider)}/${action}`, body);
 export const getPlatformOvercollection = () => api.get(`${BASE}/reports/legacy-discount-overcollection`);
 export const getPlatformDuplicates = () => api.get(`${BASE}/reports/duplicate-tax-rows`);
+
+// ── Phase 5c PR 3: read-only P1 overview, P4 explorer, P5 catalogue ─────
+const REF = "/api/v1/tax";            // reference reads: published data, any signed-in user
+export const getReadiness = () => api.get(`${BASE}/readiness`);
+export const listTaxCodeSets = ({ cursor } = {}) => api.get(`${BASE}/tax-code-sets`, { params: { cursor } });
+export const listCoverage = ({ cursor } = {}) => api.get(`${REF}/coverage`, { params: { cursor, limit: 200 } });
+/** Published reference rates for one jurisdiction on a date: never an amount owed, never an implied 0%. */
+export const lookupReferenceRates = ({ jurisdiction_id, as_of }) =>
+  api.get(`${REF}/rates`, { params: { jurisdiction_id, as_of: as_of || undefined } });

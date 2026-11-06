@@ -13,7 +13,8 @@ const { svc, current } = vi.hoisted(() => ({
     "listPeople", "listLegalEntities", "getOvercollectionReport", "getDuplicateRowsReport", "listProviders",
     "listProviderConnections", "proposeProviderConnection", "providerConnectionAction", "decideProviderConnection",
     "withdrawProviderConnection", "setProviderCredentials", "revokeProviderCredentials", "listProviderTransactions",
-    "providerTransactionAction",
+    "providerTransactionAction", "requestModeChange", "decideModeChange", "withdrawModeChange", "lookupReferenceRates",
+    "listJurisdictions", "getTenantEvidenceBundle",
   ].map((k) => [k, vi.fn()])),
 }));
 vi.mock("../../api/client", async (importOriginal) => ({ ...(await importOriginal()), getStoredUser: () => current.user }));
@@ -267,5 +268,102 @@ describe("provider transactions", () => {
     const { container } = renderAt("transactions");
     await screen.findByText(/INV-0009/);
     expect(await axe(container)).toHaveNoViolations();
+  });
+});
+
+// ── Phase 5c PR 3: mode change (safe mode <-> commit) ───────────────────
+
+const STEP_UP = Object.assign(new Error("MFA step-up is required"), { code: "TAX_REGISTRY_STEP_UP_REQUIRED" });
+
+describe("connection mode change", () => {
+  it("a billing admin proposes safe mode with a reason, on the same connection", async () => {
+    svc.requestModeChange.mockResolvedValue(connection({ mode_change: { to: "ESTIMATE_ONLY", requested_by: 2, reason: "pause" } }));
+    svc.listProviderConnections.mockImplementation(() => page([connection({ mode: "COMMIT" })]));
+    renderAt("providers");
+    fireEvent.click(await screen.findByRole("button", { name: "Propose safe mode" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText(/Reason/), { target: { value: "Pilot pause" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Propose" }));
+    await waitFor(() => expect(svc.requestModeChange).toHaveBeenCalledWith(40, "ESTIMATE_ONLY", "Pilot pause"));
+  });
+
+  it("go-live needs a passing test with the current credential", async () => {
+    svc.listProviderConnections.mockImplementation(() => page([connection({
+      health: { ok: true, checked_at: "2026-11-06T08:00:00Z" },
+      credentials: { present: true, last4: "4242", last_rotated_at: "2026-11-06T09:00:00Z", rotation_pending_test: false },
+    })]));
+    renderAt("providers");
+    const golive = await screen.findByRole("button", { name: "Propose go-live (commit)" });
+    expect(golive).toBeDisabled();
+    expect(screen.getByText(/Run Test connection with the current credential first/)).toBeInTheDocument();
+    cleanup();
+    svc.listProviderConnections.mockImplementation(() => page([connection()]));       // tested after rotation
+    renderAt("providers");
+    expect(await screen.findByRole("button", { name: "Propose go-live (commit)" })).toBeEnabled();
+  });
+
+  it("the requester can't approve; a different finance approver approves with step-up and one retry", async () => {
+    const pending = connection({ mode_change: { to: "COMMIT", requested_by: 3, reason: "go live", requested_at: "2026-11-06T10:00:00Z" } });
+    svc.listProviderConnections.mockImplementation(() => page([pending]));
+    current.user = APPROVER;                                         // id 3 requested it
+    renderAt("providers");
+    expect(await screen.findByText(/Change to commit \(issue invoices\) requested by Fay Finance/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Approve mode change" })).toBeDisabled();
+    cleanup();
+    current.user = { id: 4, role: "finance_approver", organization_id: 5 };
+    svc.decideModeChange.mockRejectedValueOnce(STEP_UP).mockResolvedValueOnce(connection({ mode: "COMMIT" }));
+    renderAt("providers");
+    fireEvent.click(await screen.findByRole("button", { name: "Approve mode change" }));
+    const mfa = await screen.findByRole("dialog");
+    fireEvent.change(within(mfa).getByLabelText(/Authenticator code/), { target: { value: "123456" } });
+    fireEvent.click(within(mfa).getByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(svc.decideModeChange).toHaveBeenCalledTimes(2));
+    expect(svc.decideModeChange.mock.calls[0]).toEqual([40, true, {}]);
+    expect(svc.decideModeChange.mock.calls[1]).toEqual([40, true, { code: "123456" }]);
+  });
+
+  it("an auditor sees the pending change but no mode controls", async () => {
+    current.user = { id: 9, role: "auditor", organization_id: 5 };
+    svc.listProviderConnections.mockImplementation(() => page([connection({ mode_change: { to: "COMMIT", requested_by: 2 } })]));
+    renderAt("providers");
+    expect(await screen.findByText(/requested by Bo Billing/)).toBeInTheDocument();
+    for (const name of ["Propose safe mode", "Approve mode change", "Reject mode change", "Withdraw mode change"]) {
+      expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
+    }
+  });
+});
+
+// ── T9 reference rates ──────────────────────────────────────────────────
+
+describe("T9 reference rates", () => {
+  beforeEach(() => {
+    svc.listJurisdictions.mockImplementation(() => page([{ id: 1, code: "GB", name: "United Kingdom" }, { id: 2, code: "FR", name: "France" }]));
+  });
+
+  it("shows published rates with their source", async () => {
+    svc.lookupReferenceRates.mockResolvedValue({ jurisdiction: { id: 1, code: "GB", name: "United Kingdom" }, as_of: "2026-11-06",
+      coverage: "APPROVED_REFERENCE_RATES", disclaimer: "Reference only; not an amount owed.",
+      items: [{ id: 5, component_code: "GB-VAT", tax_type: "VAT", tax_code: "standard", product_scope: "GENERAL", rate_percent: "20",
+        valid_from: "2011-01-04", valid_to: null, status: "ACTIVE",
+        source: { title: "VAT rates", permanent_url: "https://www.gov.uk/vat-rates", citation: "HMRC" } }] });
+    const { container } = renderAt("rates");
+    await waitFor(() => expect(screen.getByRole("option", { name: "GB — United Kingdom" })).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText(/^Jurisdiction/), { target: { value: "1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Look up" }));
+    expect(await screen.findByText("20%")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "VAT rates" })).toHaveAttribute("href", "https://www.gov.uk/vat-rates");
+    expect(svc.lookupReferenceRates).toHaveBeenCalledWith({ jurisdiction_id: 1, as_of: undefined });
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it("says a missing rate is not 0%", async () => {
+    svc.lookupReferenceRates.mockResolvedValue({ jurisdiction: { id: 2, code: "FR", name: "France" }, as_of: "2026-11-06",
+      coverage: "NO_APPROVED_RATE", disclaimer: "Reference only.", items: [] });
+    renderAt("rates");
+    await waitFor(() => expect(screen.getByRole("option", { name: "FR — France" })).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText(/^Jurisdiction/), { target: { value: "2" } });
+    fireEvent.click(screen.getByRole("button", { name: "Look up" }));
+    expect(await screen.findByText(/no approved rate. This is not 0%/)).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 });

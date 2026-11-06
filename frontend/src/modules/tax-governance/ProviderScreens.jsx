@@ -4,13 +4,15 @@ import { KeyRound, Plus } from "lucide-react";
 import { Button, Field, FORM_CONTROL_CLASS, FormModal, FormGrid, Select } from "../../components/billing-ui";
 import {
   ActionBar, InlineError, LoadMore, MUTED, PANEL, ReasonModal, STRONG, TaxStatusBadge, formatAge, formatDateTime,
-  humanize, useCursorList, useReferenceList,
+  humanize, useCursorList, useReferenceList, useStepUp,
 } from "../tax-control-center/shared";
-import { DecisionBar, EntitySelect, SectionTitle, canDecide, canPropose, useLegalEntities, useTenantNames } from "./common";
 import {
-  decideProviderConnection, listProviderConnections, listProviderTransactions, listProviders,
-  proposeProviderConnection, providerConnectionAction, providerTransactionAction, revokeProviderCredentials,
-  setProviderCredentials, withdrawProviderConnection,
+  DecisionBar, EntitySelect, SectionTitle, TenantEvidenceExport, canDecide, canPropose, useLegalEntities, useTenantNames,
+} from "./common";
+import {
+  decideModeChange, decideProviderConnection, listProviderConnections, listProviderTransactions, listProviders,
+  proposeProviderConnection, providerConnectionAction, providerTransactionAction, requestModeChange,
+  revokeProviderCredentials, setProviderCredentials, withdrawModeChange, withdrawProviderConnection,
 } from "./governanceService";
 
 /* Provider Connections and the stuck-transaction view (Phase 5c PR 2).
@@ -114,6 +116,84 @@ function ConnectionHealth({ health }) {
   );
 }
 
+const MODE_LABEL = { ESTIMATE_ONLY: "safe mode (estimate only)", COMMIT: "commit (issue invoices)" };
+
+/** Why estimate-only -> commit can't be proposed yet, or null (mirrors the backend's gates). */
+export function goLiveProblem(c) {
+  if (c.status !== "APPROVED") return "Only an approved connection can go live.";
+  if (!c.credentials?.present) return "Set a credential first.";
+  if (c.credentials?.rotation_pending_test) return "A credential rotation is waiting for a successful test.";
+  const checked = c.health?.checked_at ? new Date(c.health.checked_at) : null;
+  const rotated = c.credentials?.last_rotated_at ? new Date(c.credentials.last_rotated_at) : null;
+  if (!c.health?.ok || !checked || (rotated && checked < rotated)) return "Run Test connection with the current credential first.";
+  return null;
+}
+
+/**
+ * Safe mode <-> commit on the same connection and credentials: proposed by a
+ * billing admin, approved by a different finance approver with MFA step-up.
+ */
+function ModeChange({ c, user, nameOf, onChanged }) {
+  const [busy, setBusy] = useState(null);
+  const [error, setError] = useState(null);
+  const [asking, setAsking] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
+  const stepUp = useStepUp();
+  const billing = canPropose(user?.role);
+  const finance = canDecide(user?.role);
+  const pending = c.mode_change;
+  const target = c.mode === "COMMIT" ? "ESTIMATE_ONLY" : "COMMIT";
+  const live = ["APPROVED", "SUSPENDED"].includes(c.status);
+  const act = async (key, fn) => {
+    setBusy(key);
+    setError(null);
+    try { const r = await fn(); if (r) onChanged(r); }
+    catch (err) { setError(err?.message || "The action failed."); }
+    finally { setBusy(null); }
+  };
+  if (!live && !pending) return null;
+  const mine = pending && pending.requested_by === user?.id;
+  return (
+    <div className="mt-2 space-y-1">
+      {pending && (
+        <p className="text-xs text-amber-900 dark:text-amber-200" role="status">
+          Change to {MODE_LABEL[pending.to] || humanize(pending.to)} requested by {nameOf(pending.requested_by)}
+          {pending.reason ? `: ${pending.reason}` : ""}. A different finance approver must approve it, with MFA.
+        </p>
+      )}
+      {c.mode_changed_by && !pending && (
+        <p className={`text-xs ${MUTED}`}>Mode last changed by {nameOf(c.mode_changed_by)} · {formatDateTime(c.mode_changed_at)}</p>
+      )}
+      <InlineError message={error} />
+      <ActionBar busyKey={busy} actions={[
+        { key: `mode-${c.id}`, label: target === "COMMIT" ? "Propose go-live (commit)" : "Propose safe mode",
+          hidden: !billing || !live || Boolean(pending),
+          reason: target === "COMMIT" ? goLiveProblem(c) : null, onClick: () => setAsking(true) },
+        { key: `mode-approve-${c.id}`, label: "Approve mode change", variant: "primary", hidden: !finance || !pending,
+          reason: mine ? "You requested this change; a different finance approver must approve it." : null,
+          onClick: () => act(`mode-approve-${c.id}`, () => stepUp.run((body) => decideModeChange(c.id, true, body))) },
+        { key: `mode-reject-${c.id}`, label: "Reject mode change", hidden: !finance || !pending,
+          reason: mine ? "You requested this change; a different finance approver must decide it." : null,
+          onClick: () => setRejecting(true) },
+        { key: `mode-withdraw-${c.id}`, label: "Withdraw mode change", hidden: !billing || !pending,
+          onClick: () => act(`mode-withdraw-${c.id}`, () => withdrawModeChange(c.id)) },
+      ]} />
+      <ReasonModal open={asking} minLength={3} busy={false} error={null}
+                   title={target === "COMMIT" ? "Propose going live (commit mode)" : "Propose safe mode (estimate only)"}
+                   description={target === "COMMIT"
+                     ? "After approval, invoices for this entity are issued through the provider. Same connection and credential."
+                     : "After approval, new invoices can't be issued through the provider; ones already in progress finish as they are."}
+                   submitLabel="Propose" onCancel={() => setAsking(false)}
+                   onSubmit={(reason) => { setAsking(false); act(`mode-${c.id}`, () => requestModeChange(c.id, target, reason)); }} />
+      <ReasonModal open={rejecting} title="Reject this mode change" submitLabel="Reject" busy={false} error={null}
+                   onCancel={() => setRejecting(false)}
+                   onSubmit={(reason) => { setRejecting(false);
+                     act(`mode-reject-${c.id}`, () => decideModeChange(c.id, false, { reason })); }} />
+      {stepUp.modal}
+    </div>
+  );
+}
+
 function ConnectionCard({ c, user, nameOf, onChanged, onCredential }) {
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState(null);
@@ -183,6 +263,8 @@ function ConnectionCard({ c, user, nameOf, onChanged, onCredential }) {
       </div>
       <DecisionBar user={user} record={c} proposerId={c.proposed_by} noun="provider connection"
                    decide={decideProviderConnection} withdraw={withdrawProviderConnection} onDone={onChanged} />
+      <ModeChange c={c} user={user} nameOf={nameOf} onChanged={onChanged} />
+      <TenantEvidenceExport user={user} kind="provider_connection" id={c.id} />
       <ReasonModal open={revoking} title="Revoke the credential" submitLabel="Revoke" busy={false} error={null}
                    description="The stored credential is destroyed and the connection is suspended at once. Resuming needs a new credential and two people."
                    onCancel={() => setRevoking(false)}

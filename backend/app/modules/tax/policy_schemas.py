@@ -166,6 +166,19 @@ class ProviderConnectionCreate(_Strict):
     mode: Literal["ESTIMATE_ONLY", "COMMIT"]
 
 
+class ProviderModeChangeRequest(_Strict):
+    """Phase 5c: propose ESTIMATE_ONLY (safe mode) <-> COMMIT on the same connection."""
+    mode: Literal["ESTIMATE_ONLY", "COMMIT"]
+    reason: str = Field(..., min_length=1, max_length=2000)
+
+
+class ProviderModeChangeDecision(_Strict):
+    """Approve needs a fresh MFA factor; reject needs a reason."""
+    reason: Optional[str] = Field(None, max_length=2000)
+    code: Optional[str] = Field(None, min_length=6, max_length=8)
+    recovery_code: Optional[str] = Field(None, min_length=6, max_length=20)
+
+
 class ProviderCredentialsSet(_Strict):
     secret: str = Field(..., min_length=8, max_length=4096)
 

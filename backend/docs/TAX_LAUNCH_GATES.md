@@ -165,9 +165,16 @@ external provider".
       legal basis, certificate, manual resolution) now need the same roles.
   - **Phase 5c PR 2:** T10 tenant reports with CSV export (audited,
     formula-safe) and P10 aggregate findings.
+  - **Phase 5c PR 3:**
+    - T9 reference rates;
+    - P1 overview, P4 jurisdictions and rates, P5 tax-code catalogue
+      (read-only), with the tax-code set evidence export;
+    - the governed connection mode change (in the connection's evidence
+      bundle);
+    - the pilot runbook (`TAX_PILOT_RUNBOOK_UK_AU.md`).
   - Still open:
-    - T9 reference rates (Phase 5c PR 3);
-    - the QA walkthrough of the console and tenant screens;
+    - the QA walkthrough of the console and tenant screens (follow the
+      pilot runbook);
     - a manual WCAG 2.2 AA pass (automated axe checks run in CI).
 
 ### Gate 07: availability registry and visibility
@@ -285,7 +292,13 @@ NOT_APPLICABLE (G1, fixed).
     provider state, retry local finalize, and a two-person void.
   - **P9 provider operations:** aggregate health, plus suspend/resume
     with TAX_PUBLISHER and MFA.
-  - Still open: QA and a manual WCAG pass.
+  - **Mode change (5c PR 3):** safe mode (estimate only) ↔ commit on the
+    same connection; a different finance approver approves with MFA. Tenant
+    MFA enrolment doesn't exist yet, so approval is fail-closed until it
+    does.
+  - Still open:
+    - QA and a manual WCAG pass;
+    - tenant MFA enrolment, for mode-change approval.
 
 ### Gate 07: availability registry and visibility
 - **Evidence:**

@@ -165,3 +165,24 @@ def test_tenant_evidence_bundle_is_sealed_and_audited_on_postgres(pg, world):
                                            BillingAuditLog.entity_id == reg.id,
                                            BillingAuditLog.action == "EXPORT").one()
     assert row.new_values["evidence_bundle_sha256"] == bundle["bundle_sha256"]
+
+
+def test_connection_mode_changes_only_through_an_approved_change_on_postgres(pg, world):
+    """Phase 5c: `mode` left the frozen-field guard for its own trigger. A
+    raw UPDATE is refused; the approved two-person change goes through."""
+    from app.modules.tax.connection_service import ProviderConnectionService
+    from app.modules.tax.provider_contract import ProviderMode
+
+    conn = world["connection"]
+    triggers = set(pg.execute(text("SELECT tgname FROM pg_trigger WHERE NOT tgisinternal")).scalars())
+    assert "trg_tax_provider_connections_mode_guard" in triggers
+    _rejects(pg, "UPDATE tax_provider_connections SET mode = 'ESTIMATE_ONLY' WHERE id = :id", {"id": conn.id})
+    _rejects(pg, "UPDATE tax_provider_connections SET provider_name = 'other' WHERE id = :id", {"id": conn.id})
+    svc = ProviderConnectionService(pg)
+    svc.request_mode_change(world["org"].id, world["maker"].id, conn.id, ProviderMode.ESTIMATE_ONLY, "pause")
+    _rejects(pg, "UPDATE tax_provider_connections SET mode = 'ESTIMATE_ONLY', mode_changed_by = :u, "
+                 "mode_changed_at = now() WHERE id = :id", {"id": conn.id, "u": world["maker"].id})   # the requester
+    svc.decide_mode_change(world["org"].id, world["checker"].id, conn.id, approve=True)
+    pg.expire_all()
+    assert pg.execute(text("SELECT mode FROM tax_provider_connections WHERE id = :id"), {"id": conn.id}).scalar() \
+        == "ESTIMATE_ONLY"

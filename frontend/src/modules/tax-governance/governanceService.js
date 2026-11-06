@@ -123,3 +123,14 @@ export const listProviderTransactions = ({ state, cursor } = {}) =>
   api.get(`${T}/provider-transactions`, page({ state: state || undefined, cursor }));
 /** action: check-state | retry | void-request | void-approve */
 export const providerTransactionAction = (id, action) => api.post(`${T}/provider-transactions/${id}/${action}`);
+
+// ── Phase 5c PR 3: T9 reference rates; connection mode change ───────────
+export const lookupReferenceRates = ({ jurisdiction_id, as_of }) =>
+  api.get(`${T}/rates`, { params: { jurisdiction_id, as_of: as_of || undefined } });
+/** mode: ESTIMATE_ONLY (safe mode) | COMMIT; same connection and credentials. */
+export const requestModeChange = (id, mode, reason) =>
+  api.post(`${T}/provider-connections/${id}/mode-change`, { mode, reason });
+/** Approve needs MFA step-up (code / recovery_code in body); reject needs a reason. */
+export const decideModeChange = (id, approve, body = {}) =>
+  api.post(`${T}/provider-connections/${id}/mode-change/${approve ? "approve" : "reject"}`, body);
+export const withdrawModeChange = (id) => api.post(`${T}/provider-connections/${id}/mode-change/withdraw`);

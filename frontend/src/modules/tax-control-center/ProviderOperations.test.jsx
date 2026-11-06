@@ -11,7 +11,8 @@ const { svc, current } = vi.hoisted(() => ({
   current: { user: null },
   svc: Object.fromEntries([
     "getProviderHealth", "providerHealthAction", "getPlatformOvercollection", "getPlatformDuplicates",
-    "listTaxPeople", "listApprovalsInbox",
+    "listTaxPeople", "listApprovalsInbox", "getReadiness", "listCoverage", "listTaxCodeSets", "lookupReferenceRates",
+    "listJurisdictions", "getEvidenceBundle",
   ].map((k) => [k, vi.fn()])),
 }));
 vi.mock("../../api/client", async (importOriginal) => ({ ...(await importOriginal()), getStoredUser: () => current.user }));
@@ -52,8 +53,9 @@ beforeEach(() => {
   svc.getPlatformDuplicates.mockResolvedValue({ organizations_affected: 2, invoices_affected: 5, duplicate_rows: 7,
     note: "Aggregate only." });
   resetPeopleCache();
+  vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
 });
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("P9 provider operations", () => {
   it("shows the aggregate health: circuit, counts, oldest age and the worker heartbeat", async () => {
@@ -109,6 +111,62 @@ describe("P10 findings", () => {
     expect(screen.getByText(/GBP: 12 invoice\(s\), tax charged 240.00, estimated over-collected 24.00/)).toBeInTheDocument();
     expect(screen.getByText(/7 duplicate row\(s\) on 5 invoice\(s\) in 2 organization\(s\)/)).toBeInTheDocument();
     expect(container.textContent).not.toMatch(/INV-|organization_id|Invoice #/);
+    expect(await axe(container)).toHaveNoViolations();
+  });
+});
+
+// ── Phase 5c PR 3: P1 overview, P4 explorer, P5 catalogue (read-only) ───
+
+describe("P1 overview", () => {
+  it("summarises readiness, the inbox, coverage and providers, read-only", async () => {
+    svc.getReadiness.mockResolvedValue({ ready: false, step_up_required: true, active_reviewers: 1, active_publishers: 1,
+      publishers_with_mfa: 0, reviewers_with_mfa: 1 });
+    svc.listApprovalsInbox.mockResolvedValue({ items: [{ kind: "staged_rate", id: 1 }, { kind: "rule_pack", id: 2 }], next_cursor: null });
+    svc.listCoverage.mockResolvedValue({ items: [{ state: "SUPPORTED" }, { state: "UNSUPPORTED" }, { state: "UNSUPPORTED" }], next_cursor: null });
+    svc.getProviderHealth.mockResolvedValue(health("SUSPENDED"));
+    const { container } = renderAt("/super-admin/tax/overview");
+    expect(await screen.findByText(/1 reviewer\(s\), 1 publisher\(s\), 0 publisher\(s\) with MFA/)).toBeInTheDocument();
+    expect(screen.getByText("Not ready")).toBeInTheDocument();
+    expect(screen.getByText(/Staged rate: 1 · Rule pack: 1/)).toBeInTheDocument();
+    expect(screen.getByText(/Supported: 1 · Limited: 0 · Unsupported: 2/)).toBeInTheDocument();
+    expect(screen.getByText(/1 not normal: fake-provider \(Suspended\)/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /approve|publish/i })).not.toBeInTheDocument();
+    expect(await axe(container)).toHaveNoViolations();
+  });
+});
+
+describe("P4 jurisdictions and rates", () => {
+  it("lists jurisdictions and looks up published rates; no implied 0%", async () => {
+    svc.listJurisdictions.mockImplementation(() => Promise.resolve({ items: [{ id: 1, code: "GB", name: "United Kingdom",
+      level: "COUNTRY", reference_status: "REFERENCE_ONLY", published_rate_versions: 3, last_published_at: null }], next_cursor: null }));
+    svc.lookupReferenceRates.mockResolvedValue({ jurisdiction: { id: 1, code: "GB", name: "United Kingdom" }, as_of: "2026-11-06",
+      coverage: "NO_APPROVED_RATE", disclaimer: "Reference only.", items: [] });
+    const { container } = renderAt("/super-admin/tax/explorer");
+    expect(await screen.findByRole("cell", { name: "United Kingdom" })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("option", { name: "GB — United Kingdom" })).toBeInTheDocument());
+    fireEvent.change(screen.getByRole("combobox", { name: /Jurisdiction/ }), { target: { value: "1" } });
+    fireEvent.change(screen.getByLabelText(/On date/), { target: { value: "2026-01-01" } });
+    fireEvent.click(screen.getByRole("button", { name: "Look up" }));
+    expect(await screen.findByText(/This is not 0%/)).toBeInTheDocument();
+    expect(svc.lookupReferenceRates).toHaveBeenCalledWith({ jurisdiction_id: 1, as_of: "2026-01-01" });
+    expect(await axe(container)).toHaveNoViolations();
+  });
+});
+
+describe("P5 tax-code catalogue", () => {
+  it("shows sets and codes read-only, with the evidence export; approvals stay in the inbox", async () => {
+    svc.listTaxCodeSets.mockResolvedValue({ items: [{ id: 3, code: "PLATFORM", version: "2", status: "PUBLISHED",
+      published_at: "2026-11-01T00:00:00Z", codes: [{ id: 1, code: "SVC", name: "Services", supply_category: "SERVICES",
+        registry_product_scope: "GENERAL", parent_code: null }] }], next_cursor: null });
+    svc.getEvidenceBundle.mockResolvedValue({ bundle_sha256: "ab".repeat(32) });
+    const { container } = renderAt("/super-admin/tax/tax-codes");
+    expect(await screen.findByText("PLATFORM v2")).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "SVC" })).toBeInTheDocument();
+    expect(screen.getAllByRole("cell", { name: "Services" })).toHaveLength(2);           // name + supply category
+    expect(screen.getByRole("link", { name: "approvals inbox" })).toHaveAttribute("href", "/super-admin/tax/inbox");
+    expect(screen.queryByRole("button", { name: /approve|publish/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Export evidence (JSON)" }));
+    await waitFor(() => expect(svc.getEvidenceBundle).toHaveBeenCalledWith("tax_code_set", 3, "json"));
     expect(await axe(container)).toHaveNoViolations();
   });
 });

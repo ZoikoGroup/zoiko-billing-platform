@@ -1,5 +1,7 @@
 import { NavLink, Navigate, useParams } from "react-router-dom";
-import { Activity, BookOpenCheck, FileSearch, FileStack, Inbox, Landmark, Map, Percent } from "lucide-react";
+import {
+  Activity, BookOpenCheck, FileSearch, FileStack, Globe2, Inbox, LayoutDashboard, Landmark, ListTree, Map, Percent,
+} from "lucide-react";
 
 import { getStoredUser } from "../../api/client";
 import { PageHeader } from "../../components/billing-ui";
@@ -11,6 +13,7 @@ import RatesScreen from "./RatesScreen";
 import MarketAvailabilityScreen from "./MarketAvailabilityScreen";
 import RulePacksScreen from "./RulePacksScreen";
 import ProviderOperationsScreen, { FindingsScreen } from "./ProviderOperationsScreen";
+import { ExplorerScreen, OverviewScreen, TaxCodeCatalogueScreen } from "./ReadOnlyScreens";
 
 /* Tax Control Center (ZB-TAX-ARCH-001 Phase 5a): the platform tax-ops
  * console's sign-off screens. Zoiko tax staff only (TAX_REVIEWER,
@@ -18,11 +21,14 @@ import ProviderOperationsScreen, { FindingsScreen } from "./ProviderOperationsSc
  * included, sees the no-access page. Platform data only. */
 
 export const TAX_SECTIONS = [
+  { key: "overview", label: "Overview", icon: LayoutDashboard, element: OverviewScreen },
   { key: "inbox", label: "Approvals inbox", icon: Inbox, element: ApprovalsInboxScreen },
   { key: "sources", label: "Source register", icon: Landmark, element: SourceRegisterScreen },
   { key: "rates", label: "Rates & change review", icon: Percent, element: RatesScreen },
   { key: "availability", label: "Market availability", icon: Map, element: MarketAvailabilityScreen },
   { key: "rule-packs", label: "Rule packs", icon: BookOpenCheck, element: RulePacksScreen },
+  { key: "explorer", label: "Jurisdictions & rates", icon: Globe2, element: ExplorerScreen },
+  { key: "tax-codes", label: "Tax codes", icon: ListTree, element: TaxCodeCatalogueScreen },
   { key: "providers", label: "Provider operations", icon: Activity, element: ProviderOperationsScreen },
   { key: "findings", label: "Findings", icon: FileSearch, element: FindingsScreen },
 ];
