@@ -4,11 +4,13 @@ import { Plus } from "lucide-react";
 import { Button, Field, FORM_CONTROL_CLASS, FormGrid, FormModal, Select } from "../../components/billing-ui";
 import { approveBlockedReason, canApproveTaxRegistry, canWriteTaxRegistry } from "./access";
 import {
-  amendStagedRate, getStagedRateComparison, listStagedRates, stageRate, stagedRateAction,
+  amendStagedRate, getStagedRateComparison, listComponents, listSourceRevisions, listStagedRates, stageRate,
+  stagedRateAction,
 } from "./taxRegistryService";
 import {
   ActionBar, DefinitionList, DetailModal, InlineError, LoadMore, MUTED, PANEL, ReasonModal, STRONG, TaxStatusBadge,
-  TaxTable, ValidationList, formatDateTime, humanize, useApprovalVerdict, useCursorList, useStepUp,
+  TaxTable, ValidationList, formatDateTime, humanize, useApprovalVerdict, useCursorList, usePeopleNames,
+  useReferenceList, useStepUp,
 } from "./shared";
 
 /* P3 Rates and change review: staged rates through validate, submit,
@@ -34,6 +36,8 @@ function RateFormModal({ open, onClose, onDone, existing }) {
   const [form, setForm] = useState(blank);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const components = useReferenceList(listComponents, open);
+  const sources = useReferenceList(listSourceRevisions, open);
   useEffect(() => {
     if (!open) return;
     setError(null);
@@ -73,14 +77,22 @@ function RateFormModal({ open, onClose, onDone, existing }) {
                submitLabel={existing ? "Save changes" : "Stage rate"}
                description="Take the rate and its dates from the cited legal source. Saving resets review: validate it again.">
       <FormGrid>
-        {text("component_id", "Component ID", { type: "number", min: 1, required: !existing, disabled: Boolean(existing) })}
+        <Field label="Component" htmlFor={ids.component_id} required={!existing}>
+          <Select id={ids.component_id} value={form.component_id} onChange={set("component_id")} placeholder="Choose…"
+                  required={!existing} disabled={Boolean(existing)}
+                  options={components.map((c) => ({ value: c.id, label: `${c.code} — ${c.name} (${c.jurisdiction_code} ${c.tax_type})` }))} />
+        </Field>
         {text("tax_code", "Tax code", { required: !existing, disabled: Boolean(existing), maxLength: 50 })}
         {text("product_scope", "Product scope", { disabled: Boolean(existing), maxLength: 100 })}
         <Field label="Rate kind" htmlFor={ids.rate_kind} required>
           <Select id={ids.rate_kind} value={form.rate_kind} onChange={set("rate_kind")} options={opts(KINDS)} placeholder="" disabled={Boolean(existing)} />
         </Field>
         {text("rate_percent", "Rate %", { inputMode: "decimal", pattern: "^\\d{1,2}(\\.\\d{1,6})?$", title: "A percentage below 100, up to 6 decimals" })}
-        {text("source_revision_id", "Source revision ID", { type: "number", min: 1 })}
+        <Field label="Legal source" htmlFor={ids.source_revision_id}>
+          <Select id={ids.source_revision_id} value={form.source_revision_id} onChange={set("source_revision_id")}
+                  placeholder="Choose…"
+                  options={sources.map((s) => ({ value: s.id, label: `#${s.id} ${s.handoff_ref ? `${s.handoff_ref} · ` : ""}${s.title}` }))} />
+        </Field>
         {text("valid_from", "Valid from (local legal date)", { type: "date" })}
         {text("valid_to", "Valid to (exclusive)", { type: "date" })}
         {text("supersedes_rate_version_id", "Supersedes version ID", { type: "number", min: 1 })}
@@ -115,6 +127,7 @@ function RateDetail({ staged, user, onChanged, onEdit }) {
   const [busy, setBusy] = useState(null);
   const [reasonFor, setReasonFor] = useState(null);
   const stepUp = useStepUp();
+  const nameOf = usePeopleNames();
   const verdict = useApprovalVerdict("staged_rate", staged, approveBlockedReason(user, staged));
 
   const load = () => getStagedRateComparison(staged.id).then(setCmp).catch((err) => setError(err?.message));
@@ -174,10 +187,10 @@ function RateDetail({ staged, user, onChanged, onEdit }) {
       )}
       <DefinitionList rows={[
         ["Origin", humanize(staged.origin)], ["Owner", staged.owner],
-        ["Drafted", `${formatDateTime(staged.created_at)}${staged.created_by_user_id ? ` · user #${staged.created_by_user_id}` : ""}`],
+        ["Drafted", `${formatDateTime(staged.created_at)}${staged.created_by_user_id ? ` · ${nameOf(staged.created_by_user_id)}` : ""}`],
         ["Validated", formatDateTime(staged.validated_at)],
         staged.escalated_at && ["Escalated", `${formatDateTime(staged.escalated_at)}: ${staged.escalation_reason}`],
-        staged.adopted_at && ["Adopted (AI proposal)", `${formatDateTime(staged.adopted_at)} · user #${staged.adopted_by_user_id}`],
+        staged.adopted_at && ["Adopted (AI proposal)", `${formatDateTime(staged.adopted_at)} · ${nameOf(staged.adopted_by_user_id)}`],
         staged.published_rate_version_id && ["Published as version", `#${staged.published_rate_version_id}`],
         ["Reviewer notes", staged.reviewer_notes],
       ]} />

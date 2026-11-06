@@ -587,6 +587,69 @@ def approvals_inbox(
     return {"items": items, "next_cursor": next_cursor}
 
 
+# ═════════════════════════════════════════════════════════════════════════
+# Phase 5b (G-5a-1, G-5a-3): reference pickers and tax-staff names for the
+# Tax Control Center. Read-only, tax roles only, paged (B3). Creating or
+# editing authorities, tax types or components stays deferred (B2).
+# ═════════════════════════════════════════════════════════════════════════
+
+@admin_router.get("/authorities", summary="Tax authorities (read-only picker list)")
+def list_authorities(page: PageParams = Depends(), db: Session = Depends(get_db),
+                     _user=Depends(require_capability("tax_registry.read"))):
+    from app.modules.tax.registry_models import TaxAuthority, TaxJurisdiction
+
+    rows = db.query(TaxAuthority).order_by(TaxAuthority.code, TaxAuthority.id).all()
+    rows, next_cursor = paginate(rows, page)
+    codes = {j.id: j.code for j in db.query(TaxJurisdiction).filter(
+        TaxJurisdiction.id.in_([r.jurisdiction_id for r in rows if r.jurisdiction_id]))}
+    return {"items": [{"id": r.id, "code": r.code, "name": r.name, "jurisdiction_id": r.jurisdiction_id,
+                       "jurisdiction_code": codes.get(r.jurisdiction_id)} for r in rows],
+            "next_cursor": next_cursor}
+
+
+@admin_router.get("/tax-types", summary="Tax types (read-only picker list)")
+def list_tax_types(page: PageParams = Depends(), db: Session = Depends(get_db),
+                   _user=Depends(require_capability("tax_registry.read"))):
+    from app.modules.tax.registry_models import TaxTypeDefinition
+
+    rows, next_cursor = paginate(db.query(TaxTypeDefinition).order_by(TaxTypeDefinition.code,
+                                                                      TaxTypeDefinition.id).all(), page)
+    return {"items": [{"id": r.id, "code": r.code, "name": r.name} for r in rows], "next_cursor": next_cursor}
+
+
+@admin_router.get("/components", summary="Tax components (read-only picker list)")
+def list_components(jurisdiction_id: Optional[int] = Query(None), page: PageParams = Depends(),
+                    db: Session = Depends(get_db), _user=Depends(require_capability("tax_registry.read"))):
+    from app.modules.tax.registry_models import TaxComponent
+
+    q = db.query(TaxComponent)
+    if jurisdiction_id is not None:
+        q = q.filter(TaxComponent.jurisdiction_id == jurisdiction_id)
+    rows, next_cursor = paginate(q.order_by(TaxComponent.code, TaxComponent.id).all(), page)
+    return {"items": [{"id": r.id, "code": r.code, "name": r.name, "jurisdiction_id": r.jurisdiction_id,
+                       "jurisdiction_code": r.jurisdiction.code if r.jurisdiction else None,
+                       "tax_type_id": r.tax_type_id, "tax_type": r.tax_type.code if r.tax_type else None,
+                       "is_cumulative": r.is_cumulative, "is_active": r.is_active} for r in rows],
+            "next_cursor": next_cursor}
+
+
+@admin_router.get("/people", summary="Names of the platform tax staff (for inbox and history)")
+def list_tax_people(page: PageParams = Depends(), db: Session = Depends(get_db),
+                    _user=Depends(require_capability("tax_registry.read"))):
+    """Only platform users holding a tax role (TAX_REVIEWER / TAX_PUBLISHER):
+    id, name and role. No email, no other platform users, no tenant users."""
+    from app.modules.auth.models import PlatformRole, User, UserRole
+
+    rows = db.query(User).filter(
+        User.role == UserRole.SUPER_ADMIN, User.organization_id.is_(None),
+        User.platform_role.in_([PlatformRole.TAX_REVIEWER, PlatformRole.TAX_PUBLISHER]),
+    ).order_by(User.id).all()
+    rows, next_cursor = paginate(rows, page)
+    return {"items": [{"id": u.id, "name": f"{u.first_name or ''} {u.last_name or ''}".strip() or f"User {u.id}",
+                       "platform_role": u.platform_role.name, "active": bool(u.is_active)} for u in rows],
+            "next_cursor": next_cursor}
+
+
 @admin_router.post("/rule-packs", status_code=status.HTTP_201_CREATED, summary="Register a coded rule pack as a draft")
 def register_rule_pack(data: RulePackRegisterRequest, db: Session = Depends(get_db),
                        current_user=Depends(require_capability("tax_registry.write"))):

@@ -3,7 +3,9 @@ import { Link } from "react-router-dom";
 
 import { Button, Select } from "../../components/billing-ui";
 import { approveInboxItem, listApprovalsInbox } from "./taxRegistryService";
-import { InlineError, LoadMore, MUTED, PANEL, STRONG, formatDateTime, humanize, useCursorList, useStepUp } from "./shared";
+import {
+  InlineError, LoadMore, MUTED, PANEL, STRONG, formatDateTime, humanize, useCursorList, usePeopleNames, useStepUp,
+} from "./shared";
 
 /* P8 Approvals inbox (B1): every platform change IN_APPROVAL. can_approve /
  * reason_if_not come from the backend for the current user; a disabled
@@ -20,6 +22,7 @@ export default function ApprovalsInboxScreen() {
   const [kind, setKind] = useState("");
   const list = useCursorList(({ cursor }) => listApprovalsInbox({ kind: kind || undefined, cursor }), [kind]);
   const stepUp = useStepUp();
+  const nameOf = usePeopleNames();
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
@@ -67,7 +70,7 @@ export default function ApprovalsInboxScreen() {
                 <div className="min-w-0">
                   <p className={`font-semibold ${STRONG}`}>{item.title}</p>
                   <p className={`text-xs ${MUTED}`}>
-                    {meta?.label || humanize(item.kind)} #{item.id} · submitted by user #{item.submitted_by} ·{" "}
+                    {meta?.label || humanize(item.kind)} #{item.id} · submitted by {nameOf(item.submitted_by)} ·{" "}
                     {formatDateTime(item.submitted_at)}
                   </p>
                   {!item.can_approve && (

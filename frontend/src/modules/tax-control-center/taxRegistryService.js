@@ -34,6 +34,25 @@ export const getRulePackCatalogue = () => api.get(`${BASE}/rule-packs/catalogue`
 export const listJurisdictions = ({ cursor } = {}) =>
   api.get("/api/v1/tax/jurisdictions", { params: { cursor, limit: 200 } });
 
+// Phase 5b (G-5a-1, G-5a-3): read-only pickers and tax-staff names.
+export const listAuthorities = ({ cursor } = {}) => api.get(`${BASE}/authorities`, { params: { cursor, limit: 200 } });
+export const listTaxTypes = ({ cursor } = {}) => api.get(`${BASE}/tax-types`, { params: { cursor, limit: 200 } });
+export const listComponents = ({ cursor } = {}) => api.get(`${BASE}/components`, { params: { cursor, limit: 200 } });
+export const listTaxPeople = ({ cursor } = {}) => api.get(`${BASE}/people`, { params: { cursor, limit: 200 } });
+
+/** Every page of a B3 list (small reference lists only). */
+export async function fetchAllPages(fetchPage, maxPages = 25) {
+  const all = [];
+  let cursor;
+  for (let i = 0; i < maxPages; i += 1) {
+    const data = await fetchPage({ cursor });
+    all.push(...(data?.items || []));
+    if (!data?.next_cursor) break;
+    cursor = data.next_cursor;
+  }
+  return all;
+}
+
 // ── Source register (P2) ────────────────────────────────────────────────
 export const registerSourceRevision = (body) => api.post(`${BASE}/source-revisions`, body);
 

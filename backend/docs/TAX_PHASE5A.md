@@ -48,9 +48,9 @@ documented in `TAX_CONTROL_CENTER_API.md`.
 
 | # | Gap | Effect today | Suggested fix |
 |---|---|---|---|
-| G-5a-1 | **No list of authorities, tax types or components** (B2, deferred) | Registering a source, staging a rate and drafting availability take numeric ids. The source form suggests the authorities already used; availability lists jurisdictions from the reference read. | B2's read side only: `GET /tax-registry/authorities`, `/tax-types`, `/components`. |
+| G-5a-1 | ~~No list of authorities, tax types or components~~ | **Fixed in Phase 5b PR 1.** Read-only `GET /tax-registry/authorities`, `/tax-types`, `/components` (tax roles only, paged). The forms now use pickers: authority (source), component and legal source (rate), tax type (availability). Creating or editing them stays deferred (B2). | — |
 | G-5a-2 | **No per-item audit trail endpoint** | "History" is the version's own timeline (created, submitted, approved, published, superseded, with user ids) and the predecessor link, not the full platform audit log entry by entry. | `GET /tax-registry/{kind}/{id}/audit` (tax roles only). |
-| G-5a-3 | **User ids, not names** | Inbox and timelines show "user #9". | A platform-user name lookup for tax roles. |
+| G-5a-3 | ~~User ids, not names~~ | **Fixed in Phase 5b PR 1.** `GET /tax-registry/people` lists only platform users holding a tax role (name and role, no email). The inbox, version timelines, rate detail and source reviewer show "Mara Maker (Tax Reviewer)". Anyone not in that list (which shouldn't happen for registry actions) falls back to "user #id". | — |
 | G-5a-4 | **Sign-off checklist completion isn't recorded** | The checklist is shown read-only; completion is evidenced through the registry itself (sources, rates, gates, golden report, two-person approval). | A checklist record per pack version, if the tax lead wants ticked items stored. |
 | G-5a-5 | **Audit-evidence export** (gate 06) | Not in this console. | An export of a version's evidence and approvals for authorised roles. |
 
@@ -92,3 +92,13 @@ documented in `TAX_CONTROL_CENTER_API.md`.
 | `backend/tests/privacy/test_tax_phase5a_backend.py` (5) | The step-up error code (direct and over HTTP); the comparison (superseded, overlapping, timeline, conflicts); tax roles only |
 
 **CI result:** _see PR_.
+
+## Phase 5b PR 1 follow-ups
+
+| Change | Where |
+|---|---|
+| Pickers instead of numeric ids (G-5a-1) | `SourceRegisterScreen` (authority), `RatesScreen` (component, legal source), `MarketAvailabilityScreen` (tax type); `useReferenceList` and `fetchAllPages` in the shared module |
+| Names instead of user ids (G-5a-3) | `usePeopleNames` (one shared, cached fetch of `/people`), used by the inbox, `VersionTimeline`, the rate detail and the source detail |
+| Backend | `GET /tax-registry/authorities`, `/tax-types`, `/components`, `/people` (`TAX_CONTROL_CENTER_API.md`, "Phase 5b additions") |
+| Tests | Frontend +4: names in the inbox and in history; the fallback for non-tax-staff ids; staging a rate with pickers (24 in the file). Backend `tests/privacy/test_tax_phase5b_backend.py` (7): the pickers, paging, `/people` exposing only tax staff with no email (not support or admin platform users, not a tenant user even with a tax platform role), and 403 for other platform roles and tenants. |
+
