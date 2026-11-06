@@ -1,4 +1,4 @@
-# Tax Control Center — API Contract (B1, B3, Phase 4a-2, Phase 4c, Phase 5a, Phase 5b)
+# Tax Control Center — API Contract (B1, B3, Phase 4a-2, Phase 4c, Phase 5a, Phase 5b, Phase 5c)
 
 The backend for the Tax Control Center frontend (plan:
 `TAX_PHASE4_PLAN.md`, "Tax Control Center UI"). It contains two gaps:
@@ -231,6 +231,66 @@ GET /tax-types?limit=&cursor=    -> {items: [{id, code, name}], next_cursor}    
   and tenant role, no email, no platform users, no other tenants. The
   screens use it to show names instead of user ids.
 - **`/tax-types`:** platform reference data, like `/jurisdictions`.
+
+## Phase 5c additions (gate 06 evidence; `TAX_PHASE5C.md`)
+
+### Who can download tenant tax documents (behaviour change)
+
+```
+GET /api/v1/tax/registrations/{id}/evidence
+GET /api/v1/tax/legal-bases/{id}/evidence
+GET /api/v1/tax/exemption-certificates/{id}/evidence
+GET /api/v1/tax/manual-resolutions/{id}/evidence
+    org_admin, billing_admin, finance_approver only
+    403: any other tenant role (e.g. auditor); platform staff
+    404: another organization's record
+```
+
+Before this change, any member of the organization could download these.
+
+### Product names on classifications
+
+`GET /api/v1/tax/product-classifications` items gain `product_name` (the
+caller's organization's product; `null` if not found).
+
+### Audit-evidence bundles
+
+```
+GET /api/v1/super-admin/tax-registry/evidence-bundles/{kind}/{id}?format=json|html   (tax_registry.read)
+    kind: source_revision | rate | tax_code_set | rule_pack | market_availability
+GET /api/v1/tax/evidence-bundles/{kind}/{id}?format=json|html                        (org_admin, billing_admin, finance_approver)
+    kind: registration | legal_basis | activation | classification | regime_change
+    -> json: the bundle; html: a printable summary (X-Bundle-SHA256 header; Cache-Control: no-store)
+    400: unknown kind   404: no such record (or another organization's)   403: wrong role; platform staff on the tenant route
+```
+
+Bundle (JSON):
+
+```
+{
+  "bundle_type": "zoiko.tax.evidence.platform" | "zoiko.tax.evidence.tenant",
+  "kind", "record_id", "generated_at", "generated_by": {"user_id", "name"},
+  "organization_id",                                   // tenant bundles only
+  "record": {...},                                     // the console view
+  "sources_and_evidence": [{..., "evidence_sha256"}],  // platform
+  "golden_test_report": {...} | null,                  // rule packs
+  "evidence": [{"document_sha256", "media_type", "size_bytes", "uploaded_at"} | {"evidence_ref"}],  // tenant
+  "step_up_required_for_decisions": true,              // platform
+  "approvals": {"maker": {"user_id", "name"}, "checker": ..., "decided_by": ..., ...},
+  "history": [{"at", "action", "actor": {"user_id", "name"}, "reason", "details", "step_up_verified"?}],
+  "bundle_sha256": "<hex>"
+}
+```
+
+- **The seal:** `bundle_sha256` is the SHA-256 of the canonical JSON
+  (`sort_keys`, separators `,` and `:`) of the bundle without
+  `bundle_sha256`.
+- **`step_up_verified`:** appears on platform approve and publish events.
+  It is true when the same actor passed an MFA step-up in the 10 minutes
+  before.
+- **Every export is audited:**
+  - platform: `TAX_EVIDENCE_BUNDLE_EXPORTED`, with kind and hash;
+  - tenant: `EXPORT` on the record, with `evidence_bundle_sha256`.
 
 ## Behaviour change for external API clients (B3)
 

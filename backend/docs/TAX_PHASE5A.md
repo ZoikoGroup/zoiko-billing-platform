@@ -52,7 +52,7 @@ documented in `TAX_CONTROL_CENTER_API.md`.
 | G-5a-2 | **No per-item audit trail endpoint** | "History" is the version's own timeline (created, submitted, approved, published, superseded, with user ids) and the predecessor link, not the full platform audit log entry by entry. | `GET /tax-registry/{kind}/{id}/audit` (tax roles only). |
 | G-5a-3 | ~~User ids, not names~~ | **Fixed in Phase 5b PR 1.** `GET /tax-registry/people` lists only platform users holding a tax role (name and role, no email). The inbox, version timelines, rate detail and source reviewer show "Mara Maker (Tax Reviewer)". Anyone not in that list (which shouldn't happen for registry actions) falls back to "user #id". | — |
 | G-5a-4 | **Sign-off checklist completion isn't recorded** | The checklist is shown read-only; completion is evidenced through the registry itself (sources, rates, gates, golden report, two-person approval). | A checklist record per pack version, if the tax lead wants ticked items stored. |
-| G-5a-5 | **Audit-evidence export** (gate 06) | Not in this console. | An export of a version's evidence and approvals for authorised roles. |
+| G-5a-5 | ~~Audit-evidence export~~ (gate 06) | **Fixed in Phase 5c PR 1** (`TAX_PHASE5C.md`). Sealed JSON bundle plus a printable summary per source, rate, tax-code set, rule pack and market availability, for tax roles only, audited on export. The bundle also carries the full platform audit trail, which covers most of G-5a-2. | — |
 
 ## What was cut (by the brief: minimum to operate)
 

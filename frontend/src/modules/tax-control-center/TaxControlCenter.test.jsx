@@ -13,7 +13,7 @@ const { svc, current } = vi.hoisted(() => ({
     "listStagedRates", "getStagedRateComparison", "stagedRateAction", "stageRate", "amendStagedRate",
     "listMarketAvailability", "draftAvailability", "amendAvailability", "availabilityAction", "listJurisdictions",
     "listRulePacks", "getRulePackCatalogue", "registerRulePack", "amendRulePack", "rulePackAction", "getStagedRate",
-    "listAuthorities", "listTaxTypes", "listComponents", "listTaxPeople",
+    "listAuthorities", "listTaxTypes", "listComponents", "listTaxPeople", "getEvidenceBundle",
   ].map((k) => [k, vi.fn()])),
 }));
 vi.mock("../../api/client", async (importOriginal) => ({
@@ -395,5 +395,48 @@ describe("names and pickers (G-5a-1, G-5a-3)", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Stage rate" }));
     await waitFor(() => expect(svc.stageRate).toHaveBeenCalled());
     expect(svc.stageRate.mock.calls[0][0]).toMatchObject({ component_id: 1, source_revision_id: 4, tax_code: "standard" });
+  });
+});
+
+// ── Phase 5c: audit-evidence bundles (gate 06) ──────────────────────────
+
+describe("audit-evidence export", () => {
+  afterEach(() => { delete URL.createObjectURL; delete URL.revokeObjectURL; });
+
+  it("downloads the sealed JSON bundle and the printable summary from a detail view", async () => {
+    URL.createObjectURL = vi.fn(() => "blob:bundle");
+    URL.revokeObjectURL = vi.fn();
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    svc.listMarketAvailability.mockImplementation(() => page([{
+      id: 9, jurisdiction_code: "GB", tax_type: "VAT", transaction_class: "B2B_SERVICES", mode: "REFERENCE_ONLY",
+      status: "PUBLISHED", gates: {}, created_at: "2026-11-05T09:00:00Z",
+    }]));
+    svc.getEvidenceBundle.mockImplementation((kind, id, format) => Promise.resolve(
+      format === "json" ? { kind, record: { id }, bundle_sha256: "cd".repeat(32) } : "<html>summary</html>"));
+    renderAt("/super-admin/tax/availability");
+    fireEvent.click(await screen.findByRole("button", { name: "Open #9" }));
+    const detail = await screen.findByRole("dialog");
+    const group = within(detail).getByRole("group", { name: "Audit evidence for this market availability" });
+    fireEvent.click(within(group).getByRole("button", { name: "Export evidence (JSON)" }));
+    expect(await within(group).findByText("cd".repeat(32))).toBeInTheDocument();
+    expect(svc.getEvidenceBundle).toHaveBeenCalledWith("market_availability", 9, "json");
+    fireEvent.click(within(group).getByRole("button", { name: "Printable summary" }));
+    await waitFor(() => expect(svc.getEvidenceBundle).toHaveBeenCalledWith("market_availability", 9, "html"));
+    await waitFor(() => expect(URL.createObjectURL).toHaveBeenCalledTimes(2));
+    expect(click).toHaveBeenCalledTimes(2);
+    click.mockRestore();
+  });
+
+  it("shows the backend's refusal as text", async () => {
+    svc.listSourceRevisions.mockImplementation(() => page([{ id: 4, handoff_ref: "S11", title: "VAT rates",
+      evidence_status: "CAPTURED", source_tier: "OFFICIAL_GUIDANCE", redistribution_permission: "PERMITTED",
+      created_at: "2026-11-05T09:00:00Z" }]));
+    svc.getEvidenceBundle.mockRejectedValue(Object.assign(new Error("You don't have access to this."), { status: 403 }));
+    renderAt("/super-admin/tax/sources");
+    fireEvent.click(await screen.findByRole("button", { name: "Open VAT rates" }));
+    const detail = await screen.findByRole("dialog");
+    fireEvent.click(within(detail).getByRole("button", { name: "Export evidence (JSON)" }));
+    expect(await within(detail).findByText("You don't have access to this.")).toBeInTheDocument();
+    expect(svc.getEvidenceBundle).toHaveBeenCalledWith("source_revision", 4, "json");
   });
 });

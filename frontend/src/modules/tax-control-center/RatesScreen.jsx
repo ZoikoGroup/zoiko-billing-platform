@@ -4,11 +4,11 @@ import { Plus } from "lucide-react";
 import { Button, Field, FORM_CONTROL_CLASS, FormGrid, FormModal, Select } from "../../components/billing-ui";
 import { approveBlockedReason, canApproveTaxRegistry, canWriteTaxRegistry } from "./access";
 import {
-  amendStagedRate, getStagedRateComparison, listComponents, listSourceRevisions, listStagedRates, stageRate,
+  getEvidenceBundle, amendStagedRate, getStagedRateComparison, listComponents, listSourceRevisions, listStagedRates, stageRate,
   stagedRateAction,
 } from "./taxRegistryService";
 import {
-  ActionBar, DefinitionList, DetailModal, InlineError, LoadMore, MUTED, PANEL, ReasonModal, STRONG, TaxStatusBadge,
+  ActionBar, DefinitionList, DetailModal, EvidenceExport, InlineError, LoadMore, MUTED, PANEL, ReasonModal, STRONG, TaxStatusBadge,
   TaxTable, ValidationList, formatDateTime, humanize, useApprovalVerdict, useCursorList, usePeopleNames,
   useReferenceList, useStepUp,
 } from "./shared";
@@ -217,6 +217,8 @@ function RateDetail({ staged, user, onChanged, onEdit }) {
         onSubmit={(reason) => { const action = reasonFor; setReasonFor(null);
           act(action, () => stagedRateAction(staged.id, action, { reason })); }}
       />
+      <EvidenceExport noun="rate" filename={`tax-evidence-rate-${staged.id}`}
+                      fetchBundle={(format) => getEvidenceBundle("rate", staged.id, format)} />
       {stepUp.modal}
     </>
   );

@@ -3,8 +3,8 @@ import { Upload } from "lucide-react";
 
 import { Button, Field, Select } from "../../components/billing-ui";
 import { fetchAllPages } from "../tax-control-center/taxRegistryService";
-import { ActionBar, InlineError, MUTED, ReasonModal, humanize, useStepUp } from "../tax-control-center/shared";
-import { listLegalEntities, listPeople, uploadEvidence } from "./governanceService";
+import { ActionBar, EvidenceExport, InlineError, MUTED, ReasonModal, humanize, useStepUp } from "../tax-control-center/shared";
+import { getTenantEvidenceBundle, listLegalEntities, listPeople, uploadEvidence } from "./governanceService";
 
 /* Shared pieces of tenant Settings → Taxes (Phase 5b). Roles mirror the
  * backend dependencies (app/core/dependencies.py): every tenant role reads;
@@ -16,6 +16,19 @@ export const canReadTenantTax = (role) => TENANT_TAX_ROLES.includes(role);
 export const canPropose = (role) => role === "org_admin" || role === "billing_admin";
 export const canDecide = (role) => role === "finance_approver";
 export const isOrgAdmin = (role) => role === "org_admin";
+/** Who may download tax documents and evidence bundles (backend TAX_EVIDENCE_READER_ROLES). */
+export const canExportEvidence = (role) => ["org_admin", "billing_admin", "finance_approver"].includes(role);
+
+/** Evidence-bundle export for one tenant record; hidden for roles the backend refuses. */
+export function TenantEvidenceExport({ user, kind, id }) {
+  if (!canExportEvidence(user?.role)) return null;
+  return (
+    <div className="mt-2">
+      <EvidenceExport noun={kind.replace("_", " ")} filename={`tax-evidence-${kind}-${id}`}
+                      fetchBundle={(format) => getTenantEvidenceBundle(kind, id, format)} />
+    </div>
+  );
+}
 
 export const PROPOSER_REASON = "You proposed this; a different finance approver must decide it.";
 export const DECIDER_ROLE_REASON = "Only a finance approver can approve or reject.";
