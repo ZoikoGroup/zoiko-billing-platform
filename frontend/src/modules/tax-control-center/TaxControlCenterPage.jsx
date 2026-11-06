@@ -1,5 +1,5 @@
 import { NavLink, Navigate, useParams } from "react-router-dom";
-import { BookOpenCheck, FileStack, Inbox, Landmark, Map, Percent } from "lucide-react";
+import { Activity, BookOpenCheck, FileSearch, FileStack, Inbox, Landmark, Map, Percent } from "lucide-react";
 
 import { getStoredUser } from "../../api/client";
 import { PageHeader } from "../../components/billing-ui";
@@ -10,6 +10,7 @@ import SourceRegisterScreen from "./SourceRegisterScreen";
 import RatesScreen from "./RatesScreen";
 import MarketAvailabilityScreen from "./MarketAvailabilityScreen";
 import RulePacksScreen from "./RulePacksScreen";
+import ProviderOperationsScreen, { FindingsScreen } from "./ProviderOperationsScreen";
 
 /* Tax Control Center (ZB-TAX-ARCH-001 Phase 5a): the platform tax-ops
  * console's sign-off screens. Zoiko tax staff only (TAX_REVIEWER,
@@ -22,6 +23,8 @@ export const TAX_SECTIONS = [
   { key: "rates", label: "Rates & change review", icon: Percent, element: RatesScreen },
   { key: "availability", label: "Market availability", icon: Map, element: MarketAvailabilityScreen },
   { key: "rule-packs", label: "Rule packs", icon: BookOpenCheck, element: RulePacksScreen },
+  { key: "providers", label: "Provider operations", icon: Activity, element: ProviderOperationsScreen },
+  { key: "findings", label: "Findings", icon: FileSearch, element: FindingsScreen },
 ];
 
 export default function TaxControlCenterPage() {

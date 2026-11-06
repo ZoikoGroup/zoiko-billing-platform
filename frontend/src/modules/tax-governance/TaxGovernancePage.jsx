@@ -1,7 +1,8 @@
 import { Lock } from "lucide-react";
 import { NavLink, Navigate, useParams } from "react-router-dom";
 import {
-  BadgeCheck, Building2, ClipboardList, FileCheck2, LayoutDashboard, Package, ShieldCheck, UserSquare2,
+  AlertOctagon, BadgeCheck, BarChart3, Building2, ClipboardList, FileCheck2, LayoutDashboard, Package, PlugZap,
+  ShieldCheck, UserSquare2,
 } from "lucide-react";
 
 import { getStoredUser } from "../../api/client";
@@ -11,6 +12,8 @@ import { canReadTenantTax } from "./common";
 import { EntitiesScreen, OverviewScreen, RegimeScreen } from "./EntityScreens";
 import { ActivationsScreen, ObligationsScreen } from "./ObligationScreens";
 import { ClassificationScreen, CustomerEvidenceScreen, ReviewItemsScreen } from "./EvidenceScreens";
+import { ProviderConnectionsScreen, ProviderTransactionsScreen } from "./ProviderScreens";
+import { ReportsScreen } from "./ReportsScreen";
 
 /* Tenant Settings → Taxes (ZB-TAX-ARCH-001 Phase 5b): T1–T8. Tenant data
  * only, through the tenant tax API. The existing Tax Rates and Tax
@@ -26,6 +29,9 @@ export const GOVERNANCE_SECTIONS = [
   { key: "classification", label: "Product classification", icon: Package, element: ClassificationScreen },
   { key: "customers", label: "Customer tax evidence", icon: UserSquare2, element: CustomerEvidenceScreen },
   { key: "review", label: "Review items", icon: ClipboardList, element: ReviewItemsScreen },
+  { key: "providers", label: "Provider connections", icon: PlugZap, element: ProviderConnectionsScreen },
+  { key: "transactions", label: "Provider transactions", icon: AlertOctagon, element: ProviderTransactionsScreen },
+  { key: "reports", label: "Reports", icon: BarChart3, element: ReportsScreen },
 ];
 
 function NoTenantAccess() {

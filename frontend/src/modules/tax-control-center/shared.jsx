@@ -54,6 +54,20 @@ const STATUS_STYLES = {
   EFFECTIVE: { icon: CheckCircle2, label: "In effect", tone: "green" },
   NOT_EFFECTIVE: { icon: XCircle, label: "Not in effect", tone: "red" },
   SUSPENDED: { icon: Lock, label: "Suspended", tone: "red" },
+  // Provider operations (Phase 5c)
+  PENDING: { icon: Clock, label: "Pending", tone: "slate" },
+  UNCERTAIN: { icon: AlertTriangle, label: "Uncertain: checking the provider", tone: "amber" },
+  REMOTE_COMMITTED: { icon: Clock, label: "Committed at provider, finishing locally", tone: "amber" },
+  REVIEW_REQUIRED: { icon: AlertTriangle, label: "Needs review", tone: "red" },
+  DONE: { icon: CheckCircle2, label: "Done", tone: "green" },
+  VOIDED: { icon: MinusCircle, label: "Voided", tone: "slate" },
+  CANCELLED: { icon: MinusCircle, label: "Cancelled: re-quote", tone: "amber" },
+  CLOSED: { icon: CheckCircle2, label: "Circuit closed (normal)", tone: "green" },
+  HEALTHY: { icon: CheckCircle2, label: "Healthy", tone: "green" },
+  UNHEALTHY: { icon: XCircle, label: "Health check failed", tone: "red" },
+  UNCHECKED: { icon: Circle, label: "Not tested yet", tone: "slate" },
+  ESTIMATE_ONLY: { icon: ShieldCheck, label: "Safe mode: estimate only", tone: "blue" },
+  COMMIT: { icon: KeyRound, label: "Commit (issues invoices)", tone: "slate" },
 };
 
 const TONES = {
@@ -80,6 +94,18 @@ export function TaxStatusBadge({ status }) {
       <span>{meta.label}</span>
     </span>
   );
+}
+
+/** 3725 -> "1 h 2 min"; null -> "—". */
+export function formatAge(seconds) {
+  if (seconds == null) return "—";
+  const s = Math.max(0, Math.round(seconds));
+  if (s < 60) return `${s} s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  if (h < 48) return `${h} h ${m % 60} min`;
+  return `${Math.floor(h / 24)} days`;
 }
 
 export function formatDateTime(value) {
@@ -431,7 +457,8 @@ export function ValidationList({ title, items, tone = "red" }) {
 
 // ── Audit-evidence bundle export (Phase 5c, launch gate 06) ──────────────
 
-function saveFile(name, text, type) {
+/** Save text as a downloaded file (CSV reports, evidence bundles). */
+export function saveFile(name, text, type) {
   if (typeof URL === "undefined" || typeof URL.createObjectURL !== "function") return;
   const url = URL.createObjectURL(new Blob([text], { type }));
   const link = document.createElement("a");

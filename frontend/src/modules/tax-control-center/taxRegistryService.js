@@ -105,3 +105,11 @@ export function approveInboxItem(kind, id, body) {
   if (kind === "tax_code_set") return api.post(`${BASE}/tax-code-sets/${id}/approve`, body);
   throw new Error(`Unknown approval kind: ${kind}`);
 }
+
+// ── Phase 5c: P9 provider operations and P10 findings (aggregate only) ──
+export const getProviderHealth = () => api.get(`${BASE}/provider-health`);
+/** action: suspend (reason required) | resume; both need TAX_PUBLISHER and MFA step-up. */
+export const providerHealthAction = (provider, action, body = {}) =>
+  api.post(`${BASE}/provider-health/${encodeURIComponent(provider)}/${action}`, body);
+export const getPlatformOvercollection = () => api.get(`${BASE}/reports/legacy-discount-overcollection`);
+export const getPlatformDuplicates = () => api.get(`${BASE}/reports/duplicate-tax-rows`);
