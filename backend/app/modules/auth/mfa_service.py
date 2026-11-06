@@ -53,6 +53,36 @@ logger = logging.getLogger("zoiko_billing.auth.mfa")
 RECOVERY_CODE_COUNT = 10
 
 
+class MfaAudit:
+    """Where an MFA event is recorded (Phase 5d). A Super Admin's events go
+    to the platform audit log as before. A tenant user's go to their own
+    organization's billing audit log, so tenant activity never enters the
+    platform log."""
+
+    def __init__(self, db: Session, user: User):
+        self.db, self.user = db, user
+
+    def log_no_commit(self, *, action, entity_type: str, entity_id, metadata: Optional[dict] = None,
+                      reason: Optional[str] = None) -> None:
+        if self.user.role == UserRole.SUPER_ADMIN or self.user.organization_id is None:
+            from app.modules.super_admin.audit_service import PlatformAuditService
+
+            PlatformAuditService(self.db).log_no_commit(actor_id=self.user.id, actor_role="super_admin", action=action,
+                                                        entity_type=entity_type, entity_id=entity_id,
+                                                        metadata=metadata, reason=reason)
+            return
+        from app.modules.billing.models import BillingAuditAction
+        from app.modules.billing.services.audit_service import BillingAuditService
+
+        event = getattr(action, "value", str(action))
+        BillingAuditService(self.db).log_no_commit(
+            self.user.organization_id, self.user.id,
+            BillingAuditAction.CREATE if event == "mfa_enrolled" else BillingAuditAction.UPDATE,
+            "UserMFA", (metadata or {}).get("target_user_id", self.user.id),
+            new_values={"mfa_event": event, **(metadata or {}),
+                                                 **({"reason": reason} if reason else {})})
+
+
 def _hash_code(raw_code: str) -> str:
     return hashlib.sha256(raw_code.encode("utf-8")).hexdigest()
 
@@ -154,9 +184,7 @@ def start_enrollment(db: Session, user: User, regenerate: bool = False) -> dict:
     row.failed_attempts = 0
     row.locked_until = None
 
-    PlatformAuditService(db).log_no_commit(
-        actor_id=user.id,
-        actor_role="super_admin",
+    MfaAudit(db, user).log_no_commit(
         action=PlatformAuditAction.MFA_ENROLLED,
         entity_type="SuperAdminMFA",
         entity_id=row.id,
@@ -194,9 +222,7 @@ def verify_enrollment(
     # strict string compare and would otherwise reject a valid code.
     candidate = (code or "").strip().replace(" ", "").replace("-", "")
     if not pyotp.TOTP(raw_secret).verify(candidate, valid_window=1):
-        PlatformAuditService(db).log_no_commit(
-            actor_id=user.id,
-            actor_role="super_admin",
+        MfaAudit(db, user).log_no_commit(
             action=PlatformAuditAction.MFA_CHALLENGE_FAILURE,
             entity_type="SuperAdminMFA",
             entity_id=row.id,
@@ -216,9 +242,7 @@ def verify_enrollment(
     for raw_code in raw_codes:
         db.add(SuperAdminMFARecoveryCode(mfa_id=row.id, code_hash=_hash_code(raw_code)))
 
-    PlatformAuditService(db).log_no_commit(
-        actor_id=user.id,
-        actor_role="super_admin",
+    MfaAudit(db, user).log_no_commit(
         action=PlatformAuditAction.MFA_ENABLED,
         entity_type="SuperAdminMFA",
         entity_id=row.id,
@@ -307,9 +331,7 @@ def verify_step_up(
         locked = row.failed_attempts >= settings.MFA_MAX_FAILED_ATTEMPTS
         if locked:
             row.locked_until = datetime.utcnow() + timedelta(minutes=settings.MFA_LOCKOUT_MINUTES)
-        PlatformAuditService(db).log_no_commit(
-            actor_id=user.id,
-            actor_role="super_admin",
+        MfaAudit(db, user).log_no_commit(
             action=PlatformAuditAction.MFA_CHALLENGE_FAILURE,
             entity_type="SuperAdminMFA",
             entity_id=row.id,
@@ -322,9 +344,7 @@ def verify_step_up(
         _record_totp_code_used(row, code)
     row.failed_attempts = 0
     row.locked_until = None
-    PlatformAuditService(db).log_no_commit(
-        actor_id=user.id,
-        actor_role="super_admin",
+    MfaAudit(db, user).log_no_commit(
         action=PlatformAuditAction.MFA_CHALLENGE_SUCCESS,
         entity_type="SuperAdminMFA",
         entity_id=row.id,
@@ -360,9 +380,7 @@ def disable_mfa_self(
     row.secret_encrypted = ""
     db.query(SuperAdminMFARecoveryCode).filter(SuperAdminMFARecoveryCode.mfa_id == row.id).delete()
 
-    PlatformAuditService(db).log_no_commit(
-        actor_id=user.id,
-        actor_role="super_admin",
+    MfaAudit(db, user).log_no_commit(
         action=PlatformAuditAction.MFA_DISABLED,
         entity_type="SuperAdminMFA",
         entity_id=row.id,
@@ -458,3 +476,94 @@ def _dispatch_mfa_state_email(
         background_tasks=background_tasks,
         idempotency_key=f"{event_name}:User:{user.id}:{datetime.utcnow().isoformat()}",
     )
+
+
+# ── Tenant MFA administration (ZB-TAX-ARCH-001 Phase 5d) ────────────────────
+# Org admins see who is enrolled and reset a colleague's MFA with a second
+# org admin. Never their own, never another organization's user.
+
+TENANT_MFA_ADMIN_ROLES = (UserRole.ORG_ADMIN,)
+
+
+def _tenant_target(db: Session, actor: User, target_user_id: int) -> User:
+    from app.core.exceptions import ForbiddenException, NotFoundException
+
+    if actor.role not in TENANT_MFA_ADMIN_ROLES or actor.organization_id is None:
+        raise ForbiddenException("Only an organization admin can reset another user's MFA.")
+    target = db.query(User).filter(User.id == target_user_id,
+                                   User.organization_id == actor.organization_id).first()
+    if target is None or target.role == UserRole.SUPER_ADMIN:
+        raise NotFoundException("User", target_user_id)
+    if target.id == actor.id:
+        raise ForbiddenException("You can't reset your own MFA; ask another organization admin.")
+    return target
+
+
+def tenant_mfa_overview(db: Session, organization_id: int) -> list:
+    users = (db.query(User).filter(User.organization_id == organization_id, User.is_active.is_(True))
+             .order_by(User.id).all())
+    rows = {r.user_id: r for r in db.query(SuperAdminMFA).filter(SuperAdminMFA.user_id.in_([u.id for u in users] or [-1]))}
+    out = []
+    for u in users:
+        row = rows.get(u.id)
+        out.append({
+            "user_id": u.id, "name": " ".join(x for x in (u.first_name, u.last_name) if x) or f"user #{u.id}",
+            "role": getattr(u.role, "name", str(u.role)), "enrolled": bool(row and row.is_enabled),
+            "reset_requested_by": row.reset_requested_by if row else None,
+            "reset_requested_at": row.reset_requested_at if row else None,
+        })
+    return out
+
+
+def request_tenant_mfa_reset(db: Session, actor: User, target_user_id: int, reason: str) -> dict:
+    target = _tenant_target(db, actor, target_user_id)
+    if not (reason or "").strip():
+        raise BadRequestException("A reason is required.")
+    row = db.query(SuperAdminMFA).filter(SuperAdminMFA.user_id == target.id).first()
+    if row is None or not (row.is_enabled or row.secret_encrypted):
+        raise BadRequestException("That user has no MFA to reset.")
+    if row.reset_requested_by is not None:
+        raise BadRequestException("A reset for that user is already waiting for a second admin.")
+    row.reset_requested_by, row.reset_requested_at, row.reset_reason = actor.id, datetime.utcnow(), reason.strip()
+    MfaAudit(db, actor).log_no_commit(action="mfa_reset_requested", entity_type="UserMFA", entity_id=target.id,
+                                      metadata={"target_user_id": target.id}, reason=reason.strip())
+    db.commit()
+    return {"user_id": target.id, "reset_requested_by": actor.id}
+
+
+def cancel_tenant_mfa_reset(db: Session, actor: User, target_user_id: int) -> dict:
+    target = _tenant_target(db, actor, target_user_id)
+    row = db.query(SuperAdminMFA).filter(SuperAdminMFA.user_id == target.id).first()
+    if row is None or row.reset_requested_by is None:
+        raise BadRequestException("There is no reset waiting for that user.")
+    row.reset_requested_by = row.reset_requested_at = row.reset_reason = None
+    MfaAudit(db, actor).log_no_commit(action="mfa_reset_cancelled", entity_type="UserMFA", entity_id=target.id,
+                                      metadata={"target_user_id": target.id})
+    db.commit()
+    return {"user_id": target.id, "reset_requested_by": None}
+
+
+def approve_tenant_mfa_reset(db: Session, actor: User, target_user_id: int,
+                             background_tasks: Optional["BackgroundTasks"] = None) -> dict:
+    from app.core.exceptions import ForbiddenException
+
+    target = _tenant_target(db, actor, target_user_id)
+    row = db.query(SuperAdminMFA).filter(SuperAdminMFA.user_id == target.id).first()
+    if row is None or row.reset_requested_by is None:
+        raise BadRequestException("There is no reset waiting for that user.")
+    if row.reset_requested_by == actor.id:
+        raise ForbiddenException("You requested this reset; a different organization admin must approve it.")
+    requested_by, reason = row.reset_requested_by, row.reset_reason
+    row.is_enabled = False
+    row.disabled_at = datetime.utcnow()
+    row.secret_encrypted = ""
+    row.failed_attempts = 0
+    row.locked_until = None
+    row.reset_requested_by = row.reset_requested_at = row.reset_reason = None
+    db.query(SuperAdminMFARecoveryCode).filter(SuperAdminMFARecoveryCode.mfa_id == row.id).delete()
+    MfaAudit(db, actor).log_no_commit(action="mfa_reset_approved", entity_type="UserMFA", entity_id=target.id,
+                                      metadata={"target_user_id": target.id, "requested_by": requested_by},
+                                      reason=reason)
+    db.commit()
+    _dispatch_mfa_state_email(db, target, "ZB-SEC-006", "identity.mfa_disabled", background_tasks=background_tasks)
+    return {"user_id": target.id, "enrolled": False}

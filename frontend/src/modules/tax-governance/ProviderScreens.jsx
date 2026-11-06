@@ -7,7 +7,8 @@ import {
   humanize, useCursorList, useReferenceList, useStepUp,
 } from "../tax-control-center/shared";
 import {
-  DecisionBar, EntitySelect, SectionTitle, TenantEvidenceExport, canDecide, canPropose, useLegalEntities, useTenantNames,
+  DecisionBar, EntitySelect, SectionTitle, TenantEvidenceExport, canDecide, canPropose, describeError, useLegalEntities,
+  useTenantNames,
 } from "./common";
 import {
   decideModeChange, decideProviderConnection, listProviderConnections, listProviderTransactions, listProviders,
@@ -148,7 +149,7 @@ function ModeChange({ c, user, nameOf, onChanged }) {
     setBusy(key);
     setError(null);
     try { const r = await fn(); if (r) onChanged(r); }
-    catch (err) { setError(err?.message || "The action failed."); }
+    catch (err) { setError(describeError(err)); }
     finally { setBusy(null); }
   };
   if (!live && !pending) return null;
@@ -207,7 +208,7 @@ function ConnectionCard({ c, user, nameOf, onChanged, onCredential }) {
     setBusy(key);
     setError(null);
     try { const r = await fn(); if (r) onChanged(r); }
-    catch (err) { setError(err?.message || "The action failed."); }
+    catch (err) { setError(describeError(err)); }
     finally { setBusy(null); }
   };
   const resumeBlocked = c.resume_requested_by === user?.id
@@ -341,13 +342,14 @@ function TransactionCard({ t, user, nameOf, onChanged }) {
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState(null);
   const [checked, setChecked] = useState(null);
+  const stepUp = useStepUp();
   const billing = canPropose(user?.role);
   const finance = canDecide(user?.role);
   const act = async (key, fn) => {
     setBusy(key);
     setError(null);
     try { const r = await fn(); if (r) onChanged(r); }
-    catch (err) { setError(err?.message || "The action failed."); }
+    catch (err) { setError(describeError(err)); }
     finally { setBusy(null); }
   };
   const review = t.state === "REVIEW_REQUIRED";
@@ -378,10 +380,11 @@ function TransactionCard({ t, user, nameOf, onChanged }) {
             onClick: () => act(`void-${t.id}`, () => providerTransactionAction(t.id, "void-request")) },
           { key: `void-approve-${t.id}`, label: "Approve void", variant: "primary", hidden: !finance || !t.void_requested_by || !review,
             reason: t.void_requested_by === user?.id ? "You requested this void; a different user must approve it." : null,
-            onClick: () => act(`void-approve-${t.id}`, () => providerTransactionAction(t.id, "void-approve")) },
+            onClick: () => act(`void-approve-${t.id}`, () => stepUp.run((body) => providerTransactionAction(t.id, "void-approve", body))) },
         ]} />
       </div>
       <ProviderState result={checked} />
+      {stepUp.modal}
     </li>
   );
 }

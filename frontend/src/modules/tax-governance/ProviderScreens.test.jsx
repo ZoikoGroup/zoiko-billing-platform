@@ -14,7 +14,8 @@ const { svc, current } = vi.hoisted(() => ({
     "listProviderConnections", "proposeProviderConnection", "providerConnectionAction", "decideProviderConnection",
     "withdrawProviderConnection", "setProviderCredentials", "revokeProviderCredentials", "listProviderTransactions",
     "providerTransactionAction", "requestModeChange", "decideModeChange", "withdrawModeChange", "lookupReferenceRates",
-    "listJurisdictions", "getTenantEvidenceBundle",
+    "listJurisdictions", "getTenantEvidenceBundle", "getMfaStatus", "startMfa", "verifyMfa", "disableMfa", "listMfaUsers",
+    "requestMfaReset", "approveMfaReset", "cancelMfaReset",
   ].map((k) => [k, vi.fn()])),
 }));
 vi.mock("../../api/client", async (importOriginal) => ({ ...(await importOriginal()), getStoredUser: () => current.user }));
@@ -254,7 +255,7 @@ describe("provider transactions", () => {
     renderAt("transactions");
     expect(await screen.findByText(/owner: Finance approver/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Approve void" }));
-    await waitFor(() => expect(svc.providerTransactionAction).toHaveBeenCalledWith(70, "void-approve"));
+    await waitFor(() => expect(svc.providerTransactionAction).toHaveBeenCalledWith(70, "void-approve", {}));
   });
 
   it("is closed to platform staff (T13)", () => {
@@ -365,5 +366,83 @@ describe("T9 reference rates", () => {
     fireEvent.click(screen.getByRole("button", { name: "Look up" }));
     expect(await screen.findByText(/no approved rate. This is not 0%/)).toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+});
+
+// ── Phase 5d PR 2: tenant MFA step-up ───────────────────────────────────
+
+const ENROL = Object.assign(new Error("Enrol MFA to approve"), { code: "TAX_MFA_ENROLMENT_REQUIRED" });
+
+describe("tenant MFA", () => {
+  it("an approver without MFA sees 'enrol MFA to approve' with a link, not a generic error", async () => {
+    svc.listProviderTransactions.mockImplementation(() => page([txn({ void_requested_by: 2, owner: "finance_approver" })]));
+    svc.providerTransactionAction.mockRejectedValue(ENROL);
+    current.user = APPROVER;
+    renderAt("transactions");
+    fireEvent.click(await screen.findByRole("button", { name: "Approve void" }));
+    expect(await screen.findByText(/Enrol MFA to approve/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Set up MFA" })).toHaveAttribute("href", "/billing/tax/governance/mfa");
+  });
+
+  it("void approval prompts for a code and retries once", async () => {
+    svc.listProviderTransactions.mockImplementation(() => page([txn({ void_requested_by: 2, owner: "finance_approver" })]));
+    svc.providerTransactionAction.mockRejectedValueOnce(STEP_UP).mockResolvedValueOnce(txn({ state: "VOIDED", owner: null }));
+    current.user = APPROVER;
+    renderAt("transactions");
+    fireEvent.click(await screen.findByRole("button", { name: "Approve void" }));
+    const mfa = await screen.findByRole("dialog", { name: /Confirm with MFA/ }, { timeout: 5000 });
+    fireEvent.change(within(mfa).getByLabelText(/Authenticator code/), { target: { value: "654321" } });
+    fireEvent.click(within(mfa).getByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(svc.providerTransactionAction).toHaveBeenCalledTimes(2), { timeout: 5000 });
+    expect(svc.providerTransactionAction.mock.calls[1]).toEqual([70, "void-approve", { code: "654321" }]);
+  });
+
+  it("enrols: key and link, a code, then recovery codes shown once", async () => {
+    svc.getMfaStatus.mockResolvedValueOnce({ enrolled: false, tax_tenant_step_up_required: true })
+      .mockResolvedValue({ enrolled: true, tax_tenant_step_up_required: true });
+    svc.startMfa.mockResolvedValue({ secret: "JBSWY3DPEHPK3PXP", otpauth_url: "otpauth://totp/Zoiko:fay?secret=JBSWY3DPEHPK3PXP" });
+    svc.verifyMfa.mockResolvedValue({ recovery_codes: ["aaaa111111", "bbbb222222"] });
+    current.user = APPROVER;
+    const { container } = renderAt("mfa");
+    expect(await screen.findByText("MFA not set up")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Set up MFA" }));
+    expect(await screen.findByText("JBSWY3DPEHPK3PXP")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(/Code from the app/), { target: { value: "123456" } });
+    fireEvent.click(screen.getByRole("button", { name: "Turn on MFA" }));
+    await waitFor(() => expect(svc.verifyMfa).toHaveBeenCalledWith("123456"));
+    expect(await screen.findByRole("list", { name: "Recovery codes" })).toHaveTextContent("aaaa111111");
+    expect(screen.queryByText("JBSWY3DPEHPK3PXP")).not.toBeInTheDocument();          // the key is gone once enrolled
+    expect(await axe(container)).toHaveNoViolations();
+    fireEvent.click(screen.getByRole("button", { name: "I've saved them" }));
+    expect(await screen.findByText("MFA on")).toBeInTheDocument();
+    expect(screen.queryByText("aaaa111111")).not.toBeInTheDocument();
+  });
+
+  it("an org admin sees who is enrolled; a reset needs a second admin and never their own", async () => {
+    svc.getMfaStatus.mockResolvedValue({ enrolled: true, tax_tenant_step_up_required: true });
+    svc.listMfaUsers.mockResolvedValue({ items: [
+      { user_id: 1, name: "Ana Admin", role: "ORG_ADMIN", enrolled: true, reset_requested_by: null },
+      { user_id: 3, name: "Fay Finance", role: "FINANCE_APPROVER", enrolled: true, reset_requested_by: 1,
+        reset_requested_at: "2026-11-06T10:00:00Z" },
+      { user_id: 4, name: "Gil Finance", role: "FINANCE_APPROVER", enrolled: false, reset_requested_by: null },
+    ] });
+    current.user = ADMIN;                                            // id 1
+    const { container } = renderAt("mfa");
+    expect(await screen.findByText("Gil Finance (Finance approver)")).toBeInTheDocument();
+    expect(screen.getAllByText("MFA not set up").length).toBe(1);
+    expect(screen.getByRole("button", { name: "Request MFA reset" })).toBeDisabled();   // own row (Ana)
+    expect(screen.getByText(/can't reset your own MFA/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Approve MFA reset" })).toBeDisabled();   // Ana requested Fay's
+    expect(screen.getByText(/You requested this reset/)).toBeInTheDocument();
+    expect(svc.listMfaUsers).toHaveBeenCalled();
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it("only org admins see the enrolment list", async () => {
+    svc.getMfaStatus.mockResolvedValue({ enrolled: false, tax_tenant_step_up_required: true });
+    current.user = BILLING;
+    renderAt("mfa");
+    expect(await screen.findByRole("button", { name: "Set up MFA" })).toBeInTheDocument();
+    expect(svc.listMfaUsers).not.toHaveBeenCalled();
   });
 });

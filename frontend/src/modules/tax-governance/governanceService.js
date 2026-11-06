@@ -121,8 +121,9 @@ export const revokeProviderCredentials = (id, reason) =>
 // ── Phase 5c: provider transactions (the stuck-transaction view) ────────
 export const listProviderTransactions = ({ state, cursor } = {}) =>
   api.get(`${T}/provider-transactions`, page({ state: state || undefined, cursor }));
-/** action: check-state | retry | void-request | void-approve */
-export const providerTransactionAction = (id, action) => api.post(`${T}/provider-transactions/${id}/${action}`);
+/** action: check-state | retry | void-request | void-approve (void-approve carries the MFA factor). */
+export const providerTransactionAction = (id, action, body) =>
+  api.post(`${T}/provider-transactions/${id}/${action}`, body);
 
 // ── Phase 5c PR 3: T9 reference rates; connection mode change ───────────
 export const lookupReferenceRates = ({ jurisdiction_id, as_of }) =>
@@ -134,3 +135,14 @@ export const requestModeChange = (id, mode, reason) =>
 export const decideModeChange = (id, approve, body = {}) =>
   api.post(`${T}/provider-connections/${id}/mode-change/${approve ? "approve" : "reject"}`, body);
 export const withdrawModeChange = (id) => api.post(`${T}/provider-connections/${id}/mode-change/withdraw`);
+
+// ── Phase 5d PR 2: tenant MFA (step-up only; login is unchanged) ────────
+const AUTH = "/api/auth/mfa";
+export const getMfaStatus = () => api.get(`${AUTH}/status`);
+export const startMfa = () => api.post(`${AUTH}/setup/start`);
+export const verifyMfa = (code) => api.post(`${AUTH}/setup/verify`, { code });
+export const disableMfa = (currentPassword) => api.post(`${AUTH}/disable`, { current_password: currentPassword });
+export const listMfaUsers = () => api.get(`${T}/mfa/users`);
+export const requestMfaReset = (userId, reason) => api.post(`${T}/mfa/users/${userId}/reset-request`, { reason });
+export const approveMfaReset = (userId) => api.post(`${T}/mfa/users/${userId}/reset-approve`);
+export const cancelMfaReset = (userId) => api.post(`${T}/mfa/users/${userId}/reset-cancel`);

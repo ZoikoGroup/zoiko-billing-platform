@@ -136,6 +136,12 @@ class Settings(BaseSettings):
     # MFA_STEP_UP_ENABLED retirement above (the dev-only MFA_STEP_UP_BYPASS
     # still applies). Turning this off is a deliberate, reviewable decision.
     TAX_REGISTRY_STEP_UP_REQUIRED: bool = True
+    # ZB-TAX-ARCH-001 Phase 5d: tenant tax approvals (connection mode change,
+    # regime switch, provider activation, provider void) need a fresh factor
+    # from the tenant approver. Independent of TAX_REGISTRY_STEP_UP_REQUIRED:
+    # neither setting turns the other off. The dev-only MFA_STEP_UP_BYPASS
+    # is still refused outside DEBUG (below).
+    TAX_TENANT_STEP_UP_REQUIRED: bool = True
 
     @model_validator(mode="after")
     def _guard_mfa_bypass(self):

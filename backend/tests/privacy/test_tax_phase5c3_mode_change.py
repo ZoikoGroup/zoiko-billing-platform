@@ -85,7 +85,7 @@ def test_an_approver_without_mfa_is_refused(db_session, client_for, w):
     conn = w["connection"]
     w["svc"].request_mode_change(w["org"].id, w["maker"].id, conn.id, ProviderMode.ESTIMATE_ONLY, "pause")
     refused = client_for(w["approver2"]).post(f"{BASE}/{conn.id}/mode-change/approve", json={"code": "123456"})
-    assert refused.status_code == 400 and "MFA is not enabled" in refused.text
+    assert refused.status_code == 400 and refused.json()["error"] == "TAX_MFA_ENROLMENT_REQUIRED"   # Phase 5d
     db_session.refresh(conn)
     assert conn.mode == "COMMIT" and conn.mode_change_to == "ESTIMATE_ONLY"
 

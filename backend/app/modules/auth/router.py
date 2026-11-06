@@ -133,7 +133,7 @@ def login(request: Request, data: LoginRequest, background_tasks: BackgroundTask
 
 @router.post(
     "/mfa/setup/start", response_model=MFASetupStartResponse,
-    summary="Begin Super Admin MFA enrollment (issues a TOTP secret)",
+    summary="Begin MFA enrollment for step-up (issues a TOTP secret)",
 )
 @limiter.limit("10/minute")
 def mfa_setup_start(
@@ -144,7 +144,7 @@ def mfa_setup_start(
 ):
     from app.modules.auth import mfa_service
 
-    _require_super_admin(current_user)
+    _require_mfa_user(current_user)
     # regenerate=False replays an unconfirmed enrollment instead of replacing
     # it; only regenerate=True mints a new secret.
     return mfa_service.start_enrollment(db, current_user, regenerate=regenerate)
@@ -152,7 +152,7 @@ def mfa_setup_start(
 
 @router.post(
     "/mfa/setup/verify", response_model=MFASetupVerifyResponse,
-    summary="Confirm Super Admin MFA enrollment with a TOTP code",
+    summary="Confirm MFA enrollment with a TOTP code",
 )
 @limiter.limit("10/minute")
 def mfa_setup_verify(
@@ -164,34 +164,44 @@ def mfa_setup_verify(
 ):
     from app.modules.auth import mfa_service
 
-    _require_super_admin(current_user)
+    _require_mfa_user(current_user)
     return mfa_service.verify_enrollment(db, current_user, data.code, background_tasks=background_tasks)
 
 
 @router.get(
     "/mfa/status", response_model=MFAStatusResponse,
-    summary="Whether the calling Super Admin has MFA enabled for step-up",
+    summary="Whether the caller is enrolled in MFA, and which controls ask for a factor",
 )
 def mfa_status(current_user=Depends(get_current_user), db: Session = Depends(get_db)):
     from app.modules.auth import mfa_service
 
-    _require_super_admin(current_user)
+    _require_mfa_user(current_user)
     from app.config import step_up_required
 
     # When step-up is not required (retired, or the dev bypass), privileged
     # actions are accepted without a factor, so reporting enabled=False would
     # make a UI block a control that is in fact open. Report what will
     # actually happen.
-    bypassed = not step_up_required()
+    # Phase 1 finding 8 (fixed in Phase 5d): `enabled` used to be forced to
+    # true while step-up was retired, whether or not the account had a
+    # factor. It now reports real enrolment; whether a factor is asked for is
+    # reported separately, per control.
+    from app.config import step_up_bypass_active
+
+    enrolled = mfa_service.is_mfa_enabled(db, current_user.id)
     return {
-        "enabled": bypassed or mfa_service.is_mfa_enabled(db, current_user.id),
-        "bypassed": bypassed,
+        "enabled": enrolled,
+        "enrolled": enrolled,
+        "bypassed": step_up_bypass_active(),
+        "step_up_required": step_up_required(),
+        "tax_registry_step_up_required": bool(settings.TAX_REGISTRY_STEP_UP_REQUIRED),
+        "tax_tenant_step_up_required": bool(settings.TAX_TENANT_STEP_UP_REQUIRED),
     }
 
 
 @router.post(
     "/mfa/disable", response_model=SuccessResponse,
-    summary="Disable MFA on your own Super Admin account (requires current password)",
+    summary="Disable MFA on your own account (requires current password)",
 )
 @limiter.limit("3/minute")
 def mfa_disable(
@@ -203,8 +213,16 @@ def mfa_disable(
 ):
     from app.modules.auth import mfa_service
 
-    _require_super_admin(current_user)
+    _require_mfa_user(current_user)
     return mfa_service.disable_mfa_self(db, current_user, data.current_password, background_tasks=background_tasks)
+
+
+def _require_mfa_user(user) -> None:
+    """Phase 5d: MFA enrolment is opt-in for any signed-in user (Super Admin
+    or tenant). It is used only for step-up on privileged actions; login
+    never involves MFA."""
+    if user is None or getattr(user, "id", None) is None:
+        raise BadRequestException("Sign in to manage MFA.")
 
 
 def _require_super_admin(user) -> None:
