@@ -163,9 +163,10 @@ external provider".
       records its own SHA-256 and is audited on export.
     - **Downloads tightened:** tenant document downloads (registration,
       legal basis, certificate, manual resolution) now need the same roles.
+  - **Phase 5c PR 2:** T10 tenant reports with CSV export (audited,
+    formula-safe) and P10 aggregate findings.
   - Still open:
-    - T9 reference rates and T10 reports for tenants (Phase 5c PR 2/3);
-    - the provider operations screens (Phase 5c PR 2);
+    - T9 reference rates (Phase 5c PR 3);
     - the QA walkthrough of the console and tenant screens;
     - a manual WCAG 2.2 AA pass (automated axe checks run in CI).
 
@@ -273,10 +274,18 @@ NOT_APPLICABLE (G1, fixed).
   - the address-resolution prompts (`ADDRESS_NOT_RESOLVED`, `_AMBIGUOUS`,
     `_RESOLUTION_STALE`);
   - certificate evidence upload.
-- **Status:** ◐ **Platform console (5a) and tenant governance screens
-  (5b) built.** Address resolution status (including stale), manual
-  resolution requests and certificate evidence are on T7. Still open: the
-  provider-connection and stuck-transaction screens, and QA.
+- **Status:** ◐ **Platform console (5a), tenant governance screens (5b)
+  and provider operations screens (5c PR 2) built.**
+  - Address resolution status (including stale), manual resolution
+    requests and certificate evidence are on T7.
+  - **Provider connections:** status, health, test, write-only credential
+    entry and rotation (`rotation_pending_test`), revoke, safe mode
+    (estimate only), and two-person propose/approve and resume.
+  - **Stuck transactions:** state, age, last error and owner; check
+    provider state, retry local finalize, and a two-person void.
+  - **P9 provider operations:** aggregate health, plus suspend/resume
+    with TAX_PUBLISHER and MFA.
+  - Still open: QA and a manual WCAG pass.
 
 ### Gate 07: availability registry and visibility
 - **Evidence:**

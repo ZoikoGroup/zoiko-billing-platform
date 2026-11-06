@@ -864,23 +864,77 @@ def create_governed_credit_note(
             "tax_lines": view_credit_lines(db, credit_note.id)}
 
 
+REPORT_CSV_COLUMNS = {
+    "legacy-discount-overcollection": ("invoice_number", "issue_date", "status", "currency", "discount_percentage",
+                                       "document_discount", "subtotal", "tax_amount", "estimated_overcollected_tax"),
+    "duplicate-tax-rows": ("invoice_number", "duplicate_rows"),
+}
+
+
+def _csv_cell(value) -> str:
+    """One CSV cell. A text cell starting with = + - @ (or a tab / CR) is
+    prefixed with ' so a spreadsheet never runs it as a formula."""
+    text = "" if value is None else str(getattr(value, "isoformat", lambda: value)())
+    if text and text[0] in "=+-@\t\r" and not _is_number(text):
+        return "'" + text
+    return text
+
+
+def _is_number(text: str) -> bool:
+    try:
+        float(text)
+        return True
+    except ValueError:
+        return False
+
+
+def _report_response(db: Session, organization_id: int, user, name: str, report: dict, format: str):
+    """T10: the report as JSON, or its invoice rows as CSV (audited export)."""
+    if format != "csv":
+        return report
+    import csv
+    import io
+
+    from fastapi.responses import Response
+
+    from app.modules.billing.models import BillingAuditAction
+    from app.modules.billing.services.audit_service import BillingAuditService
+
+    columns = REPORT_CSV_COLUMNS[name]
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, lineterminator="\n")
+    writer.writerow(columns)
+    for row in report.get("invoices", []):
+        writer.writerow([_csv_cell(row.get(c)) for c in columns])
+    BillingAuditService(db).log_no_commit(organization_id, user.id, BillingAuditAction.EXPORT, "TaxFindingsReport",
+                                          None, new_values={"report": name, "rows": len(report.get("invoices", []))})
+    db.commit()
+    return Response(content=buffer.getvalue(), media_type="text/csv; charset=utf-8",
+                    headers={"Cache-Control": "no-store",
+                             "Content-Disposition": f'attachment; filename="tax-{name}.csv"'})
+
+
 @router.get("/reports/legacy-discount-overcollection",
             summary="Estimated tax over-collected by legacy discount-after-tax (this organization)")
 def tenant_overcollection_report(
+    format: str = Query("json", pattern="^(json|csv)$"),
     db: Session = Depends(get_db),
     organization_id: int = Depends(get_organization_id),
-    _user=Depends(require_tax_report_role),
+    current_user=Depends(require_tax_report_role),
 ):
-    return TaxFindingsReportService(db).tenant_overcollection(organization_id)
+    report = TaxFindingsReportService(db).tenant_overcollection(organization_id)
+    return _report_response(db, organization_id, current_user, "legacy-discount-overcollection", report, format)
 
 
 @router.get("/reports/duplicate-tax-rows", summary="Duplicate legacy tax snapshot rows (this organization)")
 def tenant_duplicate_tax_rows(
+    format: str = Query("json", pattern="^(json|csv)$"),
     db: Session = Depends(get_db),
     organization_id: int = Depends(get_organization_id),
-    _user=Depends(require_tax_report_role),
+    current_user=Depends(require_tax_report_role),
 ):
-    return TaxFindingsReportService(db).tenant_duplicates(organization_id)
+    report = TaxFindingsReportService(db).tenant_duplicates(organization_id)
+    return _report_response(db, organization_id, current_user, "duplicate-tax-rows", report, format)
 
 
 
@@ -888,6 +942,17 @@ def tenant_duplicate_tax_rows(
 # Phase 4a-2 — provider connections, certificate evidence, provider
 # transactions. Tenant-only (get_organization_id refuses platform tokens).
 # ═════════════════════════════════════════════════════════════════════════
+
+@router.get("/providers", summary="Tax providers Zoiko can connect to (names and environments; no URLs)")
+def list_tax_providers(_org: int = Depends(get_organization_id)):
+    """The code-defined provider registry. Endpoints are never returned and
+    never accepted: a connection names a provider and an environment only."""
+    from app.modules.tax.provider_contract import PROVIDER_REGISTRY
+
+    return {"items": [{"name": name, "environments": sorted(e for e, url in d.endpoints.items()
+                                                            if url and url.startswith("https://"))}
+                      for name, d in sorted(PROVIDER_REGISTRY.items())]}
+
 
 @router.get("/provider-connections", summary="Provider connections (credentials never returned)")
 def list_provider_connections(seller_entity_id: Optional[int] = Query(None), page: PageParams = Depends(),
@@ -1017,6 +1082,23 @@ def download_certificate_evidence(certificate_id: int, db: Session = Depends(get
 
 # ── provider transactions (the stuck-transaction view) ──
 
+def transaction_owner(row) -> Optional[str]:
+    """Who has to act next on a provider transaction (Phase 5c): the
+    reconciliation worker while it is in flight, a finance approver once a
+    void is requested, a billing admin when it needs a person; None once
+    it is closed."""
+    from app.modules.tax.enums import OutboxState
+
+    if row.void_requested_by is not None and row.state in (OutboxState.REMOTE_COMMITTED,
+                                                           OutboxState.REVIEW_REQUIRED):
+        return "finance_approver"
+    if row.state in (OutboxState.PENDING, OutboxState.UNCERTAIN, OutboxState.REMOTE_COMMITTED):
+        return "system"
+    if row.state in (OutboxState.REVIEW_REQUIRED, OutboxState.FAILED, OutboxState.CANCELLED):
+        return "billing_admin"
+    return None
+
+
 def _transaction_view(db: Session, row, now) -> dict:
     from app.modules.billing.models import Invoice
 
@@ -1031,7 +1113,7 @@ def _transaction_view(db: Session, row, now) -> dict:
         "grace_deadline": row.grace_deadline, "next_attempt_at": row.next_attempt_at,
         "provider_transaction_id": row.provider_transaction_id, "verified": row.verified_at is not None,
         "send_requested": bool(row.send_intent), "void_requested_by": row.void_requested_by,
-        "created_at": row.created_at, "completed_at": row.completed_at,
+        "owner": transaction_owner(row), "created_at": row.created_at, "completed_at": row.completed_at,
     }
 
 

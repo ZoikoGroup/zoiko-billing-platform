@@ -292,6 +292,20 @@ Bundle (JSON):
   - platform: `TAX_EVIDENCE_BUNDLE_EXPORTED`, with kind and hash;
   - tenant: `EXPORT` on the record, with `evidence_bundle_sha256`.
 
+## Phase 5c PR 2 additions (reports and provider operations)
+
+```
+GET /api/v1/tax/reports/legacy-discount-overcollection?format=json|csv   (org_admin, finance_approver)
+GET /api/v1/tax/reports/duplicate-tax-rows?format=json|csv               (org_admin, finance_approver)
+    csv: text/csv, the invoice rows; formula-safe cells; no-store; audited EXPORT on TaxFindingsReport
+GET /api/v1/tax/providers      -> {items: [{name, environments: ["PRODUCTION", "SANDBOX"]}]}   (tenant users; no URLs)
+```
+
+- **Provider transactions:** items gain `owner`: `system`,
+  `billing_admin`, `finance_approver` or `null` (closed).
+- **Provider connections and P9:** they use the existing Phase 4a-1/4a-2
+  routes, unchanged.
+
 ## Behaviour change for external API clients (B3)
 
 Twelve list endpoints used to return **every** row. Since PR #134 they

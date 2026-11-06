@@ -62,7 +62,8 @@ export const decideActivation = (id, approve, body = {}) =>
   api.post(`${T}/activations/${id}/${approve ? "approve" : "reject"}`, body);
 export const withdrawActivation = (id) => api.post(`${T}/activations/${id}/withdraw`);
 export const getActivationEffective = (id, on) => api.get(`${T}/activations/${id}/effective`, { params: { date: on } });
-export const listProviderConnections = ({ cursor } = {}) => api.get(`${T}/provider-connections`, page({ cursor }));
+export const listProviderConnections = ({ seller_entity_id, cursor } = {}) =>
+  api.get(`${T}/provider-connections`, page({ seller_entity_id, cursor }));
 
 // ── T6 product classification ──────────────────────────────────────────
 export const listClassifications = ({ cursor } = {}) => api.get(`${T}/product-classifications`, page({ cursor }));
@@ -96,3 +97,29 @@ export const revokeCertificate = (id) => api.post(`${T}/exemption-certificates/$
 export const listReviewItems = ({ include_resolved, cursor } = {}) =>
   api.get(`${T}/review-items`, page({ include_resolved, cursor }));
 export const resolveReviewItem = (id) => api.post(`${T}/review-items/${id}/resolve`);
+
+// ── Phase 5c: T10 reports (org admin, finance approver) ─────────────────
+/** format: json | csv (an audited export). */
+export const getOvercollectionReport = (format = "json") =>
+  api.get(`${T}/reports/legacy-discount-overcollection`, { params: { format } });
+export const getDuplicateRowsReport = (format = "json") =>
+  api.get(`${T}/reports/duplicate-tax-rows`, { params: { format } });
+
+// ── Phase 5c: provider connections (credentials are write-only) ─────────
+export const listProviders = () => api.get(`${T}/providers`);
+export const proposeProviderConnection = (body) => api.post(`${T}/provider-connections`, body);
+/** action: approve | reject | withdraw | resume | resume-approve | resume-reject | test */
+export const providerConnectionAction = (id, action, body) =>
+  api.post(`${T}/provider-connections/${id}/${action}`, body);
+export const decideProviderConnection = (id, approve, body = {}) =>
+  providerConnectionAction(id, approve ? "approve" : "reject", body);
+export const withdrawProviderConnection = (id) => providerConnectionAction(id, "withdraw");
+export const setProviderCredentials = (id, secret) => api.put(`${T}/provider-connections/${id}/credentials`, { secret });
+export const revokeProviderCredentials = (id, reason) =>
+  api.post(`${T}/provider-connections/${id}/credentials/revoke`, { reason });
+
+// ── Phase 5c: provider transactions (the stuck-transaction view) ────────
+export const listProviderTransactions = ({ state, cursor } = {}) =>
+  api.get(`${T}/provider-transactions`, page({ state: state || undefined, cursor }));
+/** action: check-state | retry | void-request | void-approve */
+export const providerTransactionAction = (id, action) => api.post(`${T}/provider-transactions/${id}/${action}`);
