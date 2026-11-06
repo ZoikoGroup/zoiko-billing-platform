@@ -140,11 +140,16 @@ external provider".
   - Correction: an earlier version of this file said the frontend was
     "being built in a separate session". No such work existed on any
     branch; Phase 5a is the first frontend for the platform console.
+  - Phase 5b added the tenant Settings → Taxes screens T1–T8 at
+    `/billing/tax/governance` (`TAX_PHASE5B.md`): overview with what blocks
+    issuing, legal entities, registrations and legal bases with evidence,
+    activations, regime switch, product classification with impact preview,
+    customer tax evidence with resolution status, and review items.
   - Still open:
-    - the tenant Settings → Taxes screens (T1–T10);
+    - T9 reference rates and T10 reports for tenants;
     - audit-evidence export for platform registry changes (gap in
       `TAX_PHASE5A.md`);
-    - QA sign-off.
+    - a manual WCAG 2.2 AA pass and QA sign-off.
 
 ### Gate 07: availability registry and visibility
 - **Evidence:**
@@ -250,9 +255,10 @@ NOT_APPLICABLE (G1, fixed).
   - the address-resolution prompts (`ADDRESS_NOT_RESOLVED`, `_AMBIGUOUS`,
     `_RESOLUTION_STALE`);
   - certificate evidence upload.
-- **Status:** ◐ **Platform sign-off console built (Phase 5a).** The
-  tenant-side screens (provider connections, stuck transactions, address
-  resolution, certificate evidence) and QA are open.
+- **Status:** ◐ **Platform console (5a) and tenant governance screens
+  (5b) built.** Address resolution status (including stale), manual
+  resolution requests and certificate evidence are on T7. Still open: the
+  provider-connection and stuck-transaction screens, and QA.
 
 ### Gate 07: availability registry and visibility
 - **Evidence:**
