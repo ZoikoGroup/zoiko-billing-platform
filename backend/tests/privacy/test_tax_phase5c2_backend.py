@@ -114,7 +114,11 @@ def test_transaction_owner(state, void_by, owner):
     assert transaction_owner(SimpleNamespace(state=state, void_requested_by=void_by)) == owner
 
 
-def test_stuck_transaction_shows_owner_and_void_moves_it_to_finance(db_session, client_for, w):
+def test_stuck_transaction_shows_owner_and_void_moves_it_to_finance(db_session, client_for, w, monkeypatch):
+    from app.config import settings
+
+    # Owner and two-person only; tenant MFA step-up on void-approve: test_tax_phase5d2_tenant_mfa.py.
+    monkeypatch.setattr(settings, "TAX_TENANT_STEP_UP_REQUIRED", False)
     inv, _q = provider_invoice(w)
     w["provider"].remote_tax_delta = Decimal("0.01")                 # drift -> REVIEW_REQUIRED
     issue_via_connection(w, inv)

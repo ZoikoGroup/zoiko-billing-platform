@@ -197,6 +197,13 @@ class SuperAdminMFA(Base):
     enrolled_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     enabled_at = Column(DateTime, nullable=True)
     disabled_at = Column(DateTime, nullable=True)
+
+    # ZB-TAX-ARCH-001 Phase 5d: a tenant user's MFA is reset by two org
+    # admins of the same organization (never the target). The first one's
+    # request waits here for a different admin's approval.
+    reset_requested_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reset_requested_at = Column(DateTime, nullable=True)
+    reset_reason = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 

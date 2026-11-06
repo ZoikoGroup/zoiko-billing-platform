@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useState } from "react";
+import { Link } from "react-router-dom";
 import { Upload } from "lucide-react";
 
 import { Button, Field, Select } from "../../components/billing-ui";
@@ -16,6 +17,22 @@ export const canReadTenantTax = (role) => TENANT_TAX_ROLES.includes(role);
 export const canPropose = (role) => role === "org_admin" || role === "billing_admin";
 export const canDecide = (role) => role === "finance_approver";
 export const isOrgAdmin = (role) => role === "org_admin";
+
+export const MFA_ENROL_ERROR = "TAX_MFA_ENROLMENT_REQUIRED";
+export const MFA_ENROL_PATH = "/billing/tax/governance/mfa";
+
+/** An action's error as text; "enrol MFA to approve" comes with a link, not a generic message. */
+export function describeError(err, fallback = "The action failed.") {
+  if (err?.code === MFA_ENROL_ERROR) {
+    return (
+      <span>
+        Enrol MFA to approve: approvals like this one need a code from an authenticator app.{" "}
+        <Link to={MFA_ENROL_PATH} className="font-semibold underline">Set up MFA</Link>
+      </span>
+    );
+  }
+  return err?.message || fallback;
+}
 /** Who may download tax documents and evidence bundles (backend TAX_EVIDENCE_READER_ROLES). */
 export const canExportEvidence = (role) => ["org_admin", "billing_admin", "finance_approver"].includes(role);
 
@@ -167,7 +184,7 @@ export function DecisionBar({ user, record, proposerId, decide, withdraw, onDone
       const result = await fn();
       if (result) onDone?.(result);
     } catch (err) {
-      setError(err?.message || "The action failed.");
+      setError(describeError(err));
     } finally {
       setBusy(null);
     }

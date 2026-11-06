@@ -1,8 +1,8 @@
 import { Lock } from "lucide-react";
 import { NavLink, Navigate, useParams } from "react-router-dom";
 import {
-  AlertOctagon, BadgeCheck, BarChart3, Building2, ClipboardList, FileCheck2, LayoutDashboard, Package, Percent, PlugZap,
-  ShieldCheck, UserSquare2,
+  AlertOctagon, BadgeCheck, BarChart3, Building2, ClipboardList, FileCheck2, KeyRound, LayoutDashboard, Package, Percent,
+  PlugZap, ShieldCheck, UserSquare2,
 } from "lucide-react";
 
 import { getStoredUser } from "../../api/client";
@@ -15,6 +15,7 @@ import { ClassificationScreen, CustomerEvidenceScreen, ReviewItemsScreen } from 
 import { ProviderConnectionsScreen, ProviderTransactionsScreen } from "./ProviderScreens";
 import { ReportsScreen } from "./ReportsScreen";
 import { ReferenceRatesScreen } from "./ReferenceRatesScreen";
+import { MfaScreen } from "./MfaScreen";
 
 /* Tenant Settings → Taxes (ZB-TAX-ARCH-001 Phase 5b): T1–T8. Tenant data
  * only, through the tenant tax API. The existing Tax Rates and Tax
@@ -34,6 +35,7 @@ export const GOVERNANCE_SECTIONS = [
   { key: "transactions", label: "Provider transactions", icon: AlertOctagon, element: ProviderTransactionsScreen },
   { key: "rates", label: "Reference rates", icon: Percent, element: ReferenceRatesScreen },
   { key: "reports", label: "Reports", icon: BarChart3, element: ReportsScreen },
+  { key: "mfa", label: "MFA", icon: KeyRound, element: MfaScreen },
 ];
 
 function NoTenantAccess() {

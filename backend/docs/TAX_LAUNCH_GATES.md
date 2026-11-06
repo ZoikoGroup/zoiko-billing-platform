@@ -299,9 +299,11 @@ NOT_APPLICABLE (G1, fixed).
     same connection; a different finance approver approves with MFA. Tenant
     MFA enrolment doesn't exist yet, so approval is fail-closed until it
     does.
-  - Still open:
-    - QA and a manual WCAG pass;
-    - tenant MFA enrolment, for mode-change approval.
+  - **Tenant MFA (5d PR 2):** opt-in enrolment and step-up on the regime
+    switch, provider activation, mode change and void approvals, plus a
+    two-person org-admin reset. Needs the security owner's approval before
+    merge.
+  - Still open: QA and a manual WCAG pass.
 
 ### Gate 07: availability registry and visibility
 - **Evidence:**

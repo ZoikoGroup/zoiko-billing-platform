@@ -201,10 +201,16 @@ class MFASetupVerifyResponse(BaseModel):
 
 
 class MFAStatusResponse(BaseModel):
+    # Real enrolment (Phase 1 finding 8, fixed in Phase 5d): no longer forced
+    # true while step-up is retired. `enrolled` is the explicit name.
     enabled: bool
+    enrolled: bool = False
     # True only under the dev-only MFA_STEP_UP_BYPASS flag, so the UI can stop
     # demanding a code the server is not going to check.
     bypassed: bool = False
+    step_up_required: bool = False            # platform privileged actions (MFA_STEP_UP_ENABLED)
+    tax_registry_step_up_required: bool = True
+    tax_tenant_step_up_required: bool = True
 
 
 class MFADisableRequest(BaseModel):

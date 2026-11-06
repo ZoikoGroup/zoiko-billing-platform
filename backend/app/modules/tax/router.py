@@ -215,8 +215,11 @@ def list_regime_changes(seller_entity_id: Optional[int] = Query(None), page: Pag
 def _decide_regime(approve: bool):
     def handler(change_id: int, data: DecisionRequest, db: Session = Depends(get_db),
                 organization_id: int = Depends(get_organization_id), current_user=Depends(get_current_user)):
+        from app.modules.tax.tenant_step_up import require_tenant_tax_step_up
         from app.modules.tax.tenant_tax_service import view_regime_change
 
+        if approve:                                     # Phase 5d: tenant MFA step-up
+            require_tenant_tax_step_up(db, current_user, data.code, data.recovery_code)
         return view_regime_change(TenantTaxService(db).decide_regime_change(
             organization_id, current_user.id, change_id, approve=approve, reason=data.reason))
     return handler
@@ -465,6 +468,13 @@ def propose_activation(
              dependencies=[Depends(get_current_finance_approver)])
 def approve_activation(activation_id: int, data: DecisionRequest, db: Session = Depends(get_db),
                        organization_id: int = Depends(get_organization_id), current_user=Depends(get_current_user)):
+    from app.modules.tax.tenant_step_up import require_tenant_tax_step_up
+
+    activation = db.query(EntityTaxActivation).filter(EntityTaxActivation.id == activation_id,
+                                                      EntityTaxActivation.organization_id == organization_id).first()
+    if activation is not None and activation.provider_connection_id is not None:
+        # Phase 5d: a provider activation sends invoices to a provider: tenant MFA step-up.
+        require_tenant_tax_step_up(db, current_user, data.code, data.recovery_code)
     return view_activation(TenantTaxService(db).decide_activation(
         organization_id, current_user.id, activation_id, approve=True, reason=data.reason))
 
@@ -588,6 +598,41 @@ def tenant_evidence_bundle(kind: str, record_id: int, format: str = Query("json"
     if format == "html":
         return HTMLResponse(render_html(bundle), headers={"Cache-Control": "no-store", "X-Bundle-SHA256": bundle["bundle_sha256"]})
     return bundle
+
+
+@router.get("/mfa/users", summary="Who in this organization is enrolled in MFA (org admins)",
+            dependencies=[Depends(get_current_org_admin)])
+def tenant_mfa_users(db: Session = Depends(get_db), organization_id: int = Depends(get_organization_id)):
+    from app.modules.auth.mfa_service import tenant_mfa_overview
+
+    return {"items": tenant_mfa_overview(db, organization_id)}
+
+
+@router.post("/mfa/users/{user_id}/reset-request", summary="Ask to reset a user's MFA (a second org admin approves)",
+             dependencies=[Depends(get_current_org_admin)])
+def tenant_mfa_reset_request(user_id: int, data: ReasonRequest, db: Session = Depends(get_db),
+                             _org: int = Depends(get_organization_id), current_user=Depends(get_current_user)):
+    from app.modules.auth.mfa_service import request_tenant_mfa_reset
+
+    return request_tenant_mfa_reset(db, current_user, user_id, data.reason)
+
+
+@router.post("/mfa/users/{user_id}/reset-approve", summary="Approve a user's MFA reset (a different org admin)",
+             dependencies=[Depends(get_current_org_admin)])
+def tenant_mfa_reset_approve(user_id: int, db: Session = Depends(get_db), _org: int = Depends(get_organization_id),
+                             current_user=Depends(get_current_user)):
+    from app.modules.auth.mfa_service import approve_tenant_mfa_reset
+
+    return approve_tenant_mfa_reset(db, current_user, user_id)
+
+
+@router.post("/mfa/users/{user_id}/reset-cancel", summary="Cancel a pending MFA reset",
+             dependencies=[Depends(get_current_org_admin)])
+def tenant_mfa_reset_cancel(user_id: int, db: Session = Depends(get_db), _org: int = Depends(get_organization_id),
+                            current_user=Depends(get_current_user)):
+    from app.modules.auth.mfa_service import cancel_tenant_mfa_reset
+
+    return cancel_tenant_mfa_reset(db, current_user, user_id)
 
 
 @router.get("/people", summary="Names of this organization's users (for tax screens)")
@@ -1057,10 +1102,8 @@ def request_connection_mode_change(connection_id: int, data: ProviderModeChangeR
 def approve_connection_mode_change(connection_id: int, data: Optional[ProviderModeChangeDecision] = None,
                                    db: Session = Depends(get_db), organization_id: int = Depends(get_organization_id),
                                    current_user=Depends(get_current_user)):
-    from app.config import settings, step_up_bypass_active
     from app.modules.tax.connection_service import ProviderConnectionService, view_connection
-    from app.modules.tax.registry_router import require_tax_step_up
-    from app.modules.tax.registry_schemas import StepUpRequest
+    from app.modules.tax.tenant_step_up import require_tenant_tax_step_up
 
     data = data or ProviderModeChangeDecision()
     svc = ProviderConnectionService(db)
@@ -1068,10 +1111,9 @@ def approve_connection_mode_change(connection_id: int, data: Optional[ProviderMo
     if row.mode_change_to is None:
         raise BadRequestException("There is no mode change waiting for a decision.")
     svc._checker(row.mode_change_requested_by, current_user.id, "requested this mode change")
-    # Before any change: verify_step_up commits the session.
-    require_tax_step_up(db, current_user, StepUpRequest(code=data.code, recovery_code=data.recovery_code))
-    step_up = ("not_required" if not settings.TAX_REGISTRY_STEP_UP_REQUIRED
-               else "bypassed" if step_up_bypass_active() else "verified")
+    # Phase 5d: tenant step-up (TAX_TENANT_STEP_UP_REQUIRED). Before any change:
+    # verify_step_up commits the session.
+    step_up = require_tenant_tax_step_up(db, current_user, data.code, data.recovery_code)
     return view_connection(svc.decide_mode_change(organization_id, current_user.id, connection_id, approve=True,
                                                   reason=data.reason, step_up=step_up))
 
@@ -1237,13 +1279,21 @@ def get_provider_transaction(row_id: int, db: Session = Depends(get_db),
 
 
 def _transaction_action(action: str):
-    def handler(row_id: int, db: Session = Depends(get_db), organization_id: int = Depends(get_organization_id),
-                current_user=Depends(get_current_user)):
+    def handler(row_id: int, data: Optional[DecisionRequest] = None, db: Session = Depends(get_db),
+                organization_id: int = Depends(get_organization_id), current_user=Depends(get_current_user)):
         from datetime import datetime, timezone
 
         from app.modules.tax.provider_issuance import ProviderIssuanceService
 
         row = _own_transaction(db, organization_id, row_id)
+        if action == "void-approve":
+            # Phase 5d: voiding at the provider is the second person's step: tenant MFA step-up.
+            from app.modules.tax.tenant_step_up import require_tenant_tax_step_up
+
+            if row.void_requested_by == current_user.id:
+                raise ForbiddenException("You requested this void; a different user must approve it.")
+            data = data or DecisionRequest()
+            require_tenant_tax_step_up(db, current_user, data.code, data.recovery_code)
         svc = ProviderIssuanceService(db)
         if action == "check-state":
             return {"transaction": _transaction_view(db, row, datetime.now(timezone.utc)),

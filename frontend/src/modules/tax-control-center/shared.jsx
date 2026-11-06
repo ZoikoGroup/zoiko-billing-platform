@@ -68,6 +68,8 @@ const STATUS_STYLES = {
   UNCHECKED: { icon: Circle, label: "Not tested yet", tone: "slate" },
   ESTIMATE_ONLY: { icon: ShieldCheck, label: "Safe mode: estimate only", tone: "blue" },
   COMMIT: { icon: KeyRound, label: "Commit (issues invoices)", tone: "slate" },
+  MFA_ENROLLED: { icon: ShieldCheck, label: "MFA on", tone: "green" },
+  MFA_NOT_ENROLLED: { icon: Circle, label: "MFA not set up", tone: "slate" },
 };
 
 const TONES = {

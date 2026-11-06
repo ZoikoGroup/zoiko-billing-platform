@@ -52,7 +52,11 @@ def test_verify_step_up_passes_without_enrollment_or_code(db_session):
 
 def test_status_endpoint_reports_step_up_not_required(db_session):
     user = _super_admin(db_session)
-    assert mfa_status(current_user=user, db=db_session) == {"enabled": True, "bypassed": True}
+    # Phase 5d (Phase 1 finding 8): `enabled` is real enrolment, no longer forced
+    # true while step-up is retired; "no code needed" is `step_up_required: False`.
+    status = mfa_status(current_user=user, db=db_session)
+    assert status["enabled"] is False and status["enrolled"] is False
+    assert status["step_up_required"] is False and status["bypassed"] is False
 
 
 def test_launch_readiness_flags_step_up_off_and_skips_key_check(db_session):

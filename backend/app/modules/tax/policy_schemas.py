@@ -147,6 +147,9 @@ class ActivationCreate(_Strict):
 
 class DecisionRequest(_Strict):
     reason: Optional[str] = Field(None, max_length=2000)
+    # Phase 5d: approvals that need tenant MFA step-up carry a fresh factor.
+    code: Optional[str] = Field(None, min_length=6, max_length=8)
+    recovery_code: Optional[str] = Field(None, min_length=6, max_length=20)
 
 
 class RegimeChangeRequest(_Strict):

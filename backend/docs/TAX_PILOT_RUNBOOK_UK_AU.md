@@ -29,6 +29,10 @@ tax is never treated as 0%. This is not a claim of global compliance.
 The screens disable a button you may not use and say why.
 
 **Before you start:**
+- Every tenant finance approver who will approve the regime switch (2.6),
+  a provider activation, a connection mode change or a provider void sets
+  up MFA at `/billing/tax/governance/mfa`. Approving those asks for a code
+  from an authenticator app; signing in doesn't.
 - `/super-admin/tax/overview` shows "Two-person publishing: Ready". That
   means at least one reviewer and one publisher with MFA, and step-up
   required.

@@ -554,6 +554,11 @@ CRITICAL_COLUMNS: list[tuple[str, str, str, str]] = [
         "ZB-TAX-ARCH-001 Phase 4d: two-person manual address resolutions",
     ),
     (
+        "super_admin_mfa", "reset_requested_by",
+        "alembic/versions/e6b1d3f5a7c9_tenant_mfa_reset.py",
+        "ZB-TAX-ARCH-001 Phase 5d: two-person tenant MFA reset",
+    ),
+    (
         "tax_provider_connections", "mode_change_to",
         "alembic/versions/d4a8c2e6f1b9_tax_phase5c_connection_mode_change.py",
         "ZB-TAX-ARCH-001 Phase 5c: governed connection mode change",

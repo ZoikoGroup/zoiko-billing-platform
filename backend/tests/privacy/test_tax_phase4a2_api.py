@@ -157,8 +157,12 @@ def test_provider_connections_page(db_session, client_for, world):
 
 # ── regime changes over HTTP ────────────────────────────────────────────
 
-def test_regime_change_routes_are_two_person(db_session, client_for, world):
+def test_regime_change_routes_are_two_person(db_session, client_for, world, monkeypatch):
+    from app.config import settings
     from app.modules.auth.models import UserRole
+
+    # Two-person rule only; tenant MFA step-up on this route: test_tax_phase5d2_tenant_mfa.py.
+    monkeypatch.setattr(settings, "TAX_TENANT_STEP_UP_REQUIRED", False)
     from tests.privacy.test_tax_phase3a_reports_access import _tenant_user
 
     admin = client_for(_tenant_user(db_session, world["org"], UserRole.ORG_ADMIN, "admin@p4a2api.example"))
