@@ -18,7 +18,7 @@ const { svc, current } = vi.hoisted(() => ({
     "decideClassification", "withdrawClassification", "searchProducts", "searchCustomers", "getCustomerTaxEvidence",
     "recordTaxAddress", "resolveTaxAddress", "proposeManualResolution", "listManualResolutions",
     "decideManualResolution", "withdrawManualResolution", "addTaxId", "retireTaxId", "addCertificate",
-    "revokeCertificate", "listReviewItems", "resolveReviewItem",
+    "revokeCertificate", "listReviewItems", "resolveReviewItem", "getTenantEvidenceBundle",
   ].map((k) => [k, vi.fn()])),
 }));
 vi.mock("../../api/client", async (importOriginal) => ({ ...(await importOriginal()), getStoredUser: () => current.user }));
@@ -338,5 +338,35 @@ describe("review items (T8)", () => {
     expect(screen.getByText(/owner: Billing admin · open 4 day\(s\)/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Mark resolved" }));
     await waitFor(() => expect(svc.resolveReviewItem).toHaveBeenCalledWith(3));
+  });
+});
+
+// ── Phase 5c PR 1: product names and audit-evidence export ──────────────
+
+describe("product names and evidence export (Phase 5c)", () => {
+  let click;
+  beforeEach(() => { click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {}); });
+  afterEach(() => click.mockRestore());
+  const classification = { id: 70, product_id: 5, product_name: "Consulting hours", tax_code: "SVC",
+    supply_category: "SERVICES", status: "APPROVED", proposed_by: 2, approved_by: 3, created_at: "2026-11-06T09:00:00Z" };
+
+  it("shows the product name, not the id, and exports the classification's evidence", async () => {
+    current.user = APPROVER;
+    svc.listClassifications.mockImplementation(() => page([classification]));
+    svc.getTenantEvidenceBundle.mockResolvedValue({ kind: "classification", bundle_sha256: "ef".repeat(32) });
+    renderAt("classification");
+    expect(await screen.findByText(/Consulting hours → SVC/)).toBeInTheDocument();
+    expect(screen.queryByText(/Product #5/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Export evidence (JSON)" }));
+    await waitFor(() => expect(svc.getTenantEvidenceBundle).toHaveBeenCalledWith("classification", 70, "json"));
+    expect(await screen.findByText("ef".repeat(32))).toBeInTheDocument();
+  });
+
+  it("hides the export from an auditor, whom the backend refuses", async () => {
+    current.user = { id: 9, role: "auditor" };
+    svc.listClassifications.mockImplementation(() => page([classification]));
+    renderAt("classification");
+    expect(await screen.findByText(/Consulting hours → SVC/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Export evidence (JSON)" })).not.toBeInTheDocument();
   });
 });

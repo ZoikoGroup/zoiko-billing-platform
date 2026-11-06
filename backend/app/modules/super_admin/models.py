@@ -162,6 +162,8 @@ class PlatformAuditAction(str, enum.Enum):
     TAX_RATE_REJECTED = "tax_rate_rejected"
     TAX_RATE_PUBLISHED = "tax_rate_published"
     TAX_RATE_SUPERSEDED = "tax_rate_superseded"
+    # ZB-TAX-ARCH-001 Phase 5c: an audit-evidence bundle was exported.
+    TAX_EVIDENCE_BUNDLE_EXPORTED = "tax_evidence_bundle_exported"
 
 
 class PlatformAuditLog(Base):

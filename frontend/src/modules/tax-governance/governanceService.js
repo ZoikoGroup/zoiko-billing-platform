@@ -10,6 +10,10 @@ import { ENDPOINTS } from "../../service/billingEndpoints";
  */
 
 const T = "/api/v1/tax";
+
+/** Phase 5c (gate 06). kind: registration | legal_basis | activation | classification | regime_change. */
+export const getTenantEvidenceBundle = (kind, id, format = "json") =>
+  api.get(`${T}/evidence-bundles/${kind}/${id}`, { params: { format } });
 const page = (params = {}) => ({ params: { limit: 50, ...params } });
 
 // ── Reference and names ────────────────────────────────────────────────

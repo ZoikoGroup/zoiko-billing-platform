@@ -13,6 +13,11 @@ import { api } from "../../service/api";
 
 const BASE = "/api/v1/super-admin/tax-registry";
 
+// ── Audit-evidence bundles (Phase 5c, gate 06) ──────────────────────────
+/** kind: source_revision | rate | tax_code_set | rule_pack | market_availability; format: json | html. */
+export const getEvidenceBundle = (kind, id, format = "json") =>
+  api.get(`${BASE}/evidence-bundles/${kind}/${id}`, { params: { format } });
+
 // ── Lists (B3: limit + cursor) ──────────────────────────────────────────
 export const listApprovalsInbox = ({ kind, cursor } = {}) =>
   api.get(`${BASE}/approvals-inbox`, { params: { kind, cursor } });

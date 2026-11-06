@@ -644,6 +644,23 @@ def list_components(jurisdiction_id: Optional[int] = Query(None), page: PagePara
             "next_cursor": next_cursor}
 
 
+@admin_router.get("/evidence-bundles/{kind}/{record_id}",
+                  summary="Audit-evidence bundle for a source, rate, tax-code set, rule pack or market availability")
+def platform_evidence_bundle(kind: str, record_id: int, format: str = Query("json", pattern="^(json|html)$"),
+                             db: Session = Depends(get_db),
+                             current_user=Depends(require_capability("tax_registry.read"))):
+    """Phase 5c (gate 06): platform data only, tax roles only; sealed with
+    its own SHA-256 and audited."""
+    from fastapi.responses import HTMLResponse
+
+    from app.modules.tax.evidence_bundle import platform_bundle, render_html
+
+    bundle = platform_bundle(db, current_user, kind, record_id)
+    if format == "html":
+        return HTMLResponse(render_html(bundle), headers={"Cache-Control": "no-store", "X-Bundle-SHA256": bundle["bundle_sha256"]})
+    return bundle
+
+
 @admin_router.get("/people", summary="Names of the platform tax staff (for inbox and history)")
 def list_tax_people(page: PageParams = Depends(), db: Session = Depends(get_db),
                     _user=Depends(require_capability("tax_registry.read"))):

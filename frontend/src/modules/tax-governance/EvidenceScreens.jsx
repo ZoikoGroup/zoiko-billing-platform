@@ -6,7 +6,7 @@ import {
   InlineError, LoadMore, MUTED, PANEL, STRONG, TaxStatusBadge, formatDateTime, humanize, useCursorList,
   useReferenceList,
 } from "../tax-control-center/shared";
-import { DecisionBar, EvidenceUpload, SectionTitle, canPropose, useTenantNames } from "./common";
+import { DecisionBar, EvidenceUpload, SectionTitle, TenantEvidenceExport, canPropose, useTenantNames } from "./common";
 import {
   addCertificate, addTaxId, decideClassification, decideManualResolution, getCustomerTaxEvidence, listJurisdictions,
   listClassifications, listManualResolutions, listReviewItems, listTaxCodes, previewClassificationImpact,
@@ -104,7 +104,7 @@ export function ClassificationScreen({ user }) {
         {list.items.map((c) => (
           <li key={c.id} className="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className={`text-sm font-semibold ${STRONG}`}>Product #{c.product_id} → {c.tax_code} ({humanize(c.supply_category)})</span>
+              <span className={`text-sm font-semibold ${STRONG}`}>{c.product_name || `Product #${c.product_id}`} → {c.tax_code} ({humanize(c.supply_category)})</span>
               <TaxStatusBadge status={c.status} />
             </div>
             <p className={`text-xs ${MUTED}`}>
@@ -114,6 +114,7 @@ export function ClassificationScreen({ user }) {
             {c.status === "PROPOSED" && <ImpactPreview productId={c.product_id} />}
             <DecisionBar user={user} record={c} proposerId={c.proposed_by} noun="classification"
                          decide={decideClassification} withdraw={withdrawClassification} onDone={() => setReload((n) => n + 1)} />
+            <TenantEvidenceExport user={user} kind="classification" id={c.id} />
           </li>
         ))}
       </ul>

@@ -7,10 +7,10 @@ import {
   GATES, GATE_STATUSES, MODES, TRANSACTION_CLASSES, emptyGates, gateProblems, mandatoryGates,
 } from "./gates";
 import {
-  amendAvailability, availabilityAction, draftAvailability, listJurisdictions, listMarketAvailability, listTaxTypes,
+  getEvidenceBundle, amendAvailability, availabilityAction, draftAvailability, listJurisdictions, listMarketAvailability, listTaxTypes,
 } from "./taxRegistryService";
 import {
-  ActionBar, DefinitionList, DetailModal, InlineError, LoadMore, MUTED, PANEL, ReasonModal, STRONG, TaxStatusBadge,
+  ActionBar, DefinitionList, DetailModal, EvidenceExport, InlineError, LoadMore, MUTED, PANEL, ReasonModal, STRONG, TaxStatusBadge,
   TaxTable, ValidationList, VersionTimeline, humanize, useApprovalVerdict, useCursorList, useReferenceList,
   useStepUp,
 } from "./shared";
@@ -256,6 +256,8 @@ function AvailabilityDetail({ version, user, onChanged, onEdit }) {
                    submitLabel={reasonFor === "reject" ? "Reject" : "Submit"} onCancel={() => setReasonFor(null)}
                    onSubmit={(reason) => { const action = reasonFor; setReasonFor(null);
                      act(action, () => availabilityAction(version.id, action, { reason })); }} />
+      <EvidenceExport noun="market availability" filename={`tax-evidence-market_availability-${version.id}`}
+                      fetchBundle={(format) => getEvidenceBundle("market_availability", version.id, format)} />
       {stepUp.modal}
     </>
   );

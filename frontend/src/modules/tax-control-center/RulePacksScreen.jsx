@@ -5,10 +5,10 @@ import { Button, Field, FORM_CONTROL_CLASS, FormGrid, FormModal } from "../../co
 import { approveBlockedReason, canApproveTaxRegistry, canWriteTaxRegistry } from "./access";
 import { SIGNOFF_CHECKLISTS } from "./signoffChecklists";
 import {
-  amendRulePack, getRulePackCatalogue, listRulePacks, registerRulePack, rulePackAction,
+  getEvidenceBundle, amendRulePack, getRulePackCatalogue, listRulePacks, registerRulePack, rulePackAction,
 } from "./taxRegistryService";
 import {
-  ActionBar, DefinitionList, DetailModal, InlineError, LoadMore, MUTED, PANEL, ReasonModal, STRONG, TaxStatusBadge,
+  ActionBar, DefinitionList, DetailModal, EvidenceExport, InlineError, LoadMore, MUTED, PANEL, ReasonModal, STRONG, TaxStatusBadge,
   TaxTable, ValidationList, VersionTimeline, humanize, useApprovalVerdict, useCursorList, useStepUp,
 } from "./shared";
 
@@ -169,6 +169,8 @@ function PackDetail({ pack, catalogueEntry, user, onChanged }) {
                      act(action, () => rulePackAction(pack.id, action, { reason })); }} />
       <GoldenReportModal open={reporting} pack={pack} onClose={() => setReporting(false)}
                          onDone={(updated) => { setReporting(false); onChanged(updated); }} />
+      <EvidenceExport noun="rule pack" filename={`tax-evidence-rule_pack-${pack.id}`}
+                      fetchBundle={(format) => getEvidenceBundle("rule_pack", pack.id, format)} />
       {stepUp.modal}
     </>
   );

@@ -145,3 +145,23 @@ def test_registration_evidence_is_write_once_on_postgres(pg, world):
     assert {"trg_entity_tax_registrations_evidence_write_once",
             "trg_entity_tax_legal_bases_evidence_write_once"} <= triggers
     _rejects(pg, "UPDATE entity_tax_registrations SET evidence_file_id = NULL WHERE id = :id", {"id": reg.id})
+
+
+def test_tenant_evidence_bundle_is_sealed_and_audited_on_postgres(pg, world):
+    """Phase 5c (gate 06): the export writes its BillingAuditLog row on
+    Postgres and the bundle verifies against its own SHA-256."""
+    from app.modules.billing.models import BillingAuditLog
+    from app.modules.tax.evidence_bundle import tenant_bundle, verify
+    from app.modules.tax.models import EntityTaxRegistration
+    from app.modules.tax.tenant_tax_service import attach_obligation_evidence
+
+    reg = pg.query(EntityTaxRegistration).filter(EntityTaxRegistration.organization_id == world["org"].id).first()
+    attach_obligation_evidence(pg, world["org"].id, world["maker"].id, "registration", reg.id,
+                               content=b"%PDF-1.7\n1 0 obj << >> endobj\n%%EOF\n", media_type="application/pdf")
+    pg.flush()
+    bundle = tenant_bundle(pg, world["org"].id, world["maker"], "registration", reg.id)
+    assert verify(bundle) and bundle["evidence"]
+    row = pg.query(BillingAuditLog).filter(BillingAuditLog.entity_type == "EntityTaxRegistration",
+                                           BillingAuditLog.entity_id == reg.id,
+                                           BillingAuditLog.action == "EXPORT").one()
+    assert row.new_values["evidence_bundle_sha256"] == bundle["bundle_sha256"]

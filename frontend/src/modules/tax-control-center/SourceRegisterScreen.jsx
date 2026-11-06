@@ -3,9 +3,11 @@ import { Plus, Upload } from "lucide-react";
 
 import { Button, Field, FORM_CONTROL_CLASS, FormGrid, FormModal, Select } from "../../components/billing-ui";
 import { canWriteTaxRegistry } from "./access";
-import { attachSourceEvidence, listAuthorities, listSourceRevisions, registerSourceRevision } from "./taxRegistryService";
 import {
-  DefinitionList, DetailModal, InlineError, LoadMore, MUTED, PANEL, STRONG, TaxStatusBadge, TaxTable,
+  attachSourceEvidence, getEvidenceBundle, listAuthorities, listSourceRevisions, registerSourceRevision,
+} from "./taxRegistryService";
+import {
+  DefinitionList, DetailModal, EvidenceExport, InlineError, LoadMore, MUTED, PANEL, STRONG, TaxStatusBadge, TaxTable,
   formatDateTime, humanize, useCursorList, usePeopleNames, useReferenceList,
 } from "./shared";
 
@@ -180,6 +182,8 @@ export default function SourceRegisterScreen({ user }) {
             {open.evidence_status === "CAPTURED" && (
               <p className={`text-sm ${MUTED}`}>Evidence is captured and write-once. To withdraw a source, register a new revision and capture it with redistribution DENIED.</p>
             )}
+            <EvidenceExport noun="source" filename={`tax-evidence-source-${open.id}`}
+                            fetchBundle={(format) => getEvidenceBundle("source_revision", open.id, format)} />
           </>
         )}
       </DetailModal>

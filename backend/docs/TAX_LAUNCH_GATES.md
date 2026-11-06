@@ -129,8 +129,9 @@ external provider".
   - The invoice editor and Taxes → Exceptions explain NOT_DETERMINED,
     NEEDS_EVIDENCE, stale and unsupported states, and offer a re-quote
     (WCAG 2.2 AA).
-  - Audit evidence exportable by authorized roles only: tenant tax
-    reports; platform roles get 403 (T13).
+  - Audit evidence exportable by authorized roles only: platform registry
+    bundles for tax roles; tenant bundles and documents for tenant
+    admin/finance roles; platform roles get 403 on tenant data (T13).
 - **Verify:** QA walkthrough of the Tax Control Center screens; the
   privacy/T13 test suite.
 - **Status:** ◐ **Platform sign-off console built (Phase 5a, `TAX_PHASE5A.md`).**
@@ -145,11 +146,28 @@ external provider".
     issuing, legal entities, registrations and legal bases with evidence,
     activations, regime switch, product classification with impact preview,
     customer tax evidence with resolution status, and review items.
+  - **Phase 5c PR 1 (`TAX_PHASE5C.md`): audit-evidence export built.**
+    - **Platform bundles:** for a source, rate, tax-code set, rule pack and
+      market availability version. Each has:
+      - the record;
+      - source references and evidence hashes;
+      - the golden-test report reference;
+      - every state change, with names and timestamps;
+      - approvals and MFA step-up flags.
+
+      Tax roles only, and no tenant data.
+    - **Tenant bundles:** for a registration, legal basis, activation,
+      classification and regime change. Tenant admin/finance roles only;
+      platform roles get 403 (T13).
+    - **Format and seal:** JSON plus a printable HTML summary. Each bundle
+      records its own SHA-256 and is audited on export.
+    - **Downloads tightened:** tenant document downloads (registration,
+      legal basis, certificate, manual resolution) now need the same roles.
   - Still open:
-    - T9 reference rates and T10 reports for tenants;
-    - audit-evidence export for platform registry changes (gap in
-      `TAX_PHASE5A.md`);
-    - a manual WCAG 2.2 AA pass and QA sign-off.
+    - T9 reference rates and T10 reports for tenants (Phase 5c PR 2/3);
+    - the provider operations screens (Phase 5c PR 2);
+    - the QA walkthrough of the console and tenant screens;
+    - a manual WCAG 2.2 AA pass (automated axe checks run in CI).
 
 ### Gate 07: availability registry and visibility
 - **Evidence:**
@@ -287,7 +305,7 @@ NOT_APPLICABLE (G1, fixed).
 
 ---
 
-## Status summary (2026-11-05)
+## Status summary (2026-11-06)
 
 | Gate | GB | AU | CA | US |
 |---|---|---|---|---|
@@ -296,7 +314,7 @@ NOT_APPLICABLE (G1, fixed).
 | 03 Resolution and determination tests | ◐ CI | ◐ CI | ◐ fake only | ◐ fake only |
 | 04 Golden tests signed off | ☐ | ☐ | ☐ | ☐ |
 | 05 Provider contract, SLA, recovery | N/A (note) | N/A (note) | ☐ (must PASS) | ☐ (must PASS) |
-| 06 UI and audit evidence | ◐ console built | ◐ console built | ◐ console built | ◐ console built |
+| 06 UI and audit evidence | ◐ screens + evidence export built; QA/WCAG open | ◐ screens + evidence export built; QA/WCAG open | ◐ screens + evidence export built; QA/WCAG open | ◐ screens + evidence export built; QA/WCAG open |
 | 07 Availability and visibility | ☐ | ☐ | ☐ | ☐ |
 
 ☐ open · ◐ partly done (built, evidence or sign-off pending) · N/A only with a note

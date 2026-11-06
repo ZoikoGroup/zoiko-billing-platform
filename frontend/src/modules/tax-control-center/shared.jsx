@@ -429,6 +429,62 @@ export function ValidationList({ title, items, tone = "red" }) {
   );
 }
 
+// ── Audit-evidence bundle export (Phase 5c, launch gate 06) ──────────────
+
+function saveFile(name, text, type) {
+  if (typeof URL === "undefined" || typeof URL.createObjectURL !== "function") return;
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+/**
+ * Downloads the sealed audit-evidence bundle for one record: JSON (the
+ * machine-checkable bundle with its own SHA-256) or a printable HTML
+ * summary. The backend audits every export and decides who may export.
+ */
+export function EvidenceExport({ fetchBundle, filename, noun = "record" }) {
+  const [busy, setBusy] = useState(null);
+  const [error, setError] = useState(null);
+  const [sha, setSha] = useState(null);
+  const run = async (format) => {
+    setBusy(format);
+    setError(null);
+    try {
+      const body = await fetchBundle(format);
+      if (format === "json") {
+        setSha(body?.bundle_sha256 || null);
+        saveFile(`${filename}.json`, JSON.stringify(body, null, 2), "application/json");
+      } else {
+        saveFile(`${filename}.html`, String(body ?? ""), "text/html");
+      }
+    } catch (err) {
+      setError(err?.message || "The export failed.");
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <div className="space-y-1" role="group" aria-label={`Audit evidence for this ${noun}`}>
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant="secondary" loading={busy === "json"} disabled={Boolean(busy)} onClick={() => run("json")}>
+          Export evidence (JSON)
+        </Button>
+        <Button size="sm" variant="secondary" loading={busy === "html"} disabled={Boolean(busy)} onClick={() => run("html")}>
+          Printable summary
+        </Button>
+      </div>
+      {sha && <p className={`text-xs ${MUTED}`}>Bundle SHA-256: <code className="break-all">{sha}</code></p>}
+      <InlineError message={error} />
+    </div>
+  );
+}
+
 // ── Detail drawer and no-access page ─────────────────────────────────────
 
 export function DetailModal({ open, onClose, title, description, children }) {

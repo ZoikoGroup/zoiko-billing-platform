@@ -7,7 +7,7 @@ import {
   useReferenceList,
 } from "../tax-control-center/shared";
 import {
-  DecisionBar, EntitySelect, EvidenceUpload, SectionTitle, canPropose, useLegalEntities, useTenantNames,
+  DecisionBar, EntitySelect, EvidenceUpload, SectionTitle, TenantEvidenceExport, canPropose, useLegalEntities, useTenantNames,
 } from "./common";
 import {
   createRegistration, decideActivation, decideLegalBasis, getActivationEffective, listActivations, listCoverage,
@@ -114,6 +114,7 @@ export function ObligationsScreen({ user }) {
             {proposer && !r.evidence_attached && (
               <div className="mt-2"><EvidenceUpload kind="registrations" id={r.id} label="Registration certificate" onDone={() => setReload((n) => n + 1)} /></div>
             )}
+            <TenantEvidenceExport user={user} kind="registration" id={r.id} />
           </li>
         ))}
       </ul>
@@ -136,6 +137,7 @@ export function ObligationsScreen({ user }) {
             )}
             <DecisionBar user={user} record={b} proposerId={b.recorded_by} noun="legal basis"
                          decide={decideLegalBasis} withdraw={withdrawLegalBasis} onDone={() => setReload((n) => n + 1)} />
+            <TenantEvidenceExport user={user} kind="legal_basis" id={b.id} />
           </li>
         ))}
       </ul>
@@ -234,6 +236,7 @@ export function ActivationsScreen({ user }) {
             {a.status === "APPROVED" && <Effective activation={a} />}
             <DecisionBar user={user} record={a} proposerId={a.proposed_by} noun="activation"
                          decide={decideActivation} withdraw={withdrawActivation} onDone={() => setReload((n) => n + 1)} />
+            <TenantEvidenceExport user={user} kind="activation" id={a.id} />
           </li>
         ))}
       </ul>

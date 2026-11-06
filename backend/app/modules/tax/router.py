@@ -345,6 +345,22 @@ def update_registration(
 
 # ── Legal bases (collecting without a registration) ─────────────────────
 
+# ── Phase 5c: who may read tenant tax documents and evidence bundles ──
+
+#: Tenant roles that may download tax evidence documents and evidence
+#: bundles: the roles that upload (org_admin, billing_admin) and decide
+#: (finance_approver). Other tenant roles (auditor) get 403; platform
+#: tokens are refused by get_organization_id (T13).
+TAX_EVIDENCE_READER_ROLES = ("org_admin", "billing_admin", "finance_approver")
+
+
+def get_tax_evidence_reader(current_user=Depends(get_current_user)):
+    role = getattr(current_user.role, "value", current_user.role)
+    if str(role).lower() not in TAX_EVIDENCE_READER_ROLES:
+        raise ForbiddenException("Tax evidence is available to org admins, billing admins and finance approvers.")
+    return current_user
+
+
 # ── Phase 5b: evidence documents for registrations and legal bases ──
 
 def _evidence_routes(kind: str, path: str, view):
@@ -373,6 +389,7 @@ def _evidence_routes(kind: str, path: str, view):
                          dependencies=[Depends(get_current_billing_admin)],
                          summary=f"Attach the {kind.replace('_', ' ')} evidence document once (PDF, PNG or JPEG)")
     router.add_api_route(f"/{path}/{{record_id}}/evidence", download, methods=["GET"],
+                         dependencies=[Depends(get_tax_evidence_reader)],
                          summary=f"Download the {kind.replace('_', ' ')} evidence document")
 
 
@@ -498,8 +515,13 @@ def list_classifications(
     db: Session = Depends(get_db),
     organization_id: int = Depends(get_organization_id),
 ):
+    from app.modules.billing.models import Product
+
     rows, next_cursor = paginate(ClassificationService(db).list_classifications(organization_id, product_id), page)
-    return {"items": [view_classification(c) for c in rows], "next_cursor": next_cursor}
+    names = {p.id: p.name for p in db.query(Product).filter(
+        Product.organization_id == organization_id, Product.id.in_([c.product_id for c in rows] or [-1]))}
+    return {"items": [{**view_classification(c), "product_name": names.get(c.product_id)} for c in rows],
+            "next_cursor": next_cursor}
 
 
 @router.post("/product-classifications", status_code=status.HTTP_201_CREATED, summary="Propose a classification",
@@ -547,6 +569,23 @@ def _register_obligation_evidence_routes():
 
 
 _register_obligation_evidence_routes()
+
+
+@router.get("/evidence-bundles/{kind}/{record_id}",
+            summary="Audit-evidence bundle for a registration, legal basis, activation, classification or regime change")
+def tenant_evidence_bundle(kind: str, record_id: int, format: str = Query("json", pattern="^(json|html)$"),
+                           db: Session = Depends(get_db), organization_id: int = Depends(get_organization_id),
+                           current_user=Depends(get_tax_evidence_reader)):
+    """Phase 5c (gate 06): the record, its evidence hashes, approvals and
+    every state change, sealed with its own SHA-256 and audited."""
+    from fastapi.responses import HTMLResponse
+
+    from app.modules.tax.evidence_bundle import render_html, tenant_bundle
+
+    bundle = tenant_bundle(db, organization_id, current_user, kind, record_id)
+    if format == "html":
+        return HTMLResponse(render_html(bundle), headers={"Cache-Control": "no-store", "X-Bundle-SHA256": bundle["bundle_sha256"]})
+    return bundle
 
 
 @router.get("/people", summary="Names of this organization's users (for tax screens)")
@@ -629,7 +668,8 @@ async def attach_manual_resolution_evidence(request_id: int, file: UploadFile = 
         filename=file.filename, expected_sha256=sha256))
 
 
-@router.get("/manual-resolutions/{request_id}/evidence", summary="Download a manual resolution's evidence")
+@router.get("/manual-resolutions/{request_id}/evidence", summary="Download a manual resolution's evidence",
+            dependencies=[Depends(get_tax_evidence_reader)])
 def download_manual_resolution_evidence(request_id: int, db: Session = Depends(get_db),
                                         organization_id: int = Depends(get_organization_id)):
     from fastapi.responses import Response
@@ -963,7 +1003,8 @@ async def attach_certificate_evidence(certificate_id: int, file: UploadFile = Fi
         filename=file.filename, expected_sha256=sha256))
 
 
-@router.get("/exemption-certificates/{certificate_id}/evidence", summary="Download the certificate document")
+@router.get("/exemption-certificates/{certificate_id}/evidence", summary="Download the certificate document",
+            dependencies=[Depends(get_tax_evidence_reader)])
 def download_certificate_evidence(certificate_id: int, db: Session = Depends(get_db),
                                   organization_id: int = Depends(get_organization_id)):
     from fastapi.responses import Response

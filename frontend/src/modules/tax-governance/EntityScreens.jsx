@@ -6,7 +6,7 @@ import {
   DefinitionList, InlineError, LoadMore, MUTED, PANEL, STRONG, TaxStatusBadge, formatDateTime, useCursorList,
 } from "../tax-control-center/shared";
 import {
-  DecisionBar, SectionTitle, isOrgAdmin, useLegalEntities, useTenantNames,
+  DecisionBar, SectionTitle, TenantEvidenceExport, isOrgAdmin, useLegalEntities, useTenantNames,
 } from "./common";
 import {
   createLegalEntity, decideRegimeChange, getRegimeEligibility, listRegimeChanges, proposeRegimeChange,
@@ -280,6 +280,7 @@ export function RegimeScreen({ user }) {
                 <DecisionBar user={user} record={c} proposerId={c.proposed_by} noun="regime change"
                              decide={decideRegimeChange} withdraw={withdrawRegimeChange} withdrawRoles={["org_admin"]}
                              onDone={() => setReload((n) => n + 1)} />
+                <TenantEvidenceExport user={user} kind="regime_change" id={c.id} />
               </li>
             ))}
           </ul>
