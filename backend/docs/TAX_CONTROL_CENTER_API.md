@@ -1,4 +1,4 @@
-# Tax Control Center — API Contract (B1, B3, Phase 4a-2, Phase 4c, Phase 5a)
+# Tax Control Center — API Contract (B1, B3, Phase 4a-2, Phase 4c, Phase 5a, Phase 5b)
 
 The backend for the Tax Control Center frontend (plan:
 `TAX_PHASE4_PLAN.md`, "Tax Control Center UI"). It contains two gaps:
@@ -177,6 +177,26 @@ GET /api/v1/super-admin/tax-registry/staged-rates/{id}/comparison      (tax_regi
 - **Checks:** the same `errors`, `conflicts` and `warnings` validation would
   give now. It is read-only: nothing changes.
 - Platform data only; other platform roles and tenants get `403`.
+
+## Phase 5b additions (G-5a-1 pickers, G-5a-3 names)
+
+All read-only, `tax_registry.read` (TAX_REVIEWER, TAX_PUBLISHER), paged
+(B3). Creating or editing these stays deferred (B2).
+
+```
+GET /api/v1/super-admin/tax-registry/authorities            -> {items: [{id, code, name, jurisdiction_id, jurisdiction_code}], next_cursor}
+GET /api/v1/super-admin/tax-registry/tax-types              -> {items: [{id, code, name}], next_cursor}
+GET /api/v1/super-admin/tax-registry/components?jurisdiction_id=
+    -> {items: [{id, code, name, jurisdiction_id, jurisdiction_code, tax_type_id, tax_type, is_cumulative, is_active}], next_cursor}
+GET /api/v1/super-admin/tax-registry/people                 -> {items: [{id, name, platform_role, active}], next_cursor}
+```
+
+- **Ordering:** authorities, tax types and components are ordered by code.
+- **`/people`:** lists **only** platform users holding a tax role
+  (TAX_REVIEWER or TAX_PUBLISHER), ordered by id. It returns name and role
+  only: no email, no other platform users, no tenant users. The console
+  uses it to show names instead of user ids in the inbox and the
+  timelines.
 
 ## Behaviour change for external API clients (B3)
 
