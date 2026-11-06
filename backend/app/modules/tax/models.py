@@ -168,6 +168,8 @@ class EntityTaxRegistration(Base):
     verified_at             = Column(DateTime(timezone=True), nullable=True)
     verification_expires_at = Column(DateTime(timezone=True), nullable=True)
     evidence_ref            = Column(String(500), nullable=True)
+    # Phase 5b: the registration certificate itself, attached once.
+    evidence_file_id        = _fk("tax_evidence_files.id", nullable=True)
     notes                   = Column(Text, nullable=True)
     created_by              = _user_fk()
     created_at              = Column(DateTime(timezone=True), nullable=False)
@@ -191,6 +193,8 @@ class EntityTaxLegalBasis(Base):
     tax_type_id      = _fk("tax_type_definitions.id", nullable=False)
     legal_basis      = Column(Text, nullable=False)
     evidence_ref     = Column(String(500), nullable=False)
+    # Phase 5b: the supporting document, attached once while proposed.
+    evidence_file_id = _fk("tax_evidence_files.id", nullable=True)
     valid_from       = Column(Date, nullable=False)
     valid_to         = Column(Date, nullable=True)
     status           = Column(CaseInsensitiveEnum(TenantApprovalStatus), nullable=False, index=True,
@@ -648,6 +652,16 @@ REGIME_CHANGE_FROZEN_FIELDS = ("organization_id", "seller_entity_id", "from_regi
                                "eligibility", "proposed_by", "created_at")
 register_tenant_record_guard(TaxEvidenceFile.__table__, EVIDENCE_FILE_FROZEN_FIELDS)
 register_tenant_record_guard(TaxRegimeChange.__table__, REGIME_CHANGE_FROZEN_FIELDS)
+
+
+@event.listens_for(Session, "before_flush")
+def _guard_obligation_evidence_write_once(session, flush_context, instances):
+    """Phase 5b: a registration's or legal basis's evidence document is attached once."""
+    for obj in session.dirty:
+        if isinstance(obj, (EntityTaxRegistration, EntityTaxLegalBasis)):
+            hist = sa_inspect(obj).attrs["evidence_file_id"].history
+            if hist.deleted and hist.deleted[0] is not None:
+                raise TaxRecordFrozenError(f"{obj.__tablename__} {obj.id} already has its evidence document.")
 
 
 @event.listens_for(Session, "before_flush")

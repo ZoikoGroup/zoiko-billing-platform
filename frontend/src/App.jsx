@@ -126,6 +126,8 @@ const TaxConfigurationPage = lazyRoute(() => import("./modules/billing/tax/tax-c
 const TaxReportsPage = lazyRoute(() => import("./modules/billing/tax/reports"));
 const TaxSettingsPage = lazyRoute(() => import("./modules/billing/tax/settings"));
 const TaxExceptionsPage = lazyRoute(() => import("./modules/billing/tax/exceptions"));
+// ZB-TAX-ARCH-001 Phase 5b: tenant Settings → Taxes (governance screens T1–T8).
+const TaxGovernancePage = lazyRoute(() => import("./modules/tax-governance/TaxGovernancePage"));
 
 const CommercialOrganizationsPage = lazyRoute(() => import("./modules/super-admin/OrganizationsPage"));
 const CommercialOrganizationDetailPage = lazyRoute(() => import("./modules/super-admin/OrganizationDetailPage"));
@@ -224,6 +226,8 @@ const BILLING_ROUTES = [
   { path: "/billing/tax/reports", element: <TaxReportsPage /> },
   { path: "/billing/tax/settings", element: <TaxSettingsPage /> },
   { path: "/billing/tax/exceptions", element: <TaxExceptionsPage /> },
+  { path: "/billing/tax/governance", element: <Navigate to="/billing/tax/governance/overview" replace /> },
+  { path: "/billing/tax/governance/:section", element: <TaxGovernancePage /> },
   { path: "/billing/collections-receivables", element: <CollectionsReceivablesPage /> },
   { path: "/billing/collections/dashboard", element: <CollectionsDashboardPage /> },
   { path: "/billing/collections/:id", element: <CollectionsCaseDetailPage /> },

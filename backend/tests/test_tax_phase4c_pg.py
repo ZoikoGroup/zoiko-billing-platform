@@ -131,3 +131,17 @@ def test_manual_resolution_is_frozen_and_its_evidence_write_once(pg, world):
     _rejects(pg, "UPDATE tax_manual_resolution_requests SET evidence_file_id = NULL WHERE id = :id", {"id": row.id})
     _rejects(pg, "DELETE FROM tax_manual_resolution_requests WHERE id = :id", {"id": row.id})
     _rejects(pg, "UPDATE tax_address_resolutions SET precision = 'ROOFTOP' WHERE id = :id", {"id": row.resolution_id})
+
+
+def test_registration_evidence_is_write_once_on_postgres(pg, world):
+    from app.modules.tax.models import EntityTaxRegistration
+    from app.modules.tax.tenant_tax_service import attach_obligation_evidence
+
+    reg = pg.query(EntityTaxRegistration).filter(EntityTaxRegistration.organization_id == world["org"].id).first()
+    attach_obligation_evidence(pg, world["org"].id, world["maker"].id, "registration", reg.id,
+                               content=b"%PDF-1.7\n1 0 obj << >> endobj\n%%EOF\n", media_type="application/pdf")
+    pg.flush()
+    triggers = set(pg.execute(text("SELECT tgname FROM pg_trigger WHERE NOT tgisinternal")).scalars())
+    assert {"trg_entity_tax_registrations_evidence_write_once",
+            "trg_entity_tax_legal_bases_evidence_write_once"} <= triggers
+    _rejects(pg, "UPDATE entity_tax_registrations SET evidence_file_id = NULL WHERE id = :id", {"id": reg.id})

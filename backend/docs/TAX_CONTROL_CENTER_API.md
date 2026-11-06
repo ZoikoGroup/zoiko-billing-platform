@@ -198,6 +198,40 @@ GET /api/v1/super-admin/tax-registry/people                 -> {items: [{id, nam
   uses it to show names instead of user ids in the inbox and the
   timelines.
 
+## Phase 5b PR 2 additions (tenant Settings → Taxes)
+
+Tenant routes under `/api/v1/tax`: the caller's organization only, and
+platform staff get `403`.
+
+### Evidence documents for registrations and legal bases
+
+```
+POST /registrations/{id}/evidence   (billing admin)  multipart: file=<PDF|PNG|JPEG>, sha256=<optional hex>
+POST /legal-bases/{id}/evidence     (billing admin)  same; only while the legal basis is PROPOSED
+     -> the Registration / LegalBasis view with "evidence_attached": true
+     400: wrong type, signature mismatch, empty, over TAX_EVIDENCE_MAX_BYTES (5 MB), hash mismatch,
+          already attached (write-once), legal basis no longer proposed
+GET  /registrations/{id}/evidence  |  /legal-bases/{id}/evidence   -> the file (X-Content-SHA256; no-store)
+```
+
+- **New field:** the Registration and LegalBasis views gain
+  `evidence_attached`.
+- **Storage:** the shared tenant evidence store, the same one certificates
+  use, content-addressed and write-once. Once attached, a document can't be
+  changed or cleared (ORM guard and Postgres trigger).
+
+### Names and reference pickers
+
+```
+GET /people?limit=&cursor=       -> {items: [{id, name, role, active}], next_cursor}   (any tenant user)
+GET /tax-types?limit=&cursor=    -> {items: [{id, code, name}], next_cursor}           (any signed-in user)
+```
+
+- **`/people`:** returns the caller's own organization's users only: name
+  and tenant role, no email, no platform users, no other tenants. The
+  screens use it to show names instead of user ids.
+- **`/tax-types`:** platform reference data, like `/jurisdictions`.
+
 ## Behaviour change for external API clients (B3)
 
 Twelve list endpoints used to return **every** row. Since PR #134 they

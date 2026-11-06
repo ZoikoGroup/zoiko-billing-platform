@@ -35,6 +35,25 @@ const STATUS_STYLES = {
   FAILED: { icon: XCircle, label: "Failed", tone: "red" },
   REJECTED: { icon: XCircle, label: "Rejected", tone: "red" },
   SUPERSEDED: { icon: Archive, label: "Superseded", tone: "slate" },
+  // Tenant Settings → Taxes (Phase 5b)
+  PROPOSED: { icon: Clock, label: "Proposed", tone: "amber" },
+  WITHDRAWN: { icon: MinusCircle, label: "Withdrawn", tone: "slate" },
+  OPEN: { icon: AlertTriangle, label: "Open", tone: "amber" },
+  RESOLVED: { icon: CheckCircle2, label: "Resolved", tone: "green" },
+  REVOKED: { icon: XCircle, label: "Revoked", tone: "red" },
+  EXPIRED: { icon: Clock, label: "Expired", tone: "red" },
+  STALE: { icon: AlertTriangle, label: "Stale", tone: "amber" },
+  AMBIGUOUS: { icon: AlertTriangle, label: "Ambiguous", tone: "amber" },
+  NOT_FOUND: { icon: XCircle, label: "Not found", tone: "red" },
+  NOT_RESOLVED: { icon: Circle, label: "Not resolved", tone: "slate" },
+  VERIFIED: { icon: BadgeCheck, label: "Verified", tone: "green" },
+  UNVERIFIED: { icon: Circle, label: "Unverified", tone: "slate" },
+  INVALID: { icon: XCircle, label: "Invalid", tone: "red" },
+  GOVERNED: { icon: ShieldCheck, label: "Governed", tone: "blue" },
+  LEGACY_MANUAL: { icon: FileEdit, label: "Legacy manual", tone: "slate" },
+  EFFECTIVE: { icon: CheckCircle2, label: "In effect", tone: "green" },
+  NOT_EFFECTIVE: { icon: XCircle, label: "Not in effect", tone: "red" },
+  SUSPENDED: { icon: Lock, label: "Suspended", tone: "red" },
 };
 
 const TONES = {
