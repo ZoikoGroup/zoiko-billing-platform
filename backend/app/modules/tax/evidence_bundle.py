@@ -33,7 +33,8 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import BadRequestException, NotFoundException
 
 PLATFORM_KINDS = ("source_revision", "rate", "tax_code_set", "rule_pack", "market_availability")
-TENANT_KINDS = ("registration", "legal_basis", "activation", "classification", "regime_change")
+TENANT_KINDS = ("registration", "legal_basis", "activation", "classification", "regime_change",
+                "provider_connection")
 #: An MFA step-up counts for a decision when it succeeded this long before it, by the same person.
 STEP_UP_WINDOW = timedelta(minutes=10)
 
@@ -218,6 +219,8 @@ def platform_bundle(db: Session, actor, kind: str, record_id: int) -> dict:
 
 def _tenant_record(db: Session, organization_id: int, kind: str, record_id: int):
     from app.modules.tax.classification_service import view_classification
+    from app.modules.tax.connection_service import view_connection
+    from app.modules.tax.provider_models import TaxProviderConnection
     from app.modules.tax.models import (
         EntityTaxActivation, EntityTaxLegalBasis, EntityTaxRegistration, ProductTaxClassification, TaxEvidenceFile,
         TaxRegimeChange,
@@ -232,6 +235,7 @@ def _tenant_record(db: Session, organization_id: int, kind: str, record_id: int)
         "activation": (EntityTaxActivation, "EntityTaxActivation", view_activation),
         "classification": (ProductTaxClassification, "ProductTaxClassification", view_classification),
         "regime_change": (TaxRegimeChange, "TaxRegimeChange", view_regime_change),
+        "provider_connection": (TaxProviderConnection, "TaxProviderConnection", view_connection),
     }.get(kind)
     if spec is None:
         raise BadRequestException(f"Unknown evidence kind {kind!r}; use one of {', '.join(TENANT_KINDS)}.")
@@ -260,13 +264,15 @@ def tenant_bundle(db: Session, organization_id: int, actor, kind: str, record_id
         BillingAuditLog.organization_id == organization_id, BillingAuditLog.entity_type == entity_type,
         BillingAuditLog.entity_id == row.id).order_by(BillingAuditLog.timestamp, BillingAuditLog.id).all()
     people = {e.actor_id for e in events} | {getattr(row, f, None) for f in (
-        "proposed_by", "recorded_by", "approved_by", "created_by", "updated_by")} | {actor.id}
+        "proposed_by", "recorded_by", "approved_by", "created_by", "updated_by", "mode_changed_by",
+        "mode_change_requested_by")} | {actor.id}
     names = _names(db, people, organization_id)
     history = [{"at": _aware(e.timestamp), "action": getattr(e.action, "name", str(e.action)),
                 "actor": _who(names, e.actor_id), "details": e.new_values} for e in events]
     approvals = {role: _who(names, getattr(row, field, None)) for role, field in (
         ("proposed_by", "proposed_by"), ("recorded_by", "recorded_by"), ("created_by", "created_by"),
-        ("decided_by", "approved_by")) if getattr(row, field, None) is not None}
+        ("decided_by", "approved_by"), ("mode_change_requested_by", "mode_change_requested_by"),
+        ("mode_changed_by", "mode_changed_by")) if getattr(row, field, None) is not None}
     if getattr(row, "approved_at", None) is not None:
         approvals["decided_at"] = _aware(row.approved_at)
     bundle = {

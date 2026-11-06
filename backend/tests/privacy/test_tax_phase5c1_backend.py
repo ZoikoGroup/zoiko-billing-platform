@@ -153,6 +153,7 @@ def test_every_tenant_kind_present_in_the_world_exports(db_session, client_for, 
         EntityTaxActivation, EntityTaxLegalBasis, ProductTaxClassification, TaxRegimeChange,
     )
     from app.modules.tax.evidence_bundle import TENANT_KINDS
+    from app.modules.tax.provider_models import TaxProviderConnection
 
     svc = TenantTaxService(db_session)
     svc.propose_legal_basis(world["org"].id, world["maker"].id, seller_entity_id=world["entity"].id,
@@ -165,7 +166,7 @@ def test_every_tenant_kind_present_in_the_world_exports(db_session, client_for, 
     svc.propose_regime_change(world["org"].id, world["maker"].id, world["entity"].id, target, reason="pilot")
     models = {"registration": EntityTaxRegistration, "legal_basis": EntityTaxLegalBasis,
               "activation": EntityTaxActivation, "classification": ProductTaxClassification,
-              "regime_change": TaxRegimeChange}
+              "regime_change": TaxRegimeChange, "provider_connection": TaxProviderConnection}
     assert set(models) == set(TENANT_KINDS)
     client, exported = client_for(world["maker"]), set()
     for kind, model in models.items():

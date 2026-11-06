@@ -306,6 +306,31 @@ GET /api/v1/tax/providers      -> {items: [{name, environments: ["PRODUCTION", "
 - **Provider connections and P9:** they use the existing Phase 4a-1/4a-2
   routes, unchanged.
 
+## Phase 5c PR 3 additions (connection mode change)
+
+```
+POST /api/v1/tax/provider-connections/{id}/mode-change            (org_admin, billing_admin)
+     {"mode": "ESTIMATE_ONLY" | "COMMIT", "reason": "..."}
+POST /api/v1/tax/provider-connections/{id}/mode-change/approve    (finance_approver, not the requester)
+     {"code" | "recovery_code", "reason"?}     400 TAX_REGISTRY_STEP_UP_REQUIRED without a factor
+POST /api/v1/tax/provider-connections/{id}/mode-change/reject     (finance_approver, not the requester)  {"reason"}
+POST /api/v1/tax/provider-connections/{id}/mode-change/withdraw   (org_admin, billing_admin)
+     -> the connection view
+```
+
+- **New fields on the connection view:**
+  - `mode_change` (`{to, requested_by, requested_at, reason}` or `null`);
+  - `mode_changed_by`, `mode_changed_at`.
+- **400 errors:**
+  - not approved or suspended;
+  - same mode;
+  - a change already pending;
+  - estimate-only → commit while the connection can't go live (unusable,
+    production not allowed, rotation pending, or no passing test with the
+    current credential).
+- **403:** the requester tries to decide.
+- **Evidence bundles:** `GET /api/v1/tax/evidence-bundles/provider_connection/{id}`.
+
 ## Behaviour change for external API clients (B3)
 
 Twelve list endpoints used to return **every** row. Since PR #134 they

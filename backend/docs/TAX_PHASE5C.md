@@ -5,7 +5,7 @@ contract. It has three PRs, each merged only after CI is fully green:
 
 - **PR 1:** fixes, plus the audit-evidence export for launch gate 06.
 - **PR 2:** tenant reports and the provider operations screens (built below).
-- **PR 3:** the read-only screens and the UK/AU pilot runbook.
+- **PR 3:** the connection mode change, the read-only screens and the UK/AU pilot runbook (built below).
 
 API: `TAX_CONTROL_CENTER_API.md` (the "Phase 5c" section).
 
@@ -180,5 +180,118 @@ replaces the secret at once.
 | `backend/tests/privacy/test_tax_phase5c2_backend.py` (25) | CSV formula-safety, headers, no-store and audit; JSON unchanged; bad format 422. CSV keeps the report roles (billing admin 403, platform 403). Cell rules. `/providers` has no URLs and refuses platform staff. **No connection route ever returns the secret** (set, rotate, list, get, test). Owner per state; owner moves to finance on a void request, then to none once voided; two-person void through the API. Platform staff can't reach connections or transactions (T13); provider health carries no organization or invoice data. |
 | `frontend/.../ProviderScreens.test.jsx` (17) | T10: fixed and percentage discounts, CSV export, a billing admin is told and nothing is fetched, axe. Connections: propose defaults to safe mode, from the provider list, **no URL field**; status, health, masked credential and names. **The secret is sent once and is not in the DOM afterwards.** Revoke with reason; test; two-person approval; the resume requester can't approve; an auditor sees no write controls; axe. Transactions: state, age, error, owner, default filter; check-state changes nothing; retry only where allowed; **two-person void**; platform staff refused (T13); axe. |
 | `frontend/.../ProviderOperations.test.jsx` (6) | P9: aggregate health and heartbeat; suspend with reason, then step-up and one retry; a reviewer is refused with the reason; closed to non-tax platform roles (T13); axe. P10: counts and totals only, with no tenant identifiers; axe. |
+
+**CI result:** _see PR_.
+
+## PR 3: mode change, read-only screens, pilot runbook
+
+### 1. Connection mode change (reviewer decision on PR 2)
+
+Safe mode is `ESTIMATE_ONLY`. Going from it to `COMMIT` is each
+connection's go-live step, so it is a governed change on the **same
+connection and credentials**, not a new connection.
+
+| Step | Route (`/api/v1/tax/provider-connections/{id}/…`) | Who |
+|---|---|---|
+| Propose | `POST mode-change` `{mode, reason}` | org_admin, billing_admin |
+| Approve | `POST mode-change/approve` `{code \| recovery_code, reason?}` | finance_approver, **not the requester**, with **MFA step-up** |
+| Reject | `POST mode-change/reject` `{reason}` | finance_approver, not the requester |
+| Withdraw | `POST mode-change/withdraw` | org_admin, billing_admin |
+
+**Rules (each has a test):**
+- **State:**
+  - only an approved or suspended connection changes mode;
+  - only one change can be pending;
+  - a reason is required;
+  - the target must differ from the current mode.
+- **Estimate-only → commit** is refused unless the connection can go live,
+  both when it is proposed and again at approval:
+  - it is approved;
+  - its credential is in the configured store;
+  - the provider is registered;
+  - **production** needs `TAX_PROVIDER_PRODUCTION_CREDENTIALS_ALLOWED` and
+    the `gcp` store;
+  - no rotation is pending;
+  - its last Test connection passed **after** the current credential was
+    set.
+- **Commit → estimate-only** is always allowed while the connection is
+  live. It **never touches transactions already in flight**: the mode is
+  checked only when issuing starts, and reconciliation finishes rows under
+  the connection they started on. New issuing then stops ("estimate-only").
+- **Two people:**
+  - The requester can never decide (ForbiddenException).
+  - Approving needs a fresh MFA factor; a missing one returns
+    `TAX_REGISTRY_STEP_UP_REQUIRED`, and nothing changes. The factor is
+    verified before any change.
+- **Guard:**
+  - `mode` left the general frozen-field guard for its own Postgres
+    trigger and ORM twin (migration `d4a8c2e6f1b9`).
+  - It may change only to the pending target, in the same update that
+    records a decider who is not the requester.
+  - A raw `UPDATE … SET mode` is refused.
+- **Audit:**
+  - Each step is a tenant audit entry on the connection
+    (`mode_change: {event, from, to, reason, step_up}`).
+  - The connection is a new evidence-bundle kind, `provider_connection`;
+    its bundle carries every mode change and names the requester and the
+    decider.
+- **Screen:** Provider Connections has these buttons:
+  - **Propose safe mode** / **Propose go-live (commit)**. Go-live is
+    disabled, with the reason, until a test with the current credential
+    has passed.
+  - **Approve mode change**, with the MFA prompt and one retry; disabled
+    for the requester.
+  - **Reject**, **Withdraw**, and **Export evidence**.
+
+**Open decision: tenant MFA.**
+- MFA enrolment exists only for platform (super-admin) accounts.
+  `SuperAdminMFA` is scoped that way, and the auth module deliberately
+  leaves tenant login unchanged.
+- The approval route requires step-up, so a finance approver without MFA
+  is refused ("MFA is not enabled on this account").
+- Fail-closed, that means **no mode change can be approved in production
+  until tenant MFA enrolment exists**, unless step-up is turned off with
+  `TAX_REGISTRY_STEP_UP_REQUIRED=false`. That setting also turns it off
+  for platform registry decisions, so it is not recommended.
+- The tests prove the step-up path with an MFA record for a tenant user.
+
+### 2. Read-only screens (minimum)
+
+| # | Where | What |
+|---|---|---|
+| **T9** Reference rates | `/billing/tax/governance/rates` | Pick a jurisdiction and a date. Shows the published reference rates with source title, link and citation. "No approved rate. This is not 0%: tax is not determined here" when none. Any tenant tax role. |
+| **P1** Overview | `/super-admin/tax/overview` | Two-person publishing readiness (reviewers, publishers with MFA, step-up on), items waiting for approval by kind (links to the inbox), published coverage counts, and providers not in the normal state. |
+| **P4** Jurisdictions and rates | `/super-admin/tax/explorer` | The same rate lookup, plus the jurisdiction list (level, reference status, published rate versions, last published). |
+| **P5** Tax-code catalogue | `/super-admin/tax/tax-codes` | Tax-code set versions with status and codes (code, name, supply category, registry scope, parent), and the set's evidence export. Approvals stay in the inbox (linked). |
+
+No new backend routes; these use the existing reference reads, readiness,
+the approvals inbox, coverage and provider health. Nothing on them changes
+the registry.
+
+### 3. Pilot runbook
+
+`TAX_PILOT_RUNBOOK_UK_AU.md`, step by step, by role, with screen paths:
+1. **Tax lead:** S11/S16 evidence, rates, packs, gate evidence, market
+   availability.
+2. **First pilot tenant:** entity, registration with evidence,
+   classification, customer evidence, activation, regime switch.
+3. **First governed invoice:** quote, review, issue, credit note.
+4. **Rollback:** pause invoice finalization, regime switch back, what
+   happens to drafts.
+5. **Checks after each step.**
+
+It flags one gap: **no screen creates a governed credit note.** The Credit
+Notes page refuses governed invoices by design and points to
+`POST /api/v1/tax/invoices/{id}/credit-notes`, which is API-only today.
+
+### PR 3 tests
+
+| Test file | Covers |
+|---|---|
+| `backend/tests/privacy/test_tax_phase5c3_mode_change.py` (12) | Commit → safe mode over HTTP: same connection and credentials; missing factor → `TAX_REGISTRY_STEP_UP_REQUIRED` and nothing changes; approved with a TOTP; audit `requested` / `approved` with `step_up: verified`. Approver without MFA refused. Roles (auditor, finance can't propose; billing can't approve; platform 403; extra fields 422). Requester never decides. One pending change, withdraw, reject, audited. Go-live needs a passing test with the current credential. Gates re-checked at approval (revoked after proposing). **Production needs the flag and the gcp store**, plus the real gate function. **In-flight transaction finishes after the switch to safe mode; new issuing stops.** The ORM guard refuses a direct write and the requester as decider. The connection bundle carries the mode changes and never the secret. |
+| `backend/tests/test_tax_phase4c_pg.py` (+1, Postgres, CI tax step) | Mode trigger present; raw `mode` update refused; frozen fields still frozen; the requester as decider refused; approved change applied |
+| `backend/tests/privacy/test_tax_phase5c1_backend.py` (sweep) | The `provider_connection` bundle kind exports and verifies |
+| `frontend/.../ProviderScreens.test.jsx` (+6) | Propose safe mode; go-live disabled until a test with the current credential; requester can't approve; a different approver approves with step-up and one retry; auditor sees no mode controls. T9: rates with source link and axe; a missing rate says it is not 0%. |
+| `frontend/.../ProviderOperations.test.jsx` (+3) | P1 summary, read-only, axe. P4 jurisdictions and lookup with a date, no implied 0%, axe. P5 sets and codes, link to the inbox, no approve/publish buttons, evidence export, axe. |
 
 **CI result:** _see PR_.
