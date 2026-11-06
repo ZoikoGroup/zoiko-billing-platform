@@ -5,7 +5,7 @@ import {
 } from "lucide-react";
 
 import { Button, Field, FORM_CONTROL_CLASS, FormModal, Modal } from "../../components/billing-ui";
-import { listApprovalsInbox } from "./taxRegistryService";
+import { fetchAllPages, listApprovalsInbox, listTaxPeople } from "./taxRegistryService";
 
 /* Shared foundations of the Tax Control Center (Phase 5a): cursor lists,
  * status badges (icon + text, never colour alone), the MFA step-up prompt
@@ -67,6 +67,48 @@ export function formatDateTime(value) {
   if (!value) return "—";
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString();
+}
+
+// ── Reference lists and tax-staff names (Phase 5b) ───────────────────────
+
+/** All pages of a small reference list, loaded once per mount when `enabled`. */
+export function useReferenceList(fetchPage, enabled = true) {
+  const [items, setItems] = useState([]);
+  const fetchRef = useRef(fetchPage);
+  fetchRef.current = fetchPage;
+  useEffect(() => {
+    if (!enabled) return undefined;
+    let cancelled = false;
+    fetchAllPages((args) => fetchRef.current(args)).then((all) => { if (!cancelled) setItems(all); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [enabled]);
+  return items;
+}
+
+let peoplePromise = null;
+/** Test hook: forget the cached tax-staff names. */
+export function resetPeopleCache() { peoplePromise = null; }
+
+const ROLE_NAMES = { TAX_REVIEWER: "Tax Reviewer", TAX_PUBLISHER: "Tax Publisher" };
+
+/**
+ * `nameOf(id)` → "Mara Maker (Tax Reviewer)" for platform tax staff (the
+ * /people lookup, fetched once and shared), else "user #id" until loaded or
+ * when the id isn't tax staff.
+ */
+export function usePeopleNames() {
+  const [people, setPeople] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (!peoplePromise) peoplePromise = fetchAllPages(listTaxPeople).catch(() => { peoplePromise = null; return []; });
+    peoplePromise.then((all) => { if (!cancelled) setPeople(new Map(all.map((p) => [p.id, p]))); });
+    return () => { cancelled = true; };
+  }, []);
+  return useCallback((id) => {
+    if (id == null) return null;
+    const p = people?.get(id);
+    return p ? `${p.name} (${ROLE_NAMES[p.platform_role] || humanize(p.platform_role)})` : `user #${id}`;
+  }, [people]);
 }
 
 // ── Cursor lists (B3) ────────────────────────────────────────────────────
@@ -328,6 +370,7 @@ export function ActionBar({ actions, busyKey }) {
 
 /** The version's lifecycle from its own timestamps and people. */
 export function VersionTimeline({ version }) {
+  const nameOf = usePeopleNames();
   const entries = [
     ["Drafted", version.created_at, version.created_by_user_id ?? version.maker_user_id],
     ["Submitted for approval", version.submitted_at, version.maker_user_id],
@@ -341,7 +384,7 @@ export function VersionTimeline({ version }) {
       {entries.map(([label, at, who]) => (
         <li key={label} className="flex flex-wrap items-baseline gap-x-2 text-sm">
           <span className={`font-semibold ${STRONG}`}>{label}</span>
-          <span className={MUTED}>{formatDateTime(at)}{who != null ? ` · user #${who}` : ""}</span>
+          <span className={MUTED}>{formatDateTime(at)}{who != null ? ` · ${nameOf(who)}` : ""}</span>
         </li>
       ))}
       {version.rejection_reason && (

@@ -13,19 +13,22 @@ const { svc, current } = vi.hoisted(() => ({
     "listStagedRates", "getStagedRateComparison", "stagedRateAction", "stageRate", "amendStagedRate",
     "listMarketAvailability", "draftAvailability", "amendAvailability", "availabilityAction", "listJurisdictions",
     "listRulePacks", "getRulePackCatalogue", "registerRulePack", "amendRulePack", "rulePackAction", "getStagedRate",
+    "listAuthorities", "listTaxTypes", "listComponents", "listTaxPeople",
   ].map((k) => [k, vi.fn()])),
 }));
 vi.mock("../../api/client", async (importOriginal) => ({
   ...(await importOriginal()),
   getStoredUser: () => current.user,
 }));
-vi.mock("./taxRegistryService", () => Object.fromEntries(
-  Object.keys(svc).map((k) => [k, (...args) => svc[k](...args)]),
-));
+vi.mock("./taxRegistryService", async (importOriginal) => ({
+  fetchAllPages: (await importOriginal()).fetchAllPages,
+  ...Object.fromEntries(Object.keys(svc).map((k) => [k, (...args) => svc[k](...args)])),
+}));
 
 
 import TaxControlCenterPage from "./TaxControlCenterPage";
 import { gateProblems, mandatoryGates } from "./gates";
+import { resetPeopleCache } from "./shared";
 
 const STEP_UP = Object.assign(new Error("MFA step-up is required"), { code: "TAX_REGISTRY_STEP_UP_REQUIRED", status: 400 });
 const page = (items, next_cursor = null) => Promise.resolve({ items, next_cursor });
@@ -55,6 +58,14 @@ beforeEach(() => {
   svc.listRulePacks.mockImplementation(() => page([]));
   svc.getRulePackCatalogue.mockResolvedValue({ items: [] });
   svc.listJurisdictions.mockImplementation(() => page([{ id: 1, code: "GB", name: "United Kingdom" }]));
+  svc.listAuthorities.mockImplementation(() => page([{ id: 1, code: "GB-HMRC", name: "HM Revenue & Customs" }]));
+  svc.listTaxTypes.mockImplementation(() => page([{ id: 2, code: "VAT", name: "Value added tax" }]));
+  svc.listComponents.mockImplementation(() => page([{ id: 1, code: "GB-VAT", name: "UK VAT", jurisdiction_code: "GB", tax_type: "VAT" }]));
+  svc.listTaxPeople.mockImplementation(() => page([
+    { id: 9, name: "Mara Maker", platform_role: "TAX_REVIEWER", active: true },
+    { id: 7, name: "Chen Checker", platform_role: "TAX_PUBLISHER", active: true },
+  ]));
+  resetPeopleCache();
 });
 afterEach(cleanup);
 
@@ -168,7 +179,8 @@ describe("source register", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Register source" }));
     const dialog = await screen.findByRole("dialog");
-    fireEvent.change(within(dialog).getByLabelText(/Authority ID/), { target: { value: "1" } });
+    await waitFor(() => expect(within(dialog).getByRole("option", { name: "GB-HMRC — HM Revenue & Customs" })).toBeInTheDocument());
+    fireEvent.change(within(dialog).getByLabelText(/^Authority/), { target: { value: "1" } });
     fireEvent.change(within(dialog).getByLabelText(/^Title/), { target: { value: "VAT Act 1994" } });
     fireEvent.change(within(dialog).getByLabelText(/^Citation/), { target: { value: "VATA 1994 s.2" } });
     fireEvent.change(within(dialog).getByLabelText(/Permanent URL/), { target: { value: "https://www.legislation.gov.uk/ukpga/1994/23" } });
@@ -268,7 +280,8 @@ describe("market availability", () => {
     const dialog = await screen.findByRole("dialog");
     await waitFor(() => expect(within(dialog).getByRole("option", { name: "GB — United Kingdom" })).toBeInTheDocument());
     fireEvent.change(within(dialog).getByLabelText(/^Jurisdiction/), { target: { value: "1" } });
-    fireEvent.change(within(dialog).getByLabelText(/Tax type ID/), { target: { value: "2" } });
+    await waitFor(() => expect(within(dialog).getByRole("option", { name: "VAT — Value added tax" })).toBeInTheDocument());
+    fireEvent.change(within(dialog).getByLabelText(/^Tax type/), { target: { value: "2" } });
     fireEvent.change(within(dialog).getByLabelText(/^Mode/), { target: { value: "PROVIDER_APPROVED" } });
     expect(within(dialog).getByText(/gate 05 can't be waived/)).toBeInTheDocument();
     expect(within(dialog).getByText(/05 · Provider contract, SLA, failure and recovery \(required\)/)).toBeInTheDocument();
@@ -334,5 +347,53 @@ describe("rule packs", () => {
     await waitFor(() => expect(svc.rulePackAction).toHaveBeenCalledTimes(2));
     expect(svc.rulePackAction.mock.calls[1]).toEqual([12, "approve", { recovery_code: "abcd-efgh" }]);
     expect(await within(dialog).findByText("Approved")).toBeInTheDocument();
+  });
+});
+
+
+// ── Phase 5b PR 1: names, not ids; pickers, not numeric ids ─────────────
+
+describe("names and pickers (G-5a-1, G-5a-3)", () => {
+  it("shows the submitter's name and role in the inbox, not a user id", async () => {
+    svc.listApprovalsInbox.mockImplementation(() => page([inboxItem({ submitted_by: 9 })]));
+    renderAt("/super-admin/tax/inbox");
+    expect(await screen.findByText(/submitted by Mara Maker \(Tax Reviewer\)/)).toBeInTheDocument();
+    expect(screen.queryByText(/user #9/)).not.toBeInTheDocument();
+  });
+
+  it("falls back to the id for someone who isn't tax staff", async () => {
+    svc.listApprovalsInbox.mockImplementation(() => page([inboxItem({ submitted_by: 42 })]));
+    renderAt("/super-admin/tax/inbox");
+    expect(await screen.findByText(/submitted by user #42/)).toBeInTheDocument();
+  });
+
+  it("shows names in a version's history", async () => {
+    svc.listMarketAvailability.mockImplementation(() => page([{
+      id: 9, jurisdiction_code: "GB", tax_type: "VAT", transaction_class: "B2B_SERVICES", mode: "REFERENCE_ONLY",
+      status: "IN_APPROVAL", gates: {}, created_at: "2026-11-05T09:00:00Z", created_by_user_id: 9, maker_user_id: 9,
+      submitted_at: "2026-11-05T10:00:00Z",
+    }]));
+    renderAt("/super-admin/tax/availability");
+    fireEvent.click(await screen.findByRole("button", { name: "Open #9" }));
+    const history = await screen.findByRole("list", { name: "Version history" });
+    await waitFor(() => expect(within(history).getAllByText(/Mara Maker \(Tax Reviewer\)/).length).toBe(2));
+  });
+
+  it("stages a rate by picking a component and a legal source", async () => {
+    current.user = { id: 2, role: "super_admin", platform_role: "tax_reviewer" };
+    svc.listSourceRevisions.mockImplementation(() => page([{ id: 4, handoff_ref: "S11", title: "VAT rates",
+      evidence_status: "CAPTURED", source_tier: "OFFICIAL_GUIDANCE", redistribution_permission: "PERMITTED" }]));
+    svc.stageRate.mockResolvedValue({ id: 50, status: "PENDING_REVIEW" });
+    renderAt("/super-admin/tax/rates");
+    fireEvent.click(await screen.findByRole("button", { name: "Stage rate" }));
+    const dialog = await screen.findByRole("dialog");
+    await waitFor(() => expect(within(dialog).getByRole("option", { name: "GB-VAT — UK VAT (GB VAT)" })).toBeInTheDocument());
+    fireEvent.change(within(dialog).getByLabelText(/^Component/), { target: { value: "1" } });
+    fireEvent.change(within(dialog).getByLabelText(/^Tax code/), { target: { value: "standard" } });
+    await waitFor(() => expect(within(dialog).getByRole("option", { name: "#4 S11 · VAT rates" })).toBeInTheDocument());
+    fireEvent.change(within(dialog).getByLabelText(/^Legal source/), { target: { value: "4" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Stage rate" }));
+    await waitFor(() => expect(svc.stageRate).toHaveBeenCalled());
+    expect(svc.stageRate.mock.calls[0][0]).toMatchObject({ component_id: 1, source_revision_id: 4, tax_code: "standard" });
   });
 });

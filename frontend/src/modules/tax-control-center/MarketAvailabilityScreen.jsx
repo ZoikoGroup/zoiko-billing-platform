@@ -7,11 +7,12 @@ import {
   GATES, GATE_STATUSES, MODES, TRANSACTION_CLASSES, emptyGates, gateProblems, mandatoryGates,
 } from "./gates";
 import {
-  amendAvailability, availabilityAction, draftAvailability, listJurisdictions, listMarketAvailability,
+  amendAvailability, availabilityAction, draftAvailability, listJurisdictions, listMarketAvailability, listTaxTypes,
 } from "./taxRegistryService";
 import {
   ActionBar, DefinitionList, DetailModal, InlineError, LoadMore, MUTED, PANEL, ReasonModal, STRONG, TaxStatusBadge,
-  TaxTable, ValidationList, VersionTimeline, humanize, useApprovalVerdict, useCursorList, useStepUp,
+  TaxTable, ValidationList, VersionTimeline, humanize, useApprovalVerdict, useCursorList, useReferenceList,
+  useStepUp,
 } from "./shared";
 
 /* P6 Market availability: jurisdiction × tax type × transaction class -> the
@@ -95,6 +96,7 @@ export function GateEditor({ mode, gates, onChange }) {
 
 function AvailabilityFormModal({ open, existing, onClose, onDone }) {
   const jurisdictions = useAllJurisdictions(open && !existing);
+  const taxTypes = useReferenceList(listTaxTypes, open && !existing);
   const base = useId();
   const blank = { jurisdiction_id: "", tax_type_id: "", transaction_class: "B2B_SERVICES", mode: "REFERENCE_ONLY",
                   tenant_config_permitted: false, notes: "", gates: emptyGates() };
@@ -144,9 +146,13 @@ function AvailabilityFormModal({ open, existing, onClose, onDone }) {
                     options={jurisdictions.map((j) => ({ value: j.id, label: `${j.code} — ${j.name}` }))} />
           )}
         </Field>
-        <Field label="Tax type ID" htmlFor={`${base}-t`} required hint="The registry tax type's id (e.g. VAT).">
-          <input id={`${base}-t`} type="number" min="1" className={FORM_CONTROL_CLASS}
-                 value={existing ? existing.tax_type_id : form.tax_type_id} onChange={set("tax_type_id")} required disabled={Boolean(existing)} />
+        <Field label="Tax type" htmlFor={`${base}-t`} required>
+          {existing ? (
+            <input id={`${base}-t`} className={FORM_CONTROL_CLASS} value={existing.tax_type || existing.tax_type_id} disabled />
+          ) : (
+            <Select id={`${base}-t`} value={form.tax_type_id} onChange={set("tax_type_id")} required placeholder="Choose…"
+                    options={taxTypes.map((t) => ({ value: t.id, label: `${t.code} — ${t.name}` }))} />
+          )}
         </Field>
         <Field label="Transaction class" htmlFor={`${base}-c`} required>
           <Select id={`${base}-c`} value={form.transaction_class} onChange={set("transaction_class")} options={opts(TRANSACTION_CLASSES)}

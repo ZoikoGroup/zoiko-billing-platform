@@ -1,12 +1,12 @@
-import { useId, useMemo, useState } from "react";
+import { useId, useState } from "react";
 import { Plus, Upload } from "lucide-react";
 
 import { Button, Field, FORM_CONTROL_CLASS, FormGrid, FormModal, Select } from "../../components/billing-ui";
 import { canWriteTaxRegistry } from "./access";
-import { attachSourceEvidence, listSourceRevisions, registerSourceRevision } from "./taxRegistryService";
+import { attachSourceEvidence, listAuthorities, listSourceRevisions, registerSourceRevision } from "./taxRegistryService";
 import {
   DefinitionList, DetailModal, InlineError, LoadMore, MUTED, PANEL, STRONG, TaxStatusBadge, TaxTable,
-  formatDateTime, humanize, useCursorList,
+  formatDateTime, humanize, useCursorList, usePeopleNames, useReferenceList,
 } from "./shared";
 
 /* P2 Source register: legal source revisions per authority and handoff ref,
@@ -19,7 +19,8 @@ const METHODS = ["OFFICIAL_API", "OFFICIAL_PUBLICATION", "MANUAL_VERIFIED_EXTRAC
 const PERMISSIONS = ["PERMITTED", "RESTRICTED", "DENIED", "UNKNOWN"];
 const opts = (values) => values.map((v) => ({ value: v, label: humanize(v) }));
 
-function RegisterSourceModal({ open, onClose, onDone, authorities }) {
+function RegisterSourceModal({ open, onClose, onDone }) {
+  const authorities = useReferenceList(listAuthorities, open);
   const base = useId();
   const ids = Object.fromEntries(["a", "t", "m", "u", "ti", "c", "l", "h", "n"].map((k) => [k, `${base}-${k}`]));
   const empty = { authority_id: "", source_tier: "PRIMARY_LEGAL_INSTRUMENT", acquisition_method: "OFFICIAL_PUBLICATION",
@@ -50,9 +51,9 @@ function RegisterSourceModal({ open, onClose, onDone, authorities }) {
                busy={busy} error={error} submitLabel="Register" size="lg"
                description="A revision is what a rate cites. Capture its evidence before a rate relying on it can be approved.">
       <FormGrid>
-        <Field label="Authority ID" htmlFor={ids.a} required
-               hint={authorities.length ? `Known: ${authorities.map(([id, name]) => `${id} = ${name}`).join("; ")}` : "The tax authority's registry id."}>
-          <input id={ids.a} type="number" min="1" className={FORM_CONTROL_CLASS} value={form.authority_id} onChange={set("authority_id")} required />
+        <Field label="Authority" htmlFor={ids.a} required>
+          <Select id={ids.a} value={form.authority_id} onChange={set("authority_id")} required placeholder="Choose…"
+                  options={authorities.map((a) => ({ value: a.id, label: `${a.code} — ${a.name}` }))} />
         </Field>
         <Field label="Handoff ref" htmlFor={ids.h} hint="For example S11.">
           <input id={ids.h} className={FORM_CONTROL_CLASS} maxLength={10} value={form.handoff_ref} onChange={set("handoff_ref")} />
@@ -126,11 +127,7 @@ export default function SourceRegisterScreen({ user }) {
   const list = useCursorList(({ cursor }) => listSourceRevisions({ cursor }), []);
   const [registering, setRegistering] = useState(false);
   const [open, setOpen] = useState(null);
-  const authorities = useMemo(() => {
-    const seen = new Map();
-    list.items.forEach((r) => { if (r.authority_id != null && r.authority) seen.set(r.authority_id, r.authority); });
-    return [...seen.entries()];
-  }, [list.items]);
+  const nameOf = usePeopleNames();
 
   const columns = [
     { key: "id", label: "#" },
@@ -155,7 +152,7 @@ export default function SourceRegisterScreen({ user }) {
       <TaxTable caption="Source revisions" columns={columns} rows={list.items} onOpen={setOpen} empty="No source revisions yet." />
       <LoadMore list={list} noun="sources" />
 
-      <RegisterSourceModal open={registering} onClose={() => setRegistering(false)} authorities={authorities}
+      <RegisterSourceModal open={registering} onClose={() => setRegistering(false)}
                            onDone={() => { setRegistering(false); list.reload(); }} />
       <DetailModal open={Boolean(open)} onClose={() => setOpen(null)} title={open ? `Source #${open.id}: ${open.title}` : ""}>
         {open && (
@@ -170,7 +167,8 @@ export default function SourceRegisterScreen({ user }) {
               ["SHA-256 (server)", open.sha256 ? <code key="s" className="break-all text-xs">{open.sha256}</code> : "—"],
               ["Captured", formatDateTime(open.retrieved_at)],
               ["Artifact", open.artifact_media_type ? `${open.artifact_media_type}, ${open.artifact_size_bytes} bytes` : "—"],
-              ["Reviewed by", open.reviewed_by], ["Registered", formatDateTime(open.created_at)],
+              ["Reviewed by", open.reviewed_by || (open.reviewer_user_id ? nameOf(open.reviewer_user_id) : null)],
+              ["Registered", formatDateTime(open.created_at)],
               ["Internal notes", open.internal_notes],
             ]} />
             {canWrite && open.evidence_status !== "CAPTURED" && (
