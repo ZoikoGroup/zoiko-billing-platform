@@ -172,6 +172,9 @@ external provider".
     - the governed connection mode change (in the connection's evidence
       bundle);
     - the pilot runbook (`TAX_PILOT_RUNBOOK_UK_AU.md`).
+  - **Phase 5d PR 1:** the governed credit-note screen, from the invoice's
+    Governed tax panel. Full or partial, a preview from the snapshot, and
+    the provider ADJUST state.
   - Still open:
     - the QA walkthrough of the console and tenant screens (follow the
       pilot runbook);

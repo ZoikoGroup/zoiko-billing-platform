@@ -607,6 +607,10 @@ export const governedTaxApi = {
   requestQuote: (documentId, documentType = "invoice") =>
     api.post(ENDPOINTS.GOVERNED_TAX_QUOTES, { document_type: documentType, document_id: documentId },
       { headers: { "Idempotency-Key": newIdempotencyKey() } }),
+  // Phase 5d: governed credit notes, reversed from the invoice's committed snapshot.
+  creditable: (invoiceId) => api.get(`/api/v1/tax/invoices/${invoiceId}/credit-notes/creditable`),
+  previewCredit: (invoiceId, body) => api.post(`/api/v1/tax/invoices/${invoiceId}/credit-notes/preview`, body),
+  createCredit: (invoiceId, body) => api.post(`/api/v1/tax/invoices/${invoiceId}/credit-notes`, body),
 };
 
 export const creditNoteApi = {

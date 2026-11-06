@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { RefreshCw, ShieldAlert } from "lucide-react";
+import { FileMinus, RefreshCw, ShieldAlert } from "lucide-react";
+import { getStoredUser } from "../../../api/client";
 import { Button } from "../../../components/billing-ui";
+import GovernedCreditNoteModal from "./governed-credit-note";
 import { governedTaxApi } from "../../../service/billingService";
 import { formatDisplayCurrency, formatDisplayDate } from "../../../utils/billing-helpers";
 import { OWNER_LABELS, TaxStatusBadge } from "./governed-tax-status";
@@ -16,6 +18,7 @@ export default function GovernedTaxPanel({ invoiceId, currency, onQuoted }) {
   const [summary, setSummary] = useState(null);
   const [error, setError] = useState(null);
   const [quoting, setQuoting] = useState(false);
+  const [crediting, setCrediting] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -56,6 +59,10 @@ export default function GovernedTaxPanel({ invoiceId, currency, onQuoted }) {
   const blocking = summary.blocking_reasons || [];
   const warnings = summary.warnings || [];
   const canRequote = summary.status === "DRAFT" && status !== "FRESH";
+  // Same permission as the credit-note flow (billing admin, org admin); the backend enforces it.
+  const role = getStoredUser()?.role;
+  const canCredit = status === "COMMITTED" && !["DRAFT", "CANCELLED"].includes(summary.status)
+    && ["org_admin", "billing_admin"].includes(role);
 
   return (
     <section aria-labelledby="governed-tax-heading" className="bg-white rounded-3xl border border-slate-200 p-6 space-y-4">
@@ -70,6 +77,11 @@ export default function GovernedTaxPanel({ invoiceId, currency, onQuoted }) {
         {canRequote && (
           <Button variant="secondary" size="sm" icon={RefreshCw} loading={quoting} onClick={requote}>
             {status === "NONE" ? "Request tax quote" : "Re-quote"}
+          </Button>
+        )}
+        {canCredit && (
+          <Button variant="secondary" size="sm" icon={FileMinus} onClick={() => setCrediting(true)}>
+            Create governed credit note
           </Button>
         )}
       </div>
@@ -161,6 +173,10 @@ export default function GovernedTaxPanel({ invoiceId, currency, onQuoted }) {
             {warnings.map((w, i) => <li key={`${w.code}-${i}`}>{w.message || w.code}</li>)}
           </ul>
         </details>
+      )}
+      {canCredit && (
+        <GovernedCreditNoteModal invoiceId={invoiceId} open={crediting} onClose={() => setCrediting(false)}
+                                 onCreated={() => onQuoted?.()} />
       )}
     </section>
   );

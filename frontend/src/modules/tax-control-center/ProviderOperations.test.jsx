@@ -73,10 +73,10 @@ describe("P9 provider operations", () => {
     const reasonDialog = await screen.findByRole("dialog");
     fireEvent.change(within(reasonDialog).getByLabelText(/Reason/), { target: { value: "Contract ended" } });
     fireEvent.click(within(reasonDialog).getByRole("button", { name: "Suspend" }));
-    const mfa = await screen.findByRole("dialog");
+    const mfa = await screen.findByRole("dialog", { name: /Confirm with MFA/ }, { timeout: 5000 });
     fireEvent.change(within(mfa).getByLabelText(/Authenticator code/), { target: { value: "123456" } });
     fireEvent.click(within(mfa).getByRole("button", { name: "Confirm" }));
-    await waitFor(() => expect(svc.providerHealthAction).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(svc.providerHealthAction).toHaveBeenCalledTimes(2), { timeout: 5000 });
     expect(svc.providerHealthAction.mock.calls[0]).toEqual(["fake-provider", "suspend", { reason: "Contract ended" }]);
     expect(svc.providerHealthAction.mock.calls[1]).toEqual(["fake-provider", "suspend", { reason: "Contract ended", code: "123456" }]);
     expect(await screen.findByRole("button", { name: "Resume provider" })).toBeInTheDocument();

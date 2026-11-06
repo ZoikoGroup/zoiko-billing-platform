@@ -252,22 +252,35 @@ commits the quote.
 - the invoice's tax summary (`GET /api/v1/tax/invoices/{id}/tax-summary`)
   matches.
 
-### 3.4 Credit note
+### 3.4 Credit note (billing admin)
 
-Raise the credit note against the issued invoice with
-`POST /api/v1/tax/invoices/{id}/credit-notes`. Its tax is computed from the
-original invoice's committed quote, by reference; it never re-derives tax
-from current rates.
+1. **Open the dialog.** On the issued invoice's page, the **Governed tax**
+   panel shows **Create governed credit note**. You need to be a billing
+   admin or org admin.
+2. **Choose what to credit:**
+   - **Full credit** of everything not yet credited; or
+   - **Partial:** a quantity per line.
+   Then give a reason.
+3. **Preview.** Click **Preview credit**. It shows what will be reversed,
+   from the invoice's committed snapshot: net, tax per component with its
+   rate, gross, and the legal treatment per line. It is never recalculated
+   at today's rates. The preview runs the same calculation as the credit
+   itself, so the amounts match to the cent.
+4. **Confirm.** Click **Confirm credit note**.
+5. **Provider invoices only.** For an invoice committed at a tax provider,
+   the dialog shows the provider adjustment's progress; use **Refresh
+   status**. If it needs review, follow **Open stuck transactions**
+   (`/billing/tax/governance/transactions`).
 
-**There is no screen for this yet.** The normal **Credit Notes** page
-(`/billing/credit-notes`) deliberately refuses a governed invoice and points
-to this route, so client-entered amounts can't change governed tax. Until a
-screen exists, a billing admin's API call (or support acting for them) is
-the only way. Agree who does it before the pilot starts.
+The normal **Credit Notes** page (`/billing/credit-notes`) is unchanged and
+still refuses governed invoices, so governed tax can't be changed by typed
+amounts.
 
 **Check:**
-- the credit note's tax lines mirror the credited lines of the original;
-- a full credit nets the tax to zero.
+- the credit note's net, tax and gross equal the preview;
+- crediting the rest later completes each line exactly: the original plus
+  all its credits net to zero, to the cent;
+- a provider adjustment ends as "Adjusted at the provider".
 
 ---
 
@@ -317,7 +330,7 @@ Use the smallest step that stops the problem.
 | 2.6 Regime | Governed; the bundle names both people |
 | 3.1–3.2 Quote | Fresh quote; £100 → £20 → £120 (GB) |
 | 3.3 Issue | SENT; quote Committed |
-| 3.4 Credit | Credit tax mirrors the original |
+| 3.4 Credit | The created credit equals the preview; provider adjustment done |
 | 4 Rollback | Paused or Legacy manual as intended; issued records unchanged |
 
 Keep every exported evidence bundle (JSON, with its SHA-256) with the
