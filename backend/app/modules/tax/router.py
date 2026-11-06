@@ -345,6 +345,37 @@ def update_registration(
 
 # ── Legal bases (collecting without a registration) ─────────────────────
 
+# ── Phase 5b: evidence documents for registrations and legal bases ──
+
+def _evidence_routes(kind: str, path: str, view):
+    async def upload(record_id: int, file: UploadFile = File(...), sha256: Optional[str] = Form(None, max_length=64),
+                     db: Session = Depends(get_db), organization_id: int = Depends(get_organization_id),
+                     current_user=Depends(get_current_user)):
+        from app.config import settings
+        from app.modules.tax.tenant_tax_service import attach_obligation_evidence
+
+        content = await file.read(settings.TAX_EVIDENCE_MAX_BYTES + 1)
+        return view(attach_obligation_evidence(db, organization_id, current_user.id, kind, record_id, content=content,
+                                               media_type=file.content_type or "", filename=file.filename,
+                                               expected_sha256=sha256))
+
+    def download(record_id: int, db: Session = Depends(get_db), organization_id: int = Depends(get_organization_id)):
+        from fastapi.responses import Response
+
+        from app.modules.tax.tenant_tax_service import obligation_evidence
+
+        stored = obligation_evidence(db, organization_id, kind, record_id)
+        return Response(content=stored.content, media_type=stored.media_type,
+                        headers={"X-Content-SHA256": stored.sha256, "Cache-Control": "no-store",
+                                 "Content-Disposition": f'attachment; filename="{kind}-{record_id}"'})
+
+    router.add_api_route(f"/{path}/{{record_id}}/evidence", upload, methods=["POST"],
+                         dependencies=[Depends(get_current_billing_admin)],
+                         summary=f"Attach the {kind.replace('_', ' ')} evidence document once (PDF, PNG or JPEG)")
+    router.add_api_route(f"/{path}/{{record_id}}/evidence", download, methods=["GET"],
+                         summary=f"Download the {kind.replace('_', ' ')} evidence document")
+
+
 @router.get("/legal-bases", summary="List legal bases for collecting without registration")
 def list_legal_bases(page: PageParams = Depends(), db: Session = Depends(get_db),
                      organization_id: int = Depends(get_organization_id)):
@@ -506,6 +537,30 @@ def withdraw_classification(classification_id: int, db: Session = Depends(get_db
                             organization_id: int = Depends(get_organization_id), current_user=Depends(get_current_user)):
     return view_classification(TenantTaxService(db).withdraw(
         ProductTaxClassification, "Product tax classification", organization_id, current_user.id, classification_id))
+
+
+def _register_obligation_evidence_routes():
+    from app.modules.tax.tenant_tax_service import view_legal_basis, view_registration
+
+    _evidence_routes("registration", "registrations", view_registration)
+    _evidence_routes("legal_basis", "legal-bases", view_legal_basis)
+
+
+_register_obligation_evidence_routes()
+
+
+@router.get("/people", summary="Names of this organization's users (for tax screens)")
+def tenant_people(page: PageParams = Depends(), db: Session = Depends(get_db),
+                  organization_id: int = Depends(get_organization_id)):
+    """Phase 5b: the caller's own organization only; id, name and role. No
+    email, no platform users, no other tenants."""
+    from app.modules.auth.models import User
+
+    rows = db.query(User).filter(User.organization_id == organization_id).order_by(User.id).all()
+    rows, next_cursor = paginate(rows, page)
+    return {"items": [{"id": u.id, "name": f"{u.first_name or ''} {u.last_name or ''}".strip() or f"User {u.id}",
+                       "role": getattr(u.role, "name", str(u.role)), "active": bool(u.is_active)} for u in rows],
+            "next_cursor": next_cursor}
 
 
 # ── Customer tax evidence ───────────────────────────────────────────────

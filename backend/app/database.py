@@ -553,6 +553,11 @@ CRITICAL_COLUMNS: list[tuple[str, str, str, str]] = [
         "alembic/versions/b8e2d4f6a0c3_tax_phase4d_manual_resolution.py",
         "ZB-TAX-ARCH-001 Phase 4d: two-person manual address resolutions",
     ),
+    (
+        "entity_tax_registrations", "evidence_file_id",
+        "alembic/versions/c9f1e3a5b7d2_tax_phase5b_obligation_evidence.py",
+        "ZB-TAX-ARCH-001 Phase 5b: registration and legal-basis evidence documents",
+    ),
 ]
 
 

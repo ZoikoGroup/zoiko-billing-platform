@@ -144,6 +144,17 @@ def tax_coverage(
     return {"statement": COVERAGE_STATEMENT, "items": items, "next_cursor": next_cursor}
 
 
+@reference_router.get("/tax-types", summary="Reference tax types (for tenant pickers)")
+def reference_tax_types(page: PageParams = Depends(), db: Session = Depends(get_db),
+                        _user=Depends(get_current_user)):
+    """Phase 5b: platform reference data (code and name), like jurisdictions."""
+    from app.modules.tax.registry_models import TaxTypeDefinition
+
+    rows, next_cursor = paginate(db.query(TaxTypeDefinition).order_by(TaxTypeDefinition.code,
+                                                                      TaxTypeDefinition.id).all(), page)
+    return {"items": [{"id": r.id, "code": r.code, "name": r.name} for r in rows], "next_cursor": next_cursor}
+
+
 @reference_router.get("/rates", response_model=RateLookupResponse,
                       summary="Reference rate lookup (never an amount owed)")
 def lookup_rates(

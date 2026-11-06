@@ -564,6 +564,45 @@ def _jsonable(value):
     return json.loads(json.dumps(value, default=str))
 
 
+def attach_obligation_evidence(db, organization_id: int, actor_id: int, kind: str, record_id: int, *,
+                               content: bytes, media_type: str, filename=None, expected_sha256=None):
+    """Phase 5b: the evidence document of a registration (any time) or a
+    legal basis (while PROPOSED), once; same type, size and hash rules as
+    certificate evidence. Audited."""
+    from app.core.exceptions import NotFoundException
+    from app.modules.billing.services.audit_service import BillingAuditService
+    from app.modules.tax.buyer_evidence_service import store_evidence_file
+
+    model = EntityTaxRegistration if kind == "registration" else EntityTaxLegalBasis
+    row = db.query(model).filter(model.id == record_id, model.organization_id == organization_id).first()
+    if row is None:
+        raise NotFoundException("Registration" if kind == "registration" else "Legal basis", record_id)
+    if kind == "legal_basis" and row.status != TenantApprovalStatus.PROPOSED:
+        raise BadRequestException(f"Legal basis {row.id} is {row.status.name}; evidence is attached while proposed.")
+    if row.evidence_file_id is not None:
+        raise BadRequestException("This record already has its evidence document; it is write-once.")
+    stored = store_evidence_file(db, organization_id, actor_id, content=content, media_type=media_type,
+                                 filename=filename, expected_sha256=expected_sha256)
+    row.evidence_file_id = stored.id
+    db.flush()
+    BillingAuditService(db).log_no_commit(organization_id, actor_id, BillingAuditAction.UPDATE, model.__name__,
+                                          row.id, new_values={"evidence_sha256": stored.sha256})
+    db.commit()
+    return row
+
+
+def obligation_evidence(db, organization_id: int, kind: str, record_id: int):
+    from app.core.exceptions import NotFoundException
+    from app.modules.tax.models import TaxEvidenceFile
+
+    model = EntityTaxRegistration if kind == "registration" else EntityTaxLegalBasis
+    row = db.query(model).filter(model.id == record_id, model.organization_id == organization_id).first()
+    stored = db.get(TaxEvidenceFile, row.evidence_file_id) if row is not None and row.evidence_file_id else None
+    if stored is None or stored.organization_id != organization_id:
+        raise NotFoundException("Evidence", record_id)
+    return stored
+
+
 def view_regime_change(row) -> dict:
     return {
         "id": row.id, "seller_entity_id": row.seller_entity_id, "from_regime": row.from_regime,
@@ -583,6 +622,7 @@ def view_registration(row: EntityTaxRegistration) -> dict:
         "status": row.status.name, "verification_status": row.verification_status.name,
         "verification_method": row.verification_method, "verified_at": row.verified_at,
         "verification_expires_at": row.verification_expires_at, "evidence_ref": row.evidence_ref,
+        "evidence_attached": row.evidence_file_id is not None,
         "notes": row.notes, "created_by": row.created_by, "created_at": row.created_at,
     }
 
@@ -591,6 +631,7 @@ def view_legal_basis(row: EntityTaxLegalBasis) -> dict:
     return {
         "id": row.id, "seller_entity_id": row.seller_entity_id, "jurisdiction_id": row.jurisdiction_id,
         "tax_type_id": row.tax_type_id, "legal_basis": row.legal_basis, "evidence_ref": row.evidence_ref,
+        "evidence_attached": row.evidence_file_id is not None,
         "valid_from": row.valid_from, "valid_to": row.valid_to, "status": row.status.name,
         "recorded_by": row.recorded_by, "approved_by": row.approved_by, "approved_at": row.approved_at,
         "decision_reason": row.decision_reason, "predecessor_id": row.predecessor_id,
