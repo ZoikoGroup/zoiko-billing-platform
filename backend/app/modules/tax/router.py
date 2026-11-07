@@ -11,7 +11,7 @@ super administrators have no standing access to tenant tax data (§12.1,
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, Header, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Header, Query, Request, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import (
@@ -619,11 +619,11 @@ def tenant_mfa_reset_request(user_id: int, data: ReasonRequest, db: Session = De
 
 @router.post("/mfa/users/{user_id}/reset-approve", summary="Approve a user's MFA reset (a different org admin)",
              dependencies=[Depends(get_current_org_admin)])
-def tenant_mfa_reset_approve(user_id: int, db: Session = Depends(get_db), _org: int = Depends(get_organization_id),
-                             current_user=Depends(get_current_user)):
-    from app.modules.auth.mfa_service import approve_tenant_mfa_reset
+def tenant_mfa_reset_approve(user_id: int, request: Request, db: Session = Depends(get_db),
+                             _org: int = Depends(get_organization_id), current_user=Depends(get_current_user)):
+    from app.modules.auth.mfa_service import approve_tenant_mfa_reset, request_ip
 
-    return approve_tenant_mfa_reset(db, current_user, user_id)
+    return approve_tenant_mfa_reset(db, current_user, user_id, ip=request_ip(request))
 
 
 @router.post("/mfa/users/{user_id}/reset-cancel", summary="Cancel a pending MFA reset",

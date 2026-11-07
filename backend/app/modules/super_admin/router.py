@@ -640,6 +640,7 @@ def admin_reset_password(
 def admin_reset_mfa(
     user_id: int,
     background_tasks: BackgroundTasks,
+    request: Request,
     current_user=Depends(get_current_super_admin),
     db: Session = Depends(get_db),
 ):
@@ -651,7 +652,8 @@ def admin_reset_mfa(
     Always audited (MFA_ADMIN_RESET) with both actor and target identity."""
     from app.modules.auth import mfa_service
 
-    return mfa_service.admin_reset_mfa(db, current_user, user_id, background_tasks=background_tasks)
+    return mfa_service.admin_reset_mfa(db, current_user, user_id, background_tasks=background_tasks,
+                                       ip=mfa_service.request_ip(request))
 
 
 # ── Commercial accounts ────────────────────────────────────────────────────

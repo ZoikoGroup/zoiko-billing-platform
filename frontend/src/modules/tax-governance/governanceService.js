@@ -141,7 +141,14 @@ const AUTH = "/api/auth/mfa";
 export const getMfaStatus = () => api.get(`${AUTH}/status`);
 export const startMfa = () => api.post(`${AUTH}/setup/start`);
 export const verifyMfa = (code) => api.post(`${AUTH}/setup/verify`, { code });
-export const disableMfa = (currentPassword) => api.post(`${AUTH}/disable`, { current_password: currentPassword });
+/** Phase 5d-F: needs the password AND a current code (6–8 digits) or a recovery code. */
+export const disableMfa = (currentPassword, factor) => {
+  const value = String(factor || "").trim().replace(/\s/g, "");
+  return api.post(`${AUTH}/disable`, {
+    current_password: currentPassword,
+    ...(/^\d{6,8}$/.test(value) ? { code: value } : { recovery_code: value }),
+  });
+};
 export const listMfaUsers = () => api.get(`${T}/mfa/users`);
 export const requestMfaReset = (userId, reason) => api.post(`${T}/mfa/users/${userId}/reset-request`, { reason });
 export const approveMfaReset = (userId) => api.post(`${T}/mfa/users/${userId}/reset-approve`);

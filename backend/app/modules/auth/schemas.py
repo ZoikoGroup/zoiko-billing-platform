@@ -211,10 +211,15 @@ class MFAStatusResponse(BaseModel):
     step_up_required: bool = False            # platform privileged actions (MFA_STEP_UP_ENABLED)
     tax_registry_step_up_required: bool = True
     tax_tenant_step_up_required: bool = True
+    tax_step_up_usable_at: Optional[str] = None
+    tax_step_up_new_factor_delay_hours: int = 24
 
 
 class MFADisableRequest(BaseModel):
     current_password: str = Field(..., min_length=1)
+    # Phase 5d-F: a current factor as well as the password.
+    code: Optional[str] = Field(None, min_length=6, max_length=8)
+    recovery_code: Optional[str] = Field(None, min_length=6, max_length=20)
 
 
 # ── Org Admin manages users ────────────────────────────────────────────────

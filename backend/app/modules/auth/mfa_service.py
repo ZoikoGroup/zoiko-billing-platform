@@ -203,7 +203,8 @@ def start_enrollment(db: Session, user: User, regenerate: bool = False) -> dict:
 
 
 def verify_enrollment(
-    db: Session, user: User, code: str, background_tasks: Optional["BackgroundTasks"] = None
+    db: Session, user: User, code: str, background_tasks: Optional["BackgroundTasks"] = None,
+    *, ip: Optional[str] = None,
 ) -> dict:
     """Confirms enrollment with a real TOTP code from the authenticator app
     and enables MFA for step-up verification. Called from an already-
@@ -231,6 +232,7 @@ def verify_enrollment(
         db.commit()
         raise BadRequestException("Incorrect verification code.")
 
+    re_enrolled = row.disabled_at is not None
     row.is_enabled = True
     row.enabled_at = datetime.utcnow()
     row.failed_attempts = 0
@@ -251,8 +253,10 @@ def verify_enrollment(
     db.refresh(user)
 
     _dispatch_mfa_state_email(
-        db, user, "ZB-SEC-005", "identity.mfa_enabled", background_tasks=background_tasks
+        db, user, "ZB-SEC-005", "identity.mfa_enabled", background_tasks=background_tasks, ip=ip
     )
+    notify_mfa_change(db, user, "MFA was set up again (re-enrolled)" if re_enrolled else "MFA was set up",
+                      ip=ip, background_tasks=background_tasks)
     logger.info("Super Admin %s completed MFA enrollment", user.email)
     return {"recovery_codes": raw_codes}
 
@@ -296,6 +300,15 @@ def verify_step_up(
     row = db.query(SuperAdminMFA).filter(SuperAdminMFA.user_id == user.id).first()
     if row is None or not row.is_enabled:
         raise BadRequestException("MFA is not enabled on this account. Step-up verification requires MFA.")
+    _check_factor(db, user, row, code, recovery_code, stage="step_up")
+
+
+def _check_factor(db: Session, user: User, row: SuperAdminMFA, code: Optional[str], recovery_code: Optional[str],
+                  *, stage: str) -> None:
+    """Verify a TOTP or recovery code against the account's factor: lockout,
+    replay protection and the shared failure counter. Used by step-up and by
+    disabling MFA (Phase 5d-F), so both go through one code path."""
+    from app.modules.super_admin.models import PlatformAuditAction
 
     if row.locked_until and row.locked_until > datetime.utcnow():
         raise UnauthorizedException(
@@ -335,7 +348,7 @@ def verify_step_up(
             action=PlatformAuditAction.MFA_CHALLENGE_FAILURE,
             entity_type="SuperAdminMFA",
             entity_id=row.id,
-            metadata={"stage": "step_up", "locked": locked, "failed_attempts": row.failed_attempts},
+            metadata={"stage": stage, "locked": locked, "failed_attempts": row.failed_attempts},
         )
         db.commit()
         raise UnauthorizedException("Incorrect verification code.")
@@ -348,7 +361,7 @@ def verify_step_up(
         action=PlatformAuditAction.MFA_CHALLENGE_SUCCESS,
         entity_type="SuperAdminMFA",
         entity_id=row.id,
-        metadata={"stage": "step_up", "via": "recovery_code" if used_recovery else "totp"},
+        metadata={"stage": stage, "via": "recovery_code" if used_recovery else "totp"},
     )
     db.commit()
 
@@ -360,6 +373,10 @@ def disable_mfa_self(
     user: User,
     current_password: str,
     background_tasks: Optional["BackgroundTasks"] = None,
+    *,
+    code: Optional[str] = None,
+    recovery_code: Optional[str] = None,
+    ip: Optional[str] = None,
 ) -> dict:
     """A fully-authenticated Super Admin may disable their own MFA —
     confirmed by re-entering their current password, since this reduces
@@ -374,6 +391,11 @@ def disable_mfa_self(
     row = db.query(SuperAdminMFA).filter(SuperAdminMFA.user_id == user.id).first()
     if row is None or not row.is_enabled:
         raise BadRequestException("MFA is not enabled on this account.")
+    # Phase 5d-F: the password alone is not enough. Login has no MFA, so a
+    # stolen password could otherwise swap the factor for the attacker's own.
+    if not (code or recovery_code):
+        raise BadRequestException("Enter a current code from your authenticator app, or a recovery code, to turn off MFA.")
+    _check_factor(db, user, row, code, recovery_code, stage="disable")
 
     row.is_enabled = False
     row.disabled_at = datetime.utcnow()
@@ -388,8 +410,9 @@ def disable_mfa_self(
     )
     db.commit()
     _dispatch_mfa_state_email(
-        db, user, "ZB-SEC-006", "identity.mfa_disabled", background_tasks=background_tasks
+        db, user, "ZB-SEC-006", "identity.mfa_disabled", background_tasks=background_tasks, ip=ip
     )
+    notify_mfa_change(db, user, "MFA was turned off", ip=ip, background_tasks=background_tasks)
     return {"message": "MFA has been disabled on your account. Privileged actions will require re-enrolling first."}
 
 
@@ -398,6 +421,8 @@ def admin_reset_mfa(
     actor: User,
     target_user_id: int,
     background_tasks: Optional["BackgroundTasks"] = None,
+    *,
+    ip: Optional[str] = None,
 ) -> dict:
     """Disaster-recovery path: another Super Admin resets a locked-out
     colleague's MFA (lost device + lost recovery codes) so they can
@@ -444,6 +469,7 @@ def admin_reset_mfa(
         context={
             "recipient_first_name": target.first_name or "there",
             "settings_url": settings.FRONTEND_URL.rstrip("/") + "/settings",
+            **_change_context(ip),
         },
         event_name="identity.mfa_reset_by_admin",
         entity_type="User",
@@ -452,6 +478,8 @@ def admin_reset_mfa(
         db=db,
         background_tasks=background_tasks,
     )
+    notify_mfa_change(db, target, f"MFA was reset by an administrator ({actor.email})", ip=ip,
+                      background_tasks=background_tasks)
     return {"message": f"MFA has been reset for {target.email}. They can re-enroll from Settings."}
 
 
@@ -461,13 +489,14 @@ def _dispatch_mfa_state_email(
     template_id: str,
     event_name: str,
     background_tasks: Optional["BackgroundTasks"] = None,
+    ip: Optional[str] = None,
 ) -> None:
     from app.modules.notifications.service import dispatch_email
 
     dispatch_email(
         template_id=template_id,
         recipient_email=user.email,
-        context={"recipient_first_name": user.first_name or "there"},
+        context={"recipient_first_name": user.first_name or "there", **_change_context(ip)},
         event_name=event_name,
         entity_type="User",
         entity_id=user.id,
@@ -544,7 +573,7 @@ def cancel_tenant_mfa_reset(db: Session, actor: User, target_user_id: int) -> di
 
 
 def approve_tenant_mfa_reset(db: Session, actor: User, target_user_id: int,
-                             background_tasks: Optional["BackgroundTasks"] = None) -> dict:
+                             background_tasks: Optional["BackgroundTasks"] = None, *, ip: Optional[str] = None) -> dict:
     from app.core.exceptions import ForbiddenException
 
     target = _tenant_target(db, actor, target_user_id)
@@ -565,5 +594,102 @@ def approve_tenant_mfa_reset(db: Session, actor: User, target_user_id: int,
                                       metadata={"target_user_id": target.id, "requested_by": requested_by},
                                       reason=reason)
     db.commit()
-    _dispatch_mfa_state_email(db, target, "ZB-SEC-006", "identity.mfa_disabled", background_tasks=background_tasks)
+    _dispatch_mfa_state_email(db, target, "ZB-SEC-006", "identity.mfa_disabled", background_tasks=background_tasks,
+                              ip=ip)
+    notify_mfa_change(db, target, "MFA was reset by two organization admins", ip=ip, background_tasks=background_tasks)
     return {"user_id": target.id, "enrolled": False}
+
+
+# ── Phase 5d-F: change notices and the new-factor cooling-off ───────────────
+
+def request_ip(request) -> Optional[str]:
+    """Best-effort client IP behind the reverse proxy (leftmost X-Forwarded-For)."""
+    if request is None:
+        return None
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip() or None
+    real = request.headers.get("x-real-ip")
+    if real:
+        return real.strip()
+    return getattr(getattr(request, "client", None), "host", None)
+
+
+def mask_ip(ip: Optional[str]) -> str:
+    """Security emails never carry a complete IP address (T0 control rule):
+    203.0.113.7 -> 203.0.113.x; IPv6 keeps the first three groups."""
+    if not ip:
+        return "unknown"
+    if ":" in ip:
+        groups = [g for g in ip.split(":") if g][:3]
+        return ":".join(groups) + "::x" if groups else "unknown"
+    parts = ip.split(".")
+    return ".".join(parts[:3] + ["x"]) if len(parts) == 4 else "unknown"
+
+
+def _change_context(ip: Optional[str]) -> dict:
+    return {"changed_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"), "ip_hint": mask_ip(ip)}
+
+
+def mfa_change_recipients(db: Session, subject: User) -> list:
+    """Who besides the user hears about an MFA change: the organization's
+    admins (tenant users), or the security contact (platform accounts)."""
+    if subject.role == UserRole.SUPER_ADMIN or subject.organization_id is None:
+        contact = (settings.SECURITY_CONTACT_EMAIL or "").strip()
+        return [(contact, "Security team")] if contact else []
+    admins = db.query(User).filter(User.organization_id == subject.organization_id, User.role == UserRole.ORG_ADMIN,
+                                   User.is_active.is_(True), User.id != subject.id).all()
+    return [(a.email, a.first_name or "there") for a in admins]
+
+
+def notify_mfa_change(db: Session, subject: User, change: str, *, ip: Optional[str] = None,
+                      background_tasks: Optional["BackgroundTasks"] = None) -> int:
+    """ZB-SEC-019 to the org admins / security contact: what changed, on whose
+    account, when and from which (masked) IP. Never blocks the change itself."""
+    from app.modules.notifications.service import dispatch_email
+
+    sent, ctx = 0, _change_context(ip)
+    account = " ".join(x for x in (subject.first_name, subject.last_name) if x) or subject.email
+    for email, first_name in mfa_change_recipients(db, subject):
+        try:
+            dispatch_email(
+                template_id="ZB-SEC-019", recipient_email=email,
+                context={"recipient_first_name": first_name, "account_label": f"{account} ({subject.email})",
+                         "change_description": change, **ctx},
+                event_name="identity.mfa_changed", entity_type="User", entity_id=subject.id,
+                organization_id=subject.organization_id, db=db, background_tasks=background_tasks,
+                idempotency_key=f"identity.mfa_changed:User:{subject.id}:{email}:{datetime.utcnow().isoformat()}",
+            )
+            sent += 1
+        except Exception:                               # a notice failure never undoes the change
+            logger.exception("MFA change notice to an admin failed for user %s", subject.id)
+    return sent
+
+
+def tax_step_up_usable_at(db: Session, user_id: int) -> Optional[datetime]:
+    """When the account's factor may satisfy tax step-up, if still in its
+    cooling-off period; None when usable now (or not enrolled). Factors
+    enabled before Phase 5d-F carry no enabled_at and are treated as past it."""
+    row = db.query(SuperAdminMFA).filter(SuperAdminMFA.user_id == user_id).first()
+    if row is None or not row.is_enabled or row.enabled_at is None:
+        return None
+    usable = row.enabled_at + timedelta(hours=max(0, int(settings.TAX_STEP_UP_NEW_FACTOR_DELAY_HOURS)))
+    return usable if usable > datetime.utcnow() else None
+
+
+def refuse_new_factor_for_tax(db: Session, user: User, control: str) -> None:
+    """Raise TaxMfaFactorCoolingOff (audited) while the factor is new."""
+    from app.modules.super_admin.models import PlatformAuditAction
+    from app.modules.tax.tenant_step_up import TaxMfaFactorCoolingOff
+
+    usable = tax_step_up_usable_at(db, user.id)
+    if usable is None:
+        return
+    MfaAudit(db, user).log_no_commit(action=PlatformAuditAction.MFA_STEP_UP_REFUSED_NEW_FACTOR,
+                                     entity_type="SuperAdminMFA", entity_id=user.id,
+                                     metadata={"control": control, "usable_at": usable.isoformat() + "Z"})
+    db.commit()
+    raise TaxMfaFactorCoolingOff(
+        f"Your MFA was set up recently. For safety it can approve tax changes from "
+        f"{usable.strftime('%Y-%m-%d %H:%M')} UTC ({settings.TAX_STEP_UP_NEW_FACTOR_DELAY_HOURS} hours after setup).",
+        usable)

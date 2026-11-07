@@ -182,3 +182,98 @@ a factor.
 | `frontend/.../ProviderScreens.test.jsx` (+5) | Enrol-to-approve message and link; void approval step-up with one retry; enrolment with the key, code and recovery codes shown once (axe); the org admin list with self and requester rules (axe); non-admins don't load the list. |
 
 **CI result:** _see PR_.
+
+## Phase 5d-F: MFA hardening (security owner approval needed before merge)
+
+### Security summary (for the security owner)
+
+**Issue.** Login has no MFA. Before this change:
+- a user could turn MFA off with the password alone, and enrol a new factor
+  at once;
+- an unenrolled user's session could enrol one.
+
+So anyone holding a password, or a live session, could put their own factor
+on the account and pass tax step-up straight away.
+
+**Fixes.** One code path, for tenant and platform accounts alike:
+
+1. **Disabling needs a factor.** `POST /api/auth/mfa/disable` needs the
+   current password **and** a current TOTP or an unused recovery code.
+   - The check is the same `_check_factor` that step-up uses: lockout
+     counter, replay protection, audited success and failure.
+   - Applies to Super Admins too. The security owner may choose
+     otherwise; it is one function either way.
+2. **Change notices.** Enrolment, disable, re-enrolment, the platform admin
+   reset and the tenant two-person reset all send notices:
+   - **The user:** their existing notice (ZB-SEC-005, 006 or 017) now says
+     when, and from which IP, masked as `203.0.113.x`.
+   - **Others:** new template **ZB-SEC-019** goes to the organization's
+     active org admins for tenant users, or to `SECURITY_CONTACT_EMAIL` for
+     platform accounts (empty means only the user is told). It says what
+     changed, on whose account, when and from which masked IP.
+   - The T0 email rule forbids a complete IP address, so only the masked
+     form is sent. The full IP stays in the server logs.
+   - A notice failure never undoes the change.
+3. **Cooling-off.** A factor enabled less than
+   `TAX_STEP_UP_NEW_FACTOR_DELAY_HOURS` ago (default **24**) can't satisfy
+   tax step-up, on the tenant approvals and on the platform registry's
+   approve/publish.
+   - The refusal is `TAX_MFA_FACTOR_COOLING_OFF`, with `usable_at` and a
+     message giving the time.
+   - It is audited as `mfa_step_up_refused_new_factor`, in the
+     organization's billing log or the platform log.
+   - `GET /api/auth/mfa/status` adds `tax_step_up_usable_at` and
+     `tax_step_up_new_factor_delay_hours`, and the MFA screen shows when
+     the factor becomes usable.
+   - Factors enabled before this change have no `enabled_at` and are not
+     delayed.
+
+**Result.**
+- A stolen password can no longer remove the real factor.
+- Enrolling a factor on an unenrolled account, or one left unenrolled after
+  a reset, now raises an alert. The attacker then has to wait a day, which
+  gives the admins time to act.
+- Disable → re-enrol → approve within the delay is refused (tested).
+
+**Not changed:**
+- Login.
+- The platform step-up for non-tax privileged actions (break-glass, circuit
+  breakers), which keeps its own rules.
+- The dev bypass, still refused outside DEBUG.
+
+**Settings:**
+- `TAX_STEP_UP_NEW_FACTOR_DELAY_HOURS` (default 24);
+- `SECURITY_CONTACT_EMAIL` (platform security mailbox; empty by default).
+
+### Support path for single-admin organizations (documented, not built)
+
+A two-person tenant reset needs two org admins. An organization with only
+one admin, who loses both the phone and the recovery codes, can't use it.
+The support path is:
+
+1. **Request.** The admin contacts Zoiko Billing support from the account's
+   registered email address, and support opens a ticket.
+2. **Identity check.** Support verifies identity out of band, with at least
+   two of:
+   - a call-back to the organization's number on file;
+   - confirmation of recent billing details (last invoice number and
+     amount);
+   - a signed request on company letterhead from a company officer.
+
+   Nothing is decided from the email alone.
+3. **Reset.** A platform administrator resets the MFA with the existing
+   `PUT /api/super-admin/users/{id}/mfa/reset`, citing the ticket. This is
+   audited, and ZB-SEC-017 and ZB-SEC-019 go out.
+4. **Re-enrol.** The admin enrols again. The 24-hour cooling-off still
+   applies before any tax approval.
+5. **Prevention.** Support recommends adding a second org admin.
+
+### Tests
+
+| Test file | Covers |
+|---|---|
+| `backend/tests/privacy/test_tax_phase5d_f_mfa_hardening.py` (10) | Disabling needs a code (password alone, a wrong code and a wrong password are each refused; a recovery code works); the same over HTTP; the same rule for platform accounts. Notices: enrol, disable, re-enrol and reset to the user and the org admins, with the masked IP and never the full IP; platform changes to the security contact; the ZB-SEC-019 render and IPv6 masking. **Cooling-off:** a new factor is refused on a tenant approval, audited, with the status showing `usable_at`, then works after the delay; **disable → re-enrol → approve is refused within the delay**; the platform registry has the same rule (audited); the delay is configurable; factors enabled before this change are not delayed. |
+| `test_tax_phase5d2_tenant_mfa.py` | Sets the delay to 0, because it tests step-up itself |
+| `frontend/.../ProviderScreens.test.jsx` (+3) | Turning off needs a code; the screen says when a new factor becomes usable; the cooling-off refusal shows its time |
+
+**CI result:** _see PR_.

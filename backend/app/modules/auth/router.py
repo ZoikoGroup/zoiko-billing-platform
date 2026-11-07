@@ -165,7 +165,8 @@ def mfa_setup_verify(
     from app.modules.auth import mfa_service
 
     _require_mfa_user(current_user)
-    return mfa_service.verify_enrollment(db, current_user, data.code, background_tasks=background_tasks)
+    return mfa_service.verify_enrollment(db, current_user, data.code, background_tasks=background_tasks,
+                                         ip=mfa_service.request_ip(request))
 
 
 @router.get(
@@ -196,6 +197,10 @@ def mfa_status(current_user=Depends(get_current_user), db: Session = Depends(get
         "step_up_required": step_up_required(),
         "tax_registry_step_up_required": bool(settings.TAX_REGISTRY_STEP_UP_REQUIRED),
         "tax_tenant_step_up_required": bool(settings.TAX_TENANT_STEP_UP_REQUIRED),
+        # Phase 5d-F: a new factor can't approve tax changes until this time (UTC); null when usable.
+        "tax_step_up_usable_at": (lambda t: t.isoformat() + "Z" if t else None)(
+            mfa_service.tax_step_up_usable_at(db, current_user.id)),
+        "tax_step_up_new_factor_delay_hours": int(settings.TAX_STEP_UP_NEW_FACTOR_DELAY_HOURS),
     }
 
 
@@ -214,7 +219,9 @@ def mfa_disable(
     from app.modules.auth import mfa_service
 
     _require_mfa_user(current_user)
-    return mfa_service.disable_mfa_self(db, current_user, data.current_password, background_tasks=background_tasks)
+    return mfa_service.disable_mfa_self(db, current_user, data.current_password, background_tasks=background_tasks,
+                                        code=data.code, recovery_code=data.recovery_code,
+                                        ip=mfa_service.request_ip(request))
 
 
 def _require_mfa_user(user) -> None:

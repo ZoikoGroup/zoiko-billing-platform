@@ -31,6 +31,20 @@ class TaxMfaEnrolmentRequired(BadRequestException):
         ZoikoException.__init__(self, status_code=400, error_code="TAX_MFA_ENROLMENT_REQUIRED", message=message)
 
 
+class TaxMfaFactorCoolingOff(BadRequestException):
+    """Phase 5d-F: the factor was enrolled less than
+    TAX_STEP_UP_NEW_FACTOR_DELAY_HOURS ago; `usable_at` says when it works."""
+
+    def __init__(self, message: str, usable_at=None):
+        extra = {"usable_at": usable_at.isoformat() + "Z"} if usable_at is not None else {}
+        try:
+            ZoikoException.__init__(self, status_code=400, error_code="TAX_MFA_FACTOR_COOLING_OFF", message=message,
+                                    extra=extra)
+        except TypeError:                               # older ZoikoException without `extra`
+            ZoikoException.__init__(self, status_code=400, error_code="TAX_MFA_FACTOR_COOLING_OFF", message=message)
+        self.usable_at = usable_at
+
+
 def require_tenant_tax_step_up(db: Session, user, code: Optional[str] = None,
                                recovery_code: Optional[str] = None) -> str:
     """Returns how the approval was protected: verified | bypassed | not_required.
@@ -47,6 +61,9 @@ def require_tenant_tax_step_up(db: Session, user, code: Optional[str] = None,
     if not is_mfa_enabled(db, user.id):
         raise TaxMfaEnrolmentRequired(
             f"Enrol MFA to approve: open Tax governance → MFA ({ENROL_PATH}) and set up an authenticator app.")
+    from app.modules.auth.mfa_service import refuse_new_factor_for_tax
+
+    refuse_new_factor_for_tax(db, user, "tax_tenant")                # Phase 5d-F cooling-off
     if not (code or recovery_code):
         raise TaxStepUpRequired("MFA step-up is required: provide a current authenticator code or a recovery code.")
     verify_step_up(db, user, code=code, recovery_code=recovery_code, enforce_when_retired=True)
