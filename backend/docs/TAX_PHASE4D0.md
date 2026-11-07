@@ -39,8 +39,8 @@ items in the provisioning section below.
 | `TAX_SECRET_MANAGER_PROJECT`, `TAX_SECRET_MANAGER_REGION` | unset | Staging project, if `gcp` | VM `backend/.env`, set by the GCP admin |
 | `TAX_PROVIDER_PRODUCTION_CREDENTIALS_ALLOWED` | `false` | `false` | `true` only at the 4d go-live gate, with `gcp` |
 
-We have no staging deploy workflow today. When one is added, these values
-come from its GitHub environment secrets. **None of them are added to
+Phase 6 added the staging deploy workflow (`deploy-staging.yml`,
+`TAX_PHASE6.md`); these values come from its GitHub environment `staging`. **None of them are added to
 `deploy.yml` for production.**
 
 ## What our GCP admin must provision (production)

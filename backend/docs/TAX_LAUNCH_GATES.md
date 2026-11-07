@@ -310,6 +310,8 @@ NOT_APPLICABLE (G1, fixed).
     - a new factor waits 24 hours before it can approve tax changes.
 
     Needs the security owner's approval.
+  - Phase 6 PR 1: a staging environment and a pilot-rehearsal seed
+    (`TAX_PHASE6.md`), where the QA walkthrough can be run.
   - Still open: QA and a manual WCAG pass.
 
 ### Gate 07: availability registry and visibility

@@ -1,0 +1,172 @@
+name: Deploy Zoiko Billing Staging
+
+# ZB-TAX-ARCH-001 Phase 6 PR 1: the staging environment for the UK/AU pilot
+# rehearsal. Its own VM, database, units and secrets (the GitHub "staging"
+# environment); never production data or production secrets.
+# Provisioning: backend/docs/TAX_PHASE6.md ("What our admin must provision").
+
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch, tag or commit to deploy (default: the branch you run this on)"
+        required: false
+        default: ""
+      seed_rehearsal:
+        description: "Run the pilot-rehearsal seed (test tenant and users; idempotent)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: staging-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Refuse to target production
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_SSH_HOST }}
+          PRODUCTION_HOST: ${{ secrets.GCP_SSH_HOST }}
+          STAGING_DB: ${{ secrets.STAGING_BILLING_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          : "${STAGING_HOST:?STAGING_SSH_HOST is not set in the staging environment}"
+          : "${STAGING_DB:?STAGING_BILLING_DATABASE_URL is not set in the staging environment}"
+          if [ -n "${PRODUCTION_HOST:-}" ] && [ "$STAGING_HOST" = "$PRODUCTION_HOST" ]; then
+            echo "::error::STAGING_SSH_HOST is the same host as production (GCP_SSH_HOST). Refusing to deploy."
+            exit 1
+          fi
+          echo "Staging target is not the production host."
+
+      - name: SSH and deploy staging
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          DEPLOY_GIT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEPLOY_REPO: ${{ github.repository }}
+          DEPLOY_REF: ${{ inputs.ref || github.ref_name }}
+          SEED_REHEARSAL: ${{ inputs.seed_rehearsal || false }}
+          # Staging-only secrets (GitHub environment "staging"). Never echoed.
+          STAGING_BILLING_DATABASE_URL: ${{ secrets.STAGING_BILLING_DATABASE_URL }}
+          STAGING_BILLING_SECRET_KEY: ${{ secrets.STAGING_BILLING_SECRET_KEY }}
+          STAGING_MFA_ENCRYPTION_KEY: ${{ secrets.STAGING_MFA_ENCRYPTION_KEY }}
+          STAGING_TAX_PROVIDER_ENCRYPTION_KEY: ${{ secrets.STAGING_TAX_PROVIDER_ENCRYPTION_KEY }}
+          STAGING_TAX_PROVIDER_PSEUDONYM_KEY: ${{ secrets.STAGING_TAX_PROVIDER_PSEUDONYM_KEY }}
+          STAGING_STRIPE_SECRET_KEY: ${{ secrets.STAGING_STRIPE_SECRET_KEY }}
+          STAGING_STRIPE_PUBLISHABLE_KEY: ${{ secrets.STAGING_STRIPE_PUBLISHABLE_KEY }}
+          STAGING_SECURITY_CONTACT_EMAIL: ${{ vars.STAGING_SECURITY_CONTACT_EMAIL }}
+          STAGING_TAX_PROVIDER_SECRET_STORE: ${{ vars.STAGING_TAX_PROVIDER_SECRET_STORE || 'fernet' }}
+          STAGING_FRONTEND_URL: ${{ vars.STAGING_FRONTEND_URL }}
+          STAGING_API_BASE_URL: ${{ vars.STAGING_API_BASE_URL }}
+        with:
+          host: ${{ secrets.STAGING_SSH_HOST }}
+          username: ${{ secrets.STAGING_SSH_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          envs: DEPLOY_GIT_TOKEN,DEPLOY_REPO,DEPLOY_REF,SEED_REHEARSAL,STAGING_BILLING_DATABASE_URL,STAGING_BILLING_SECRET_KEY,STAGING_MFA_ENCRYPTION_KEY,STAGING_TAX_PROVIDER_ENCRYPTION_KEY,STAGING_TAX_PROVIDER_PSEUDONYM_KEY,STAGING_STRIPE_SECRET_KEY,STAGING_STRIPE_PUBLISHABLE_KEY,STAGING_SECURITY_CONTACT_EMAIL,STAGING_TAX_PROVIDER_SECRET_STORE,STAGING_FRONTEND_URL,STAGING_API_BASE_URL
+          script: |
+            set -euo pipefail
+            BASE=/var/www/zoiko-billing-staging
+            BACKEND_UNIT=zoiko-billing-staging-backend
+            WORKER_UNIT=zoiko-billing-staging-tax-worker
+            : "${DEPLOY_GIT_TOKEN:?}"; : "${DEPLOY_REPO:?}"; : "${DEPLOY_REF:?}"
+            : "${STAGING_BILLING_DATABASE_URL:?}"; : "${STAGING_BILLING_SECRET_KEY:?}"; : "${STAGING_MFA_ENCRYPTION_KEY:?}"
+
+            # Staging lives only under $BASE; the production checkout is never touched.
+            if [ -d /var/www/zoiko-billing-backend ] || systemctl list-unit-files 2>/dev/null | grep -q '^zoiko-billing-backend\.service'; then
+              echo "::error::This VM runs production (zoiko-billing-backend). Staging must be a separate VM."
+              exit 1
+            fi
+
+            AUTH="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$DEPLOY_GIT_TOKEN" | base64 | tr -d '\n')"
+            sync_checkout() {
+              mkdir -p "$1"; cd "$1"
+              [ -d .git ] || git init -q
+              GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" \
+                GIT_CONFIG_VALUE_0="$AUTH" git fetch --no-tags "https://github.com/${DEPLOY_REPO}.git" "$DEPLOY_REF"
+              git reset -q --hard FETCH_HEAD
+              echo "$(pwd) at $(git rev-parse HEAD) ($DEPLOY_REF)"
+            }
+
+            # ── backend ──
+            echo "::group::Backend (staging)"
+            sync_checkout "$BASE/backend-app"
+            cd backend
+            ENV_FILE="$(pwd)/.env"
+            touch "$ENV_FILE"; chmod 600 "$ENV_FILE"
+            set_env() { sed -i "/^$1=/d" "$ENV_FILE"; printf '%s=%s\n' "$1" "$2" >> "$ENV_FILE"; }
+            set_env ENVIRONMENT staging
+            set_env DEBUG false
+            set_env BILLING_DATABASE_URL "$STAGING_BILLING_DATABASE_URL"
+            set_env BILLING_SECRET_KEY "$STAGING_BILLING_SECRET_KEY"
+            set_env MFA_ENCRYPTION_KEY "$STAGING_MFA_ENCRYPTION_KEY"
+            set_env FRONTEND_URL "${STAGING_FRONTEND_URL:-}"
+            # Tax settings for staging (backend/docs/TAX_PHASE4D0.md, "How each key reaches each environment").
+            set_env TAX_PROVIDER_SECRET_STORE "$STAGING_TAX_PROVIDER_SECRET_STORE"
+            set_env TAX_PROVIDER_PRODUCTION_CREDENTIALS_ALLOWED false
+            set_env TAX_PROVIDER_RECONCILIATION_MODE worker
+            set_env TAX_REGISTRY_STEP_UP_REQUIRED true
+            set_env TAX_TENANT_STEP_UP_REQUIRED true
+            set_env MFA_STEP_UP_BYPASS false
+            [ -n "${STAGING_TAX_PROVIDER_ENCRYPTION_KEY:-}" ] && set_env TAX_PROVIDER_ENCRYPTION_KEY "$STAGING_TAX_PROVIDER_ENCRYPTION_KEY"
+            [ -n "${STAGING_TAX_PROVIDER_PSEUDONYM_KEY:-}" ] && set_env TAX_PROVIDER_PSEUDONYM_KEY "$STAGING_TAX_PROVIDER_PSEUDONYM_KEY"
+            [ -n "${STAGING_SECURITY_CONTACT_EMAIL:-}" ] && set_env SECURITY_CONTACT_EMAIL "$STAGING_SECURITY_CONTACT_EMAIL"
+            # Stripe test-mode keys only.
+            if [ -n "${STAGING_STRIPE_SECRET_KEY:-}" ]; then
+              case "$STAGING_STRIPE_SECRET_KEY" in sk_live_*) echo "::error::A live Stripe key was given to staging."; exit 1;; esac
+              set_env STRIPE_SECRET_KEY "$STAGING_STRIPE_SECRET_KEY"
+              set_env STRIPE_PUBLISHABLE_KEY "${STAGING_STRIPE_PUBLISHABLE_KEY:-}"
+            fi
+            echo "staging backend/.env written (values redacted)"
+
+            [ -d venv ] || python3 -m venv venv
+            source venv/bin/activate
+            pip install -q -r requirements.txt
+            alembic upgrade head
+            python -m scripts.seed_commercial_plans
+            python -m scripts.seed_entitlement_definitions
+            python -m scripts.seed_tax_registry
+            if [ "${SEED_REHEARSAL}" = "true" ]; then
+              ENVIRONMENT=staging python -m scripts.seed_tax_pilot_rehearsal --with-platform-staff
+            fi
+            deactivate
+
+            SERVICE_USER="$(systemctl show -p User --value "$BACKEND_UNIT" 2>/dev/null || true)"
+            sed -e "s|@SERVICE_USER@|${SERVICE_USER}|g" -e "s|@BACKEND_DIR@|$(pwd)|g" \
+              -e "s|Zoiko Billing - tax provider|Zoiko Billing STAGING - tax provider|" \
+              deploy/systemd/zoiko-billing-tax-worker.service | sed '/^User=$/d' > "/tmp/${WORKER_UNIT}.service"
+            if ! cmp -s "/tmp/${WORKER_UNIT}.service" "/etc/systemd/system/${WORKER_UNIT}.service"; then
+              sudo install -m 644 "/tmp/${WORKER_UNIT}.service" "/etc/systemd/system/${WORKER_UNIT}.service"
+              sudo systemctl daemon-reload
+            fi
+            rm -f "/tmp/${WORKER_UNIT}.service"
+            sudo systemctl enable --quiet "$WORKER_UNIT"
+            sudo systemctl restart "$BACKEND_UNIT"
+            sudo systemctl is-active --quiet "$BACKEND_UNIT" || { echo "::error::$BACKEND_UNIT not active"; exit 1; }
+            sudo systemctl restart "$WORKER_UNIT"
+            sleep 5
+            sudo systemctl is-active --quiet "$WORKER_UNIT" || { journalctl -u "$WORKER_UNIT" -n 30 --no-pager || true; exit 1; }
+            echo "::endgroup::"
+
+            # ── frontend ──
+            echo "::group::Frontend (staging)"
+            sync_checkout "$BASE/frontend-app"
+            cd frontend
+            npm ci
+            VITE_API_BASE_URL="${STAGING_API_BASE_URL:-}" npm run build
+            [ -s dist/index.html ] || { echo "::error::frontend build produced no index.html"; exit 1; }
+            sudo rm -rf "$BASE/html.new"; sudo mkdir -p "$BASE/html.new"
+            sudo cp -r dist/. "$BASE/html.new/"
+            sudo rm -rf "$BASE/html.old"
+            [ -d "$BASE/html" ] && sudo mv "$BASE/html" "$BASE/html.old"
+            sudo mv "$BASE/html.new" "$BASE/html"
+            sudo rm -rf "$BASE/html.old"
+            sudo chown -R www-data:www-data "$BASE/html"
+            echo "::endgroup::"
+            echo "Staging deploy complete: $DEPLOY_REF"
