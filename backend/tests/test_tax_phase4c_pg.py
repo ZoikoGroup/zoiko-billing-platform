@@ -186,3 +186,34 @@ def test_connection_mode_changes_only_through_an_approved_change_on_postgres(pg,
     pg.expire_all()
     assert pg.execute(text("SELECT mode FROM tax_provider_connections WHERE id = :id"), {"id": conn.id}).scalar() \
         == "ESTIMATE_ONLY"
+
+
+def test_shadow_comparisons_are_write_once_on_postgres(pg, world):
+    """Phase 7 PR 1: a shadow comparison never changes; the enrolment's key fields are frozen."""
+    from datetime import date, datetime, timezone
+
+    from app.modules.tax.enums import TenantApprovalStatus
+    from app.modules.tax.shadow_models import TaxShadowComparison, TaxShadowEnrolment
+
+    now = datetime.now(timezone.utc)
+    enrolment = TaxShadowEnrolment(organization_id=world["org"].id, seller_entity_id=world["entity"].id,
+                                   status=TenantApprovalStatus.APPROVED, reason="pg", proposed_by=world["maker"].id,
+                                   approved_by=world["checker"].id, approved_at=now, created_at=now)
+    pg.add(enrolment)
+    pg.flush()
+    from tests.conftest import make_customer, make_invoice
+
+    customer = make_customer(pg, world["org"].id, code="PGSHADOW", email="pg-shadow@buyer.example")
+    invoice_id = make_invoice(pg, world["org"].id, customer.id, invoice_number="PG-SHADOW-1").id
+    row = TaxShadowComparison(organization_id=world["org"].id, seller_entity_id=world["entity"].id,
+                              enrolment_id=enrolment.id, invoice_id=invoice_id, issue_date=date.today(),
+                              outcome="MATCH", computed_at=now)
+    pg.add(row)
+    pg.flush()
+    triggers = set(pg.execute(text("SELECT tgname FROM pg_trigger WHERE NOT tgisinternal")).scalars())
+    assert {"trg_tax_shadow_comparisons_guard", "trg_tax_shadow_enrolments_guard"} <= triggers
+    _rejects(pg, "UPDATE tax_shadow_comparisons SET outcome = 'DIFFERENT' WHERE id = :id", {"id": row.id})
+    _rejects(pg, "DELETE FROM tax_shadow_comparisons WHERE id = :id", {"id": row.id})
+    _rejects(pg, "UPDATE tax_shadow_enrolments SET seller_entity_id = seller_entity_id + 0, reason = 'x' WHERE id = :id",
+             {"id": enrolment.id})
+    _accepts(pg, "UPDATE tax_shadow_enrolments SET ended_at = now() WHERE id = :id", {"id": enrolment.id})

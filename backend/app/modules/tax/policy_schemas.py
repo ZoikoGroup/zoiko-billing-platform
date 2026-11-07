@@ -169,6 +169,22 @@ class ProviderConnectionCreate(_Strict):
     mode: Literal["ESTIMATE_ONLY", "COMMIT"]
 
 
+class ShadowEnrolRequest(_Strict):
+    """Phase 7: opt an entity in to shadow compare."""
+    seller_entity_id: int
+    reason: str = Field(..., min_length=1, max_length=2000)
+
+
+class ShadowSelectionRequest(_Strict):
+    """Phase 7: the rule pack shadows use, and the tax lead's exit threshold."""
+    rule_pack_version_id: int
+    exit_min_invoices: int = Field(50, ge=1, le=100000)
+    exit_min_days: int = Field(30, ge=1, le=3650)
+    reason: str = Field(..., min_length=1, max_length=2000)
+    code: Optional[str] = Field(None, min_length=6, max_length=8)
+    recovery_code: Optional[str] = Field(None, min_length=6, max_length=20)
+
+
 class ProviderModeChangeRequest(_Strict):
     """Phase 5c: propose ESTIMATE_ONLY (safe mode) <-> COMMIT on the same connection."""
     mode: Literal["ESTIMATE_ONLY", "COMMIT"]

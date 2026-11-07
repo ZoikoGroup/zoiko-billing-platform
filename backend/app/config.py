@@ -158,6 +158,10 @@ class Settings(BaseSettings):
     TAX_ALERT_NOT_DETERMINED_RATE: float = 0.5
     TAX_ALERT_REVIEW_BACKLOG: int = 5
     TAX_ALERT_SECRET_STORE_FAILURES: int = 1
+    # Phase 7 PR 1: shadow compare (app/modules/tax/shadow_service.py).
+    TAX_SHADOW_ENABLED: bool = True
+    TAX_SHADOW_INTERVAL_MINUTES: int = 15
+    TAX_SHADOW_BATCH_SIZE: int = 200
     # Phase 5d-F: where platform-account MFA changes are reported (a
     # mailbox the security team watches). Empty: only the user is emailed.
     SECURITY_CONTACT_EMAIL: str = ""

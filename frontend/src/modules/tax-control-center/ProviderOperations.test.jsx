@@ -12,7 +12,8 @@ const { svc, current } = vi.hoisted(() => ({
   svc: Object.fromEntries([
     "getProviderHealth", "providerHealthAction", "getPlatformOvercollection", "getPlatformDuplicates",
     "listTaxPeople", "listApprovalsInbox", "getReadiness", "listCoverage", "listTaxCodeSets", "lookupReferenceRates",
-    "listJurisdictions", "getEvidenceBundle",
+    "listJurisdictions", "getEvidenceBundle", "listShadowSelections", "chooseShadowSelection", "endShadowSelection",
+    "getShadowAggregate", "listRulePacks",
   ].map((k) => [k, vi.fn()])),
 }));
 vi.mock("../../api/client", async (importOriginal) => ({ ...(await importOriginal()), getStoredUser: () => current.user }));
@@ -168,5 +169,49 @@ describe("P5 tax-code catalogue", () => {
     fireEvent.click(screen.getByRole("button", { name: "Export evidence (JSON)" }));
     await waitFor(() => expect(svc.getEvidenceBundle).toHaveBeenCalledWith("tax_code_set", 3, "json"));
     expect(await axe(container)).toHaveNoViolations();
+  });
+});
+
+// ── Phase 7 PR 1: shadow compare (platform) ─────────────────────────────
+
+describe("shadow compare (platform)", () => {
+  beforeEach(() => {
+    svc.listShadowSelections.mockResolvedValue({ items: [{ id: 1, pack_code: "GB-VAT-DOMESTIC-SERVICES", pack_version: "1",
+      pack_status: "PENDING_REVIEW", active: true, exit_min_invoices: 50, exit_min_days: 30, reason: "UK",
+      chosen_at: "2026-11-01T09:00:00Z" }] });
+    svc.getShadowAggregate.mockResolvedValue({ enrolments_by_state: { ACTIVE: 2 }, compared: 40, match_rate: 0.9,
+      unexplained: 1, by_outcome: {}, differences_by_cause: {}, would_have_been_blocked: {} });
+    svc.listRulePacks.mockResolvedValue({ items: [{ id: 3, code: "GB-VAT-DOMESTIC-SERVICES", version: "1", status: "PENDING_REVIEW" }],
+      next_cursor: null });
+  });
+
+  it("shows the chosen pack, the advisory threshold and counts only", async () => {
+    const { container } = renderAt("/super-admin/tax/shadow");
+    expect(await screen.findByText("GB-VAT-DOMESTIC-SERVICES v1")).toBeInTheDocument();
+    expect(screen.getByText(/50 invoices over 30 days with zero unexplained/)).toBeInTheDocument();
+    expect(screen.getByText(/40 invoice\(s\) compared · match rate 90%/)).toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/INV-|organization/i);
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it("the tax lead chooses a pack with MFA step-up and one retry; a reviewer can't", async () => {
+    svc.chooseShadowSelection.mockRejectedValueOnce(STEP_UP).mockResolvedValueOnce({ id: 2 });
+    renderAt("/super-admin/tax/shadow");
+    fireEvent.click(await screen.findByRole("button", { name: "Choose pack" }));
+    const dialog = await screen.findByRole("dialog");
+    await waitFor(() => expect(within(dialog).getByRole("option", { name: /GB-VAT-DOMESTIC-SERVICES v1/ })).toBeInTheDocument());
+    fireEvent.change(within(dialog).getByLabelText(/Rule pack version/), { target: { value: "3" } });
+    fireEvent.change(within(dialog).getByLabelText(/^Reason/), { target: { value: "UK rehearsal" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Choose" }));
+    const mfa = await screen.findByRole("dialog", { name: /Confirm with MFA/ }, { timeout: 5000 });
+    fireEvent.change(within(mfa).getByLabelText(/Authenticator code/), { target: { value: "123456" } });
+    fireEvent.click(within(mfa).getByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(svc.chooseShadowSelection).toHaveBeenCalledTimes(2), { timeout: 5000 });
+    expect(svc.chooseShadowSelection.mock.calls[1][0]).toMatchObject({ rule_pack_version_id: 3, exit_min_invoices: 50,
+      exit_min_days: 30, reason: "UK rehearsal", code: "123456" });
+    cleanup();
+    current.user = REVIEWER;
+    renderAt("/super-admin/tax/shadow");
+    expect(await screen.findByRole("button", { name: "Choose pack" })).toBeDisabled();
   });
 });

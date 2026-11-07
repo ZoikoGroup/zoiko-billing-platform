@@ -288,6 +288,37 @@ amounts.
 
 ---
 
+## Part 3b: Optional, a shadow period before switching (Phase 7)
+
+Run this before 2.6 (the regime switch) to see what governed tax would have
+charged, without changing any invoice.
+
+1. **Tax lead** (`/super-admin/tax/shadow`): **Choose pack**.
+   - Pick the UK (or AU) pack. A draft is fine.
+   - Set the exit threshold, for example 50 invoices over 30 days.
+   - Confirm with MFA.
+2. **Org admin** (`/billing/tax/governance/shadow`): choose the entity, then
+   **Propose shadowing this entity** with a reason.
+3. **A different finance approver:** **Approve**.
+4. **Keep invoicing as usual.** Every 15 minutes, newly issued invoices are
+   compared.
+5. **Review weekly.**
+   - Look at the match rate and the differences by cause.
+   - Open each **Unexplained** one (Show lines), and raise any with the tax
+     lead.
+   - "Would have been blocked" shows the facts to fix before switching,
+     such as classifications and addresses.
+   - Export CSV for the record.
+6. **When the exit signal says the threshold is met,** with zero
+   unexplained differences, the tenant may decide to switch (2.6). The
+   signal is advice: switching is still the two-person regime switch.
+7. **End shadowing** (org admin) once switched or abandoned.
+
+**Check:**
+- invoices keep their legacy tax;
+- the comparisons appear within 15 minutes of issuing;
+- the platform view shows counts only.
+
 ## Part 4: Rollback
 
 Use the smallest step that stops the problem.

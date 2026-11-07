@@ -554,6 +554,11 @@ CRITICAL_COLUMNS: list[tuple[str, str, str, str]] = [
         "ZB-TAX-ARCH-001 Phase 4d: two-person manual address resolutions",
     ),
     (
+        "tax_shadow_comparisons", "cause",
+        "alembic/versions/f7c2a9d4e1b3_tax_phase7_shadow_compare.py",
+        "ZB-TAX-ARCH-001 Phase 7: shadow compare",
+    ),
+    (
         "super_admin_mfa", "reset_requested_by",
         "alembic/versions/e6b1d3f5a7c9_tenant_mfa_reset.py",
         "ZB-TAX-ARCH-001 Phase 5d: two-person tenant MFA reset",
@@ -688,6 +693,7 @@ import app.modules.tax.registry_models  # noqa: F401,E402 — ZB-TAX-ARCH-001 gl
 import app.modules.tax.policy_models  # noqa: F401,E402 — ZB-TAX-ARCH-001 market availability + tax codes (non-tenant)
 import app.modules.tax.quote_models  # noqa: F401,E402 — ZB-TAX-ARCH-001 governed quotes / snapshots (tenant)
 import app.modules.tax.provider_models  # noqa: F401,E402 — ZB-TAX-ARCH-001 provider outbox (tenant) + circuits/heartbeats
+import app.modules.tax.shadow_models  # noqa: F401,E402 — ZB-TAX-ARCH-001 Phase 7 shadow compare
 import app.modules.tax.provider_issuance  # noqa: F401,E402 — registers the locked-draft guard (issuing via provider)
 import app.modules.chatbot.models  # noqa: F401,E402 — 28-table AI assistant schema
 import app.modules.notifications.models  # noqa: F401,E402 — ZB-* email pipeline foundation

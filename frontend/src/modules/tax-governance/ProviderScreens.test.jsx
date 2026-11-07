@@ -15,7 +15,9 @@ const { svc, current } = vi.hoisted(() => ({
     "withdrawProviderConnection", "setProviderCredentials", "revokeProviderCredentials", "listProviderTransactions",
     "providerTransactionAction", "requestModeChange", "decideModeChange", "withdrawModeChange", "lookupReferenceRates",
     "listJurisdictions", "getTenantEvidenceBundle", "getMfaStatus", "startMfa", "verifyMfa", "disableMfa", "listMfaUsers",
-    "requestMfaReset", "approveMfaReset", "cancelMfaReset",
+    "requestMfaReset", "approveMfaReset", "cancelMfaReset", "listShadowEnrolments", "proposeShadow", "decideShadow",
+    "withdrawShadow", "endShadow", "getShadowSummary", "listShadowComparisons", "exportShadowComparisons",
+    "getShadowComparison",
   ].map((k) => [k, vi.fn()])),
 }));
 vi.mock("../../api/client", async (importOriginal) => ({ ...(await importOriginal()), getStoredUser: () => current.user }));
@@ -481,5 +483,76 @@ describe("MFA hardening", () => {
     renderAt("transactions");
     fireEvent.click(await screen.findByRole("button", { name: "Approve void" }));
     expect(await screen.findByText(/can approve tax changes from 2026-11-07 10:00 UTC/)).toBeInTheDocument();
+  });
+});
+
+// ── Phase 7 PR 1: shadow compare ────────────────────────────────────────
+
+describe("shadow compare (tenant)", () => {
+  const enrolment = (over = {}) => ({ id: 5, seller_entity_id: 10, state: "ACTIVE", status: "APPROVED", reason: "rehearse",
+    proposed_by: 1, approved_by: 3, started_at: "2026-11-01T09:00:00Z",
+    exit_signal: { ready: false, advisory: true, message: "1 of 50 invoices, 6 of 30 days, 0 unexplained." }, ...over });
+  beforeEach(() => {
+    svc.listShadowEnrolments.mockImplementation(() => page([enrolment()]));
+    svc.getShadowSummary.mockResolvedValue({ compared: 4, match_rate: 0.75, unexplained: 0,
+      by_outcome: { MATCH: 3, DIFFERENT: 1 }, differences_by_cause: { RATE_DIFFERENT: 1 },
+      would_have_been_blocked: { REQUIRED_FACTS_MISSING: 2 } });
+    svc.listShadowComparisons.mockImplementation(() => page([{ id: 70, invoice_number: "INV-7", issue_date: "2026-11-02",
+      outcome: "DIFFERENT", cause: "RATE_DIFFERENT", reason: "A line's legacy rate differs.", legacy_tax: "5.00",
+      shadow_tax: "20.00", tax_difference: "15.00", currency: "GBP" }]));
+    svc.getShadowComparison.mockResolvedValue({ id: 70, invoice_number: "INV-7", lines: { lines: [{ line_number: 1,
+      legacy_rate: "5", shadow_rate: "20", legacy_tax: "5.00", shadow_tax: "20.00", difference: "15.00",
+      components: [{ component_code: "GB-VAT", label: "UK VAT", rate_percent: "20", tax: "20.00" }] }] } });
+  });
+
+  it("shows the match rate, causes, would-be blocks, the advisory exit signal and drill-down", async () => {
+    const { container } = renderAt("shadow");
+    expect(await screen.findByText("75%")).toBeInTheDocument();
+    expect(screen.getByText("Different rate: 1")).toBeInTheDocument();
+    expect(screen.getByText("Required facts missing: 2")).toBeInTheDocument();
+    expect(await screen.findByText(/1 of 50 invoices, 6 of 30 days/)).toBeInTheDocument();
+    expect(screen.getByText("Exit threshold not met yet")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "Show lines" }));
+    expect(await screen.findByText(/UK VAT 20%: 20.00/)).toBeInTheDocument();
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it("exports CSV", async () => {
+    URL.createObjectURL = vi.fn(() => "blob:csv");
+    URL.revokeObjectURL = vi.fn();
+    svc.exportShadowComparisons.mockResolvedValue("invoice_number\nINV-7\n");
+    renderAt("shadow");
+    fireEvent.click(await screen.findByRole("button", { name: "Export CSV" }));
+    await waitFor(() => expect(svc.exportShadowComparisons).toHaveBeenCalled());
+    await waitFor(() => expect(click).toHaveBeenCalled());
+  });
+
+  it("an org admin proposes for the chosen entity; a different approver approves", async () => {
+    svc.listShadowEnrolments.mockImplementation(() => page([]));
+    svc.proposeShadow.mockResolvedValue(enrolment({ state: "PROPOSED", status: "PROPOSED" }));
+    current.user = ADMIN;
+    renderAt("shadow");
+    await waitFor(() => expect(screen.getByRole("option", { name: "MAIN — Acme Ltd" })).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText(/^Seller entity/), { target: { value: "10" } });
+    fireEvent.click(await screen.findByRole("button", { name: "Propose shadowing this entity" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText(/Reason/), { target: { value: "Rehearse UK" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Propose" }));
+    await waitFor(() => expect(svc.proposeShadow).toHaveBeenCalledWith({ seller_entity_id: 10, reason: "Rehearse UK" }));
+    cleanup();
+    svc.listShadowEnrolments.mockImplementation(() => page([enrolment({ state: "PROPOSED", status: "PROPOSED", exit_signal: null })]));
+    svc.decideShadow.mockResolvedValue(enrolment());
+    current.user = APPROVER;
+    renderAt("shadow");
+    fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(svc.decideShadow).toHaveBeenCalledWith(5, true, {}));
+  });
+
+  it("an auditor reads without propose or end controls", async () => {
+    current.user = { id: 9, role: "auditor", organization_id: 5 };
+    renderAt("shadow");
+    expect(await screen.findByText("75%")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "End shadowing" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Propose shadowing/ })).not.toBeInTheDocument();
   });
 });

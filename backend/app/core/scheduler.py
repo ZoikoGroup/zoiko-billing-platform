@@ -238,6 +238,13 @@ def get_job_definitions() -> list[tuple[str, int, str, str]]:
             "Financial Integrity Check",
         ),
         (
+            # ZB-TAX-ARCH-001 Phase 7 PR 1: shadow compare of issued legacy invoices.
+            "app.modules.tax.shadow_service:run_tax_shadow_job",
+            getattr(settings, "TAX_SHADOW_INTERVAL_MINUTES", 15),
+            "tax_shadow_job",
+            "Tax Shadow Compare",
+        ),
+        (
             # ZB-TAX-ARCH-001 Phase 6 PR 2: aggregate tax metrics -> Attention Engine.
             "app.modules.tax.monitoring:run_tax_monitoring_job",
             getattr(settings, "TAX_MONITORING_INTERVAL_MINUTES", 5),
