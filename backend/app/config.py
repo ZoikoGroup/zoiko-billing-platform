@@ -146,6 +146,18 @@ class Settings(BaseSettings):
     # step-up (tenant or platform) for this many hours, so a stolen password
     # or session can't enrol a fresh factor and approve straight away.
     TAX_STEP_UP_NEW_FACTOR_DELAY_HOURS: int = 24
+    # Phase 6 PR 2: tax monitoring (app/modules/tax/monitoring.py). Alerts go
+    # to the Attention Engine; thresholds are per deployment.
+    TAX_MONITORING_ENABLED: bool = True
+    TAX_MONITORING_INTERVAL_MINUTES: int = 5
+    TAX_ALERT_OUTBOX_OLDEST_AGE_MINUTES: int = 30
+    TAX_ALERT_HEARTBEAT_STALE_MINUTES: int = 15
+    TAX_ALERT_RATE_WINDOW_MINUTES: int = 60
+    TAX_ALERT_RATE_MIN_QUOTES: int = 10
+    TAX_ALERT_PROVIDER_UNAVAILABLE_RATE: float = 0.2
+    TAX_ALERT_NOT_DETERMINED_RATE: float = 0.5
+    TAX_ALERT_REVIEW_BACKLOG: int = 5
+    TAX_ALERT_SECRET_STORE_FAILURES: int = 1
     # Phase 5d-F: where platform-account MFA changes are reported (a
     # mailbox the security team watches). Empty: only the user is emailed.
     SECURITY_CONTACT_EMAIL: str = ""
