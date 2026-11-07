@@ -133,7 +133,11 @@ Phase 6 added the staging deploy workflow (`deploy-staging.yml`,
    set `ENVIRONMENT=staging`; production should set
    `ENVIRONMENT=production` explicitly.
 
-## Accepted risk: the pyasn1-modules pin
+## Accepted risk: the pyasn1-modules pin (resolved in Phase 6 PR 3)
+
+**Resolved:** PyJWT replaced python-jose (`TAX_PHASE6.md`, PR 3). The
+`python-jose`, `pyasn1<0.5.0`, `ecdsa` and `pyasn1-modules==0.3.0`
+constraints are gone. The original note is kept below for the record.
 
 `pyasn1-modules==0.3.0` extends the existing **python-jose accepted risk**
 recorded in `requirements.txt`. python-jose pins `pyasn1<0.5.0`, and

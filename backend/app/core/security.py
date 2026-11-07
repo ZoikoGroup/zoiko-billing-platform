@@ -12,7 +12,10 @@ JWT contract (namespaced — never accepted by the main platform):
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from jose import JWTError, jwt
+# Phase 6 PR 3: PyJWT replaces python-jose (HS256 only; same compact JWS, so
+# tokens issued before the change still validate).
+import jwt
+from jwt import PyJWTError as JWTError
 from passlib.context import CryptContext
 
 from app.config import settings

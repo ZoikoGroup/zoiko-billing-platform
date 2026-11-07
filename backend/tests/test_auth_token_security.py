@@ -22,7 +22,7 @@ behavior.
 from datetime import datetime, timedelta
 
 import pytest
-from jose import jwt
+import jwt
 
 from app.config import settings
 from app.core.exceptions import ForbiddenException, UnauthorizedException

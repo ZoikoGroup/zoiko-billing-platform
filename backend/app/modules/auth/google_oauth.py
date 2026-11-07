@@ -23,7 +23,10 @@ from urllib.parse import urlencode
 import httpx
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse
-from jose import JWTError, jwt
+# Phase 6 PR 3: PyJWT replaces python-jose (HS256 only; same compact JWS, so
+# tokens issued before the change still validate).
+import jwt
+from jwt import PyJWTError as JWTError
 from sqlalchemy.orm import Session
 
 from app.config import settings
