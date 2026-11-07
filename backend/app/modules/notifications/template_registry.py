@@ -3822,6 +3822,24 @@ TEMPLATE_REGISTRY: Dict[str, TemplateMeta] = {
         active=True,
         owner_hook="super_admin/privileged_access_service.py:PrivilegedAccessService.request_access",
     ),
+    # Phase 5d-F (ZB-TAX-ARCH-001): MFA change notice for org admins / the security contact.
+    "ZB-SEC-019": TemplateMeta(
+        template_id="ZB-SEC-019",
+        tier=NotificationTier.T0,
+        trigger_event_name="identity.mfa_changed",
+        title="MFA changed on an account",
+        subject="MFA changed on a Zoiko Billing account",
+        preheader="MFA changed on a Zoiko Billing account.",
+        body_template="Hello {{recipient_first_name}},\n{{change_description}} on {{account_label}}.\nWhen: {{changed_at}}\nFrom IP: {{ip_hint}}",
+        primary_action_label="Review",
+        sender_identity="Zoiko Billing Security",
+        control_rule="T0 security notification; masked IP only (never a complete IP address)",
+        required_variables=("recipient_first_name", "account_label", "change_description", "changed_at", "ip_hint"),
+        sender_identity_kind="platform",
+        control_rule_flags=_T0_MANDATORY_FLAGS,
+        active=True,
+        owner_hook="auth/mfa_service.py:notify_mfa_change",
+    ),
 }
 
 #: event_name -> [template_id, ...]. Built from TEMPLATE_REGISTRY.

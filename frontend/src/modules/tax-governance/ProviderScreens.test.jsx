@@ -446,3 +446,40 @@ describe("tenant MFA", () => {
     expect(svc.listMfaUsers).not.toHaveBeenCalled();
   });
 });
+
+// ── Phase 5d-F: MFA hardening ───────────────────────────────────────────
+
+describe("MFA hardening", () => {
+  it("turning MFA off needs the password and a current code", async () => {
+    svc.getMfaStatus.mockResolvedValue({ enrolled: true, tax_tenant_step_up_required: true, tax_step_up_usable_at: null });
+    svc.disableMfa.mockResolvedValue({ message: "ok" });
+    current.user = APPROVER;
+    renderAt("mfa");
+    fireEvent.click(await screen.findByRole("button", { name: "Turn off MFA" }));
+    fireEvent.change(screen.getByLabelText(/Your current password/), { target: { value: "pw" } });
+    const turnOff = screen.getByRole("button", { name: "Turn off" });
+    expect(turnOff).toBeDisabled();                                               // no factor yet
+    fireEvent.change(screen.getByLabelText(/Code from your app, or a recovery code/), { target: { value: "123456" } });
+    fireEvent.click(turnOff);
+    await waitFor(() => expect(svc.disableMfa).toHaveBeenCalledWith("pw", "123456"));
+  });
+
+  it("says when a new factor becomes usable for approvals", async () => {
+    svc.getMfaStatus.mockResolvedValue({ enrolled: true, tax_tenant_step_up_required: true,
+      tax_step_up_usable_at: "2026-11-07T10:00:00Z", tax_step_up_new_factor_delay_hours: 24 });
+    current.user = APPROVER;
+    renderAt("mfa");
+    expect(await screen.findByText(/New MFA can approve tax changes from/)).toHaveTextContent("24 hours after setup");
+  });
+
+  it("shows the cooling-off refusal with its time, not a generic error", async () => {
+    svc.listProviderTransactions.mockImplementation(() => page([txn({ void_requested_by: 2, owner: "finance_approver" })]));
+    svc.providerTransactionAction.mockRejectedValue(Object.assign(
+      new Error("Your MFA was set up recently. For safety it can approve tax changes from 2026-11-07 10:00 UTC (24 hours after setup)."),
+      { code: "TAX_MFA_FACTOR_COOLING_OFF" }));
+    current.user = APPROVER;
+    renderAt("transactions");
+    fireEvent.click(await screen.findByRole("button", { name: "Approve void" }));
+    expect(await screen.findByText(/can approve tax changes from 2026-11-07 10:00 UTC/)).toBeInTheDocument();
+  });
+});

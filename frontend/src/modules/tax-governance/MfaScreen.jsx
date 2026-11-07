@@ -73,6 +73,7 @@ function Disable({ onDone }) {
   const base = useId();
   const [open, setOpen] = useState(false);
   const [password, setPassword] = useState("");
+  const [factor, setFactor] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   if (!open) return <Button size="sm" onClick={() => setOpen(true)}>Turn off MFA</Button>;
@@ -81,7 +82,7 @@ function Disable({ onDone }) {
       e.preventDefault();
       setBusy(true);
       setError(null);
-      try { await disableMfa(password); setPassword(""); setOpen(false); onDone(); }
+      try { await disableMfa(password, factor); setPassword(""); setFactor(""); setOpen(false); onDone(); }
       catch (err) { setError(err?.message || "Couldn't turn off MFA."); }
       finally { setBusy(false); }
     }}>
@@ -92,8 +93,14 @@ function Disable({ onDone }) {
                  value={password} onChange={(e) => setPassword(e.target.value)} aria-required="true" />
         </Field>
       </div>
-      <Button type="submit" size="sm" loading={busy} disabled={!password}>Turn off</Button>
-      <Button size="sm" onClick={() => { setOpen(false); setPassword(""); }}>Cancel</Button>
+      <div className="w-56">
+        <Field label="Code from your app, or a recovery code" htmlFor={`${base}-factor`} required>
+          <input id={`${base}-factor`} autoComplete="one-time-code" className={FORM_CONTROL_CLASS}
+                 value={factor} onChange={(e) => setFactor(e.target.value)} aria-required="true" />
+        </Field>
+      </div>
+      <Button type="submit" size="sm" loading={busy} disabled={!password || !factor.trim()}>Turn off</Button>
+      <Button size="sm" onClick={() => { setOpen(false); setPassword(""); setFactor(""); }}>Cancel</Button>
     </form>
   );
 }
@@ -180,6 +187,12 @@ export function MfaScreen({ user }) {
             Your MFA: <TaxStatusBadge status={status.enrolled ? "MFA_ENROLLED" : "MFA_NOT_ENROLLED"} />
             {!status.tax_tenant_step_up_required && <span className={MUTED}>(step-up is currently off for tax approvals)</span>}
           </p>
+          {status.enrolled && status.tax_step_up_usable_at && (
+            <p className="text-sm text-amber-900 dark:text-amber-200" role="status">
+              New MFA can approve tax changes from {formatDateTime(status.tax_step_up_usable_at)} (
+              {status.tax_step_up_new_factor_delay_hours} hours after setup, for safety).
+            </p>
+          )}
           {status.enrolled ? <Disable onDone={load} /> : <Enrol onDone={load} />}
         </div>
       )}

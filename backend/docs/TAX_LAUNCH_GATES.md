@@ -301,8 +301,15 @@ NOT_APPLICABLE (G1, fixed).
     does.
   - **Tenant MFA (5d PR 2):** opt-in enrolment and step-up on the regime
     switch, provider activation, mode change and void approvals, plus a
-    two-person org-admin reset. Needs the security owner's approval before
-    merge.
+    two-person org-admin reset. Merged; the security owner is reviewing it
+    after the merge.
+  - **MFA hardening (5d-F):**
+    - disabling MFA needs a factor;
+    - MFA changes are emailed to the user and the org admins (or the
+      security contact);
+    - a new factor waits 24 hours before it can approve tax changes.
+
+    Needs the security owner's approval.
   - Still open: QA and a manual WCAG pass.
 
 ### Gate 07: availability registry and visibility

@@ -142,6 +142,13 @@ class Settings(BaseSettings):
     # neither setting turns the other off. The dev-only MFA_STEP_UP_BYPASS
     # is still refused outside DEBUG (below).
     TAX_TENANT_STEP_UP_REQUIRED: bool = True
+    # Phase 5d-F: a newly enrolled or re-enrolled MFA factor cannot satisfy tax
+    # step-up (tenant or platform) for this many hours, so a stolen password
+    # or session can't enrol a fresh factor and approve straight away.
+    TAX_STEP_UP_NEW_FACTOR_DELAY_HOURS: int = 24
+    # Phase 5d-F: where platform-account MFA changes are reported (a
+    # mailbox the security team watches). Empty: only the user is emailed.
+    SECURITY_CONTACT_EMAIL: str = ""
 
     @model_validator(mode="after")
     def _guard_mfa_bypass(self):

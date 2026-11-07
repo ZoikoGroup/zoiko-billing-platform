@@ -69,6 +69,8 @@ class PlatformAuditAction(str, enum.Enum):
     MFA_CHALLENGE_FAILURE = "mfa_challenge_failure"
     MFA_RECOVERY_CODE_USED = "mfa_recovery_code_used"
     MFA_ADMIN_RESET = "mfa_admin_reset"
+    # Phase 5d-F: tax step-up refused because the factor is still in its cooling-off period.
+    MFA_STEP_UP_REFUSED_NEW_FACTOR = "mfa_step_up_refused_new_factor"
 
     # ── ZB-SA-CMD-003 §6/§7 — Domain B privileged tenant support access ──
     PRIVILEGED_ACCESS_REQUESTED = "privileged_access_requested"

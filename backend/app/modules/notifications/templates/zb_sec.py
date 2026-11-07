@@ -18,12 +18,22 @@ from app.modules.notifications.shell_renderer import render_t0_shell
 _EYEBROW = "Security Notice"
 
 
-def _generic_sec_body(recipient_first_name: str, event_description: str) -> str:
+def _generic_sec_body(recipient_first_name: str, event_description: str, context: dict = None) -> str:
     return (
         f"<p style=\"margin:0 0 16px 0;\">Hello {recipient_first_name},</p>"
         f"<p style=\"margin:0;\">A Zoiko Billing security event was recorded for your "
         f"account: <strong style=\"color:#FFFFFF;\">{event_description}</strong>.</p>"
+        + _when_where(context or {})
     )
+
+
+def _when_where(context: dict) -> str:
+    """Phase 5d-F: when and from where (masked IP), when the sender knows."""
+    if not context.get("changed_at"):
+        return ""
+    return (f"<p style=\"margin:16px 0 0 0;\">When: {context['changed_at']}<br/>"
+            f"From IP: {context.get('ip_hint') or 'unknown'}<br/>"
+            f"If this wasn't you, contact your organization admin or Zoiko Billing support now.</p>")
 
 
 def render_zb_sec_001(context: dict):
@@ -74,7 +84,7 @@ def render_zb_sec_004(context: dict):
 
 def render_zb_sec_005(context: dict):
     subject = "Multi-factor authentication was enabled"
-    body = _generic_sec_body(context["recipient_first_name"], "multi-factor authentication enabled")
+    body = _generic_sec_body(context["recipient_first_name"], "multi-factor authentication enabled", context)
     html = render_t0_shell(
         eyebrow=_EYEBROW, heading="Multi-factor authentication enabled",
         body_html=body, cta_label="Review security settings", cta_url=context.get("security_url", "#"),
@@ -84,7 +94,7 @@ def render_zb_sec_005(context: dict):
 
 def render_zb_sec_006(context: dict):
     subject = "Multi-factor authentication was disabled"
-    body = _generic_sec_body(context["recipient_first_name"], "multi-factor authentication disabled")
+    body = _generic_sec_body(context["recipient_first_name"], "multi-factor authentication disabled", context)
     html = render_t0_shell(
         eyebrow=_EYEBROW, heading="Multi-factor authentication disabled",
         body_html=body, cta_label="Secure account", cta_url=context.get("security_url", "#"),
@@ -202,6 +212,7 @@ def render_zb_sec_017(context: dict):
         f"<p style=\"margin:0;\">An administrator reset multi-factor authentication on your "
         f"Zoiko Billing account for account-recovery reasons. Re-enroll from Settings to "
         f"restore step-up protection.</p>"
+        + _when_where(context)
     )
     html = render_t0_shell(
         eyebrow=_EYEBROW, heading="Your MFA was reset by an administrator",
@@ -230,6 +241,23 @@ def render_zb_sec_018(context: dict):
     return subject, html
 
 
+def render_zb_sec_019(context: dict):
+    """Phase 5d-F: an MFA change on someone's account, for the organization's
+    admins (tenant users) or the security contact (platform accounts)."""
+    subject = "MFA changed on a Zoiko Billing account"
+    body = (
+        f"<p style=\"margin:0 0 16px 0;\">Hello {context['recipient_first_name']},</p>"
+        f"<p style=\"margin:0 0 16px 0;\">{context['change_description']} on "
+        f"<strong style=\"color:#FFFFFF;\">{context['account_label']}</strong>.</p>"
+        f"<p style=\"margin:0;\">When: {context['changed_at']}<br/>From IP: {context['ip_hint']}</p>"
+        f"<p style=\"margin:16px 0 0 0;\">If you don't expect this change, contact the user and "
+        f"Zoiko Billing support. A new factor can't approve tax changes for a cooling-off period.</p>"
+    )
+    html = render_t0_shell(eyebrow=_EYEBROW, heading="MFA changed on an account", body_html=body,
+                           cta_label="Review", cta_url=context.get("security_url", "#"))
+    return subject, html
+
+
 RENDERERS = {
     "ZB-SEC-001": render_zb_sec_001,
     "ZB-SEC-002": render_zb_sec_002,
@@ -248,5 +276,6 @@ RENDERERS = {
     "ZB-SEC-015": render_zb_sec_015,
     "ZB-SEC-016": render_zb_sec_016,
     "ZB-SEC-017": render_zb_sec_017,
+    "ZB-SEC-019": render_zb_sec_019,
     "ZB-SEC-018": render_zb_sec_018,
 }

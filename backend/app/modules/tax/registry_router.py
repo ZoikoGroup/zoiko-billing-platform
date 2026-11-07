@@ -105,7 +105,13 @@ def require_tax_step_up(db: Session, user, data: StepUpRequest) -> None:
     if not settings.TAX_REGISTRY_STEP_UP_REQUIRED:
         logger.warning("TAX_REGISTRY_STEP_UP_REQUIRED is off: tax registry decision by user %s without step-up.", user.id)
         return
-    if not step_up_bypass_active() and not (data.code or data.recovery_code):
+    if step_up_bypass_active():
+        verify_step_up(db, user, code=data.code, recovery_code=data.recovery_code, enforce_when_retired=True)
+        return
+    from app.modules.auth.mfa_service import refuse_new_factor_for_tax
+
+    refuse_new_factor_for_tax(db, user, "tax_registry")              # Phase 5d-F cooling-off
+    if not (data.code or data.recovery_code):
         raise TaxStepUpRequired("MFA step-up is required: provide a current authenticator code or a recovery code.")
     verify_step_up(db, user, code=data.code, recovery_code=data.recovery_code, enforce_when_retired=True)
 

@@ -44,6 +44,13 @@ def code(secret, shift=0):
     return pyotp.TOTP(secret).at(time.time() + shift)
 
 
+@pytest.fixture(autouse=True)
+def _no_cooling_off(monkeypatch):
+    """These tests cover step-up itself; the new-factor delay (Phase 5d-F) is
+    tested in test_tax_phase5d_f_mfa_hardening.py."""
+    monkeypatch.setattr(settings, "TAX_STEP_UP_NEW_FACTOR_DELAY_HOURS", 0)
+
+
 @pytest.fixture()
 def w(db_session):
     w = build_world(db_session, org_code="P5D2")
