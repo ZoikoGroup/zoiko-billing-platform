@@ -104,6 +104,20 @@ def count_queries(db):
 
 
 @pytest.fixture(autouse=True)
+def _regression_gate_off_by_default():
+    """ZB-TAX-ARCH-001 Phase 7 PR 2: approving a rule pack or staged rate needs
+    a current regression report (TAX_REGRESSION_REQUIRED, on in every
+    deployment). Most tests exercise other approval rules, so it is off here;
+    tests/test_tax_phase7_regression.py turns it on and proves the gate."""
+    from app.config import settings
+
+    original = settings.TAX_REGRESSION_REQUIRED
+    settings.TAX_REGRESSION_REQUIRED = False
+    yield
+    settings.TAX_REGRESSION_REQUIRED = original
+
+
+@pytest.fixture(autouse=True)
 def _force_step_up_enforced():
     """MFA_STEP_UP_BYPASS is a developer convenience read from .env, so a
     developer who turns it on locally would otherwise silently stop running

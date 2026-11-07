@@ -108,8 +108,8 @@ class DomesticStandardRatedServicesPack(RulePack):
         if reason:
             return LineResult.not_determined(OUTSIDE, f"{self.code}: outside pack coverage: {reason}.")
         activation = request.activations[0]
-        lookup = RegistryReadService(request.db).lookup_rates(
-            jurisdiction_id=activation.jurisdiction_id, tax_code=self.REGISTRY_TAX_CODE, as_of=request.tax_date)
+        rates = getattr(request, "rate_lookup", None) or RegistryReadService(request.db).lookup_rates
+        lookup = rates(jurisdiction_id=activation.jurisdiction_id, tax_code=self.REGISTRY_TAX_CODE, as_of=request.tax_date)
         matches = [i for i in lookup["items"]
                    if i["component_code"] == self.component_code and i["product_scope"] in self.product_scopes]
         if len(matches) != 1:

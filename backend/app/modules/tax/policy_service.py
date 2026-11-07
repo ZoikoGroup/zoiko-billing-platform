@@ -183,6 +183,7 @@ class _VersionWorkflow:
         errors = self.errors(row)
         if errors:
             raise RegistryStateError("Validation no longer passes: " + "; ".join(errors))
+        self._before_approve(row)
         request = self.approvals.get_request(row.approval_request_id)
         try:
             self.approvals.approve(request, approver_user_id=actor_id)
@@ -194,6 +195,9 @@ class _VersionWorkflow:
         self.db.flush()
         self._log(actor_id, PlatformAuditAction.UPDATE, row, metadata={"approved": True})
         return row
+
+    def _before_approve(self, row) -> None:
+        """Hook for workflow-specific approval gates."""
 
     def reject(self, *, actor_id: int, version_id: int, reason: str):
         row = self.get(version_id)
@@ -465,6 +469,11 @@ class RulePackService(_VersionWorkflow):
     model = TaxRulePackVersion
     request_type = "tax_rule_pack"
     entity_type = "TaxRulePackVersion"
+
+    def _before_approve(self, row) -> None:
+        from app.modules.tax.regression.runner import require_current
+
+        require_current(self.db, "rule_pack", row.id)       # Phase 7 PR 2: current regression report
 
     def _key_filter(self, row):
         return TaxRulePackVersion.code == row.code

@@ -130,3 +130,86 @@ Per shadow:
 | `frontend/.../ProviderOperations.test.jsx` (+2) | The chosen pack, threshold and counts only (axe); the tax lead chooses with step-up and one retry; a reviewer is refused |
 
 **CI result:** _see PR_.
+
+## PR 2: historical regression and boundary tests
+
+### The regression runner (`app/modules/tax/regression/runner.py`)
+
+- **Input.** It replays a fixed set of **anonymised** invoice inputs
+  (`regression/fixtures/*.json`). These are shapes only: countries, buyer
+  status, currency, tax date, line nets. There are no tenant, customer or
+  invoice identifiers, and no production data.
+- **Engine.** Fixtures go through the real native rule packs.
+- **Report.** It lists every change in outcome, rate or tax between the
+  version in force (the baseline) and the candidate:
+
+| Subject | Candidate | Baseline |
+|---|---|---|
+| **Rule pack version** | The pack in code, with the published rates | The results recorded when the ACTIVE version of the same pack was approved. A first version has none, so every case is "new". |
+| **Staged rate** | The published rates with the staged rate laid over them for its validity (through `EngineRequest.rate_lookup`; nothing is published) | The published rates alone |
+
+**What a report records:**
+- each case's per-line outcome, rate and tax;
+- the document tax, using the pack's rounding (UK per line, AU per
+  document);
+- the changed cases (before and after), the unchanged and new ones, and any
+  errors;
+- the fixture-set hash and the baseline reference.
+
+Reports are stored append-only in `tax_regression_reports`. Each run is
+platform-audited.
+
+### The approval gate
+
+Approving a **rule pack version** (`RulePackService.approve`) or a **staged
+rate** (`TaxRegistryPipeline.approve`) is refused without a **current**
+report. A report is current when all three hold:
+- **Same fixtures:** the fixture set is unchanged (same hash).
+- **Same baseline:** the ACTIVE pack, or the rate versions published for
+  that component.
+- **Recent:** run within `TAX_REGRESSION_MAX_AGE_HOURS` (72).
+
+The refusal says which of these failed. `TAX_REGRESSION_REQUIRED` (on by
+default) controls the gate. The test suite turns it off by default, because
+most tests exercise other approval rules;
+`tests/privacy/test_tax_phase7_regression.py` turns it on and proves it.
+
+**Routes** (platform, tax roles):
+- `POST /api/v1/super-admin/tax-registry/regression/{rule_pack|rate}/{id}`
+  runs and attaches a report (TAX_REVIEWER).
+- `GET` the same path returns the latest report and `current_problem`.
+
+**Screen.** The **Historical regression** panel on a rate's and a rule
+pack's detail:
+- whether the report is current, and if not, why approval would be refused;
+- the cases, plus the changed ones with before and after;
+- **Run regression**, for reviewers.
+
+### Boundary cases (`tests/privacy/test_tax_phase7_boundaries.py`)
+
+- **Midnight in the jurisdiction's time zone:**
+  - The UK rate changes at 23:00 UTC on 30 June (00:00 BST); at 22:59 UTC
+    it is still the old rate.
+  - The AU rate changes at 14:00 UTC (00:00 AEST).
+  - At UTC midnight both are past it, because the tax date is the local
+    legal date (`legal_date_at`).
+- **Tax dates either side:**
+  - the day before and the day of the change;
+  - before the first published rate, which is NOT_DETERMINED, never 0%.
+- **A credit note across the change** reverses the original 20% after a
+  25% rate is in force, both in the preview and in the credit note.
+- **Multi-entity organizations:**
+  - a governed GB entity quotes at 20%;
+  - the organization's legacy AU entity can't get a governed quote;
+  - each entity keeps its own regime;
+  - a GB entity billing a French buyer is not determined, never 0%.
+
+### PR 2 tests
+
+| Test file | Covers |
+|---|---|
+| `backend/tests/privacy/test_tax_phase7_regression.py` (8) | Fixtures are anonymised shapes with a stable hash. A rate change lists every changed case (20.00 → 21.00, rate 20 → 21); cases outside the market don't run, and NOT_DETERMINED cases stay unchanged. A rate outside the fixture dates changes nothing. **Rate approval is refused without a report and with changed fixtures, then passes with a current one.** Staleness when the baseline changes and after 72 hours. Rule pack: no-baseline report, results incl. PER_LINE rounding (20.01) and out-of-coverage NOT_DETERMINED, and the approval gate. AU PER_DOCUMENT vs per-line rounding. Routes: a reviewer runs, a publisher reads only, unknown kind 400. |
+| `backend/tests/privacy/test_tax_phase7_boundaries.py` (8) | The boundary cases above |
+| `frontend/.../TaxControlCenter.test.jsx` (+2) | The regression panel: refusal reason, run, changes listed; a publisher can't run |
+
+**CI result:** _see PR_.

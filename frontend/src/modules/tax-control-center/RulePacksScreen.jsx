@@ -11,6 +11,7 @@ import {
   ActionBar, DefinitionList, DetailModal, EvidenceExport, InlineError, LoadMore, MUTED, PANEL, ReasonModal, STRONG, TaxStatusBadge,
   TaxTable, ValidationList, VersionTimeline, humanize, useApprovalVerdict, useCursorList, useStepUp,
 } from "./shared";
+import { RegressionPanel } from "./RegressionPanel";
 
 /* P7 Rule packs: the native packs available in code (their declarations,
  * live source-dependency status), their registry versions, the golden-test
@@ -169,6 +170,7 @@ function PackDetail({ pack, catalogueEntry, user, onChanged }) {
                      act(action, () => rulePackAction(pack.id, action, { reason })); }} />
       <GoldenReportModal open={reporting} pack={pack} onClose={() => setReporting(false)}
                          onDone={(updated) => { setReporting(false); onChanged(updated); }} />
+      <RegressionPanel kind="rule_pack" id={pack.id} user={user} />
       <EvidenceExport noun="rule pack" filename={`tax-evidence-rule_pack-${pack.id}`}
                       fetchBundle={(format) => getEvidenceBundle("rule_pack", pack.id, format)} />
       {stepUp.modal}

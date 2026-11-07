@@ -813,6 +813,9 @@ class TaxRegistryPipeline:
         self._assert_not_maker(row, change, actor_id, "approve")
         self._require_evidence(row)
         self._require_clean(row)
+        from app.modules.tax.regression.runner import require_current
+
+        require_current(self.db, "rate", row.id)            # Phase 7 PR 2
         try:
             self.approvals.approve(change.approval_request, approver_user_id=actor_id)
         except SelfApprovalError as exc:

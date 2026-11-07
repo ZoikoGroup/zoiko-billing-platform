@@ -1,0 +1,33 @@
+{
+  "name": "uk_au_v1",
+  "description": "Anonymised invoice inputs for the UK VAT and AU GST native packs. Shapes only (countries, buyer status, currency, dates, line nets): no tenant, customer or invoice from any environment.",
+  "cases": [
+    {"id": "GB-B2B-ONE-LINE", "pack": "GB-VAT-DOMESTIC-SERVICES", "seller_country": "GB", "buyer_country": "GB",
+     "business": true, "currency": "GBP", "tax_date": "2026-03-01", "transaction_class": "B2B_SERVICES",
+     "lines": [{"net": "100.00"}]},
+    {"id": "GB-B2C-THREE-LINES", "pack": "GB-VAT-DOMESTIC-SERVICES", "seller_country": "GB", "buyer_country": "GB",
+     "business": false, "currency": "GBP", "tax_date": "2026-03-01", "transaction_class": "B2C_SERVICES",
+     "lines": [{"net": "33.33"}, {"net": "33.33"}, {"net": "33.34"}]},
+    {"id": "GB-B2B-PENNIES", "pack": "GB-VAT-DOMESTIC-SERVICES", "seller_country": "GB", "buyer_country": "GB",
+     "business": true, "currency": "GBP", "tax_date": "2026-03-01", "transaction_class": "B2B_SERVICES",
+     "lines": [{"net": "0.07"}, {"net": "0.03"}, {"net": "19.99"}]},
+    {"id": "GB-EXPORT-OUTSIDE", "pack": "GB-VAT-DOMESTIC-SERVICES", "seller_country": "GB", "buyer_country": "FR",
+     "business": true, "currency": "GBP", "tax_date": "2026-03-01", "transaction_class": "B2B_SERVICES",
+     "lines": [{"net": "100.00"}]},
+    {"id": "GB-WRONG-CURRENCY", "pack": "GB-VAT-DOMESTIC-SERVICES", "seller_country": "GB", "buyer_country": "GB",
+     "business": true, "currency": "EUR", "tax_date": "2026-03-01", "transaction_class": "B2B_SERVICES",
+     "lines": [{"net": "100.00"}]},
+    {"id": "GB-GOODS-OUTSIDE", "pack": "GB-VAT-DOMESTIC-SERVICES", "seller_country": "GB", "buyer_country": "GB",
+     "business": true, "currency": "GBP", "tax_date": "2026-03-01", "transaction_class": "B2B_SERVICES",
+     "lines": [{"net": "100.00", "supply_category": "GOODS"}]},
+    {"id": "AU-B2B-ONE-LINE", "pack": "AU-GST-DOMESTIC-SERVICES", "seller_country": "AU", "buyer_country": "AU",
+     "business": true, "currency": "AUD", "tax_date": "2026-03-01", "transaction_class": "B2B_SERVICES",
+     "lines": [{"net": "100.00"}]},
+    {"id": "AU-B2C-PER-DOCUMENT", "pack": "AU-GST-DOMESTIC-SERVICES", "seller_country": "AU", "buyer_country": "AU",
+     "business": false, "currency": "AUD", "tax_date": "2026-03-01", "transaction_class": "B2C_SERVICES",
+     "lines": [{"net": "0.05"}, {"net": "0.05"}, {"net": "0.05"}]},
+    {"id": "AU-EXPORT-OUTSIDE", "pack": "AU-GST-DOMESTIC-SERVICES", "seller_country": "AU", "buyer_country": "NZ",
+     "business": true, "currency": "AUD", "tax_date": "2026-03-01", "transaction_class": "B2B_SERVICES",
+     "lines": [{"net": "100.00"}]}
+  ]
+}
