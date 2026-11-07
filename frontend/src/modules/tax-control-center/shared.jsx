@@ -79,6 +79,8 @@ const STATUS_STYLES = {
   ERROR: { icon: XCircle, label: "Compare failed", tone: "red" },
   EXIT_READY: { icon: BadgeCheck, label: "Exit threshold met (advice)", tone: "green" },
   EXIT_NOT_YET: { icon: Clock, label: "Exit threshold not met yet", tone: "slate" },
+  REGRESSION_CURRENT: { icon: CheckCircle2, label: "Regression report current", tone: "green" },
+  REGRESSION_MISSING: { icon: AlertTriangle, label: "Regression report needed", tone: "amber" },
 };
 
 const TONES = {

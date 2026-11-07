@@ -319,6 +319,11 @@ NOT_APPLICABLE (G1, fixed).
     - the advisory exit signal uses the tax lead's threshold.
 
     `TAX_PHASE7.md`.
+  - **Phase 7 PR 2:**
+    - a historical regression report (anonymised fixtures) must be current
+      before a rate or rule pack is approved;
+    - boundary tests cover local-midnight rate changes, tax dates either
+      side, a credit note across a change, and multi-entity organizations.
   - Still open: QA and a manual WCAG pass.
 
 ### Gate 07: availability registry and visibility

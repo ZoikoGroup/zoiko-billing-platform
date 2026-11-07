@@ -162,6 +162,10 @@ class Settings(BaseSettings):
     TAX_SHADOW_ENABLED: bool = True
     TAX_SHADOW_INTERVAL_MINUTES: int = 15
     TAX_SHADOW_BATCH_SIZE: int = 200
+    # Phase 7 PR 2: approving a rule pack or a staged rate needs a current
+    # regression report (app/modules/tax/regression/runner.py).
+    TAX_REGRESSION_REQUIRED: bool = True
+    TAX_REGRESSION_MAX_AGE_HOURS: int = 72
     # Phase 5d-F: where platform-account MFA changes are reported (a
     # mailbox the security team watches). Empty: only the user is emailed.
     SECURITY_CONTACT_EMAIL: str = ""

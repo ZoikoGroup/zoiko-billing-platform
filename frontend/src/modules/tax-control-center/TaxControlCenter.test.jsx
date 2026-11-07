@@ -13,7 +13,7 @@ const { svc, current } = vi.hoisted(() => ({
     "listStagedRates", "getStagedRateComparison", "stagedRateAction", "stageRate", "amendStagedRate",
     "listMarketAvailability", "draftAvailability", "amendAvailability", "availabilityAction", "listJurisdictions",
     "listRulePacks", "getRulePackCatalogue", "registerRulePack", "amendRulePack", "rulePackAction", "getStagedRate",
-    "listAuthorities", "listTaxTypes", "listComponents", "listTaxPeople", "getEvidenceBundle",
+    "listAuthorities", "listTaxTypes", "listComponents", "listTaxPeople", "getEvidenceBundle", "getRegression", "runRegression",
   ].map((k) => [k, vi.fn()])),
 }));
 vi.mock("../../api/client", async (importOriginal) => ({
@@ -61,6 +61,7 @@ beforeEach(() => {
   svc.listAuthorities.mockImplementation(() => page([{ id: 1, code: "GB-HMRC", name: "HM Revenue & Customs" }]));
   svc.listTaxTypes.mockImplementation(() => page([{ id: 2, code: "VAT", name: "Value added tax" }]));
   svc.listComponents.mockImplementation(() => page([{ id: 1, code: "GB-VAT", name: "UK VAT", jurisdiction_code: "GB", tax_type: "VAT" }]));
+  svc.getRegression.mockResolvedValue({ report: null, current_problem: "no regression report has been run" });
   svc.listTaxPeople.mockImplementation(() => page([
     { id: 9, name: "Mara Maker", platform_role: "TAX_REVIEWER", active: true },
     { id: 7, name: "Chen Checker", platform_role: "TAX_PUBLISHER", active: true },
@@ -438,5 +439,47 @@ describe("audit-evidence export", () => {
     fireEvent.click(within(detail).getByRole("button", { name: "Export evidence (JSON)" }));
     expect(await within(detail).findByText("You don't have access to this.")).toBeInTheDocument();
     expect(svc.getEvidenceBundle).toHaveBeenCalledWith("source_revision", 4, "json");
+  });
+});
+
+// ── Phase 7 PR 2: historical regression on the rate detail ──────────────
+
+describe("historical regression", () => {
+  const rate = { id: 31, status: "IN_APPROVAL", component_code: "GB-VAT", tax_code: "standard", rate_percent: "21",
+    valid_from: "2026-01-01", created_at: "2026-11-05T09:00:00Z", maker_user_id: 9 };
+
+  it("says approval needs a current report, runs it and lists what changed", async () => {
+    current.user = { id: 2, role: "super_admin", platform_role: "tax_reviewer" };
+    svc.listStagedRates.mockImplementation(() => page([rate]));
+    svc.getStagedRateComparison.mockResolvedValue({ staged: rate, superseded: null, overlapping_active: [], conflicts: [],
+      active_for_key: [], component: { code: "GB-VAT" } });
+    svc.getRegression
+      .mockResolvedValueOnce({ report: null, current_problem: "no regression report has been run" })
+      .mockResolvedValue({ current_problem: null, report: { id: 4, cases: 6, fixture_sets: ["uk_au_v1"], unchanged: 4,
+        new_cases: [], generated_at: "2026-11-07T09:00:00Z",
+        changed: [{ case: "GB-B2B-ONE-LINE", before: { tax: "20.00", lines: [{ rate: "20" }] },
+                    after: { tax: "21.00", lines: [{ rate: "21" }] } }] } });
+    svc.runRegression.mockResolvedValue({ id: 4 });
+    renderAt("/super-admin/tax/rates");
+    fireEvent.click(await screen.findByRole("button", { name: /Open/ }));
+    const panel = await screen.findByRole("group", { name: "Regression report" });
+    expect(await within(panel).findByText("Regression report needed")).toBeInTheDocument();
+    expect(within(panel).getByText(/Approval is refused until it is current: no regression report has been run/)).toBeInTheDocument();
+    fireEvent.click(within(panel).getByRole("button", { name: "Run regression" }));
+    await waitFor(() => expect(svc.runRegression).toHaveBeenCalledWith("rate", 31));
+    expect(await within(panel).findByText("Regression report current")).toBeInTheDocument();
+    expect(within(panel).getByText("GB-B2B-ONE-LINE")).toBeInTheDocument();
+    expect(within(panel).getByText(/tax 20.00 → 21.00 \(rate 20% → 21%\)/)).toBeInTheDocument();
+  });
+
+  it("a publisher sees the report but can't run it", async () => {
+    svc.listStagedRates.mockImplementation(() => page([rate]));
+    svc.getStagedRateComparison.mockResolvedValue({ staged: rate, superseded: null, overlapping_active: [], conflicts: [],
+      active_for_key: [], component: { code: "GB-VAT" } });
+    renderAt("/super-admin/tax/rates");
+    fireEvent.click(await screen.findByRole("button", { name: /Open/ }));
+    const panel = await screen.findByRole("group", { name: "Regression report" });
+    expect(await within(panel).findByText("Regression report needed")).toBeInTheDocument();
+    expect(within(panel).queryByRole("button", { name: /Run regression/ })).not.toBeInTheDocument();
   });
 });

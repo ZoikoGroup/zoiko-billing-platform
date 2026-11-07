@@ -747,6 +747,30 @@ def provider_health(db: Session = Depends(get_db),
     return aggregate_health(db)
 
 
+@admin_router.post("/regression/{subject_kind}/{subject_id}",
+                   summary="Run the historical regression for a rule pack version or a staged rate and attach it")
+def run_regression(subject_kind: str, subject_id: int, db: Session = Depends(get_db),
+                   current_user=Depends(require_capability("tax_registry.write"))):
+    from app.modules.tax.regression.runner import build_report, currency_problem, view_report
+
+    row = build_report(db, subject_kind, subject_id, current_user.id)
+    db.commit()
+    return {**view_report(row), "current_problem": currency_problem(db, subject_kind, subject_id)}
+
+
+@admin_router.get("/regression/{subject_kind}/{subject_id}",
+                  summary="The regression report attached to a rule pack version or staged rate, and whether it is current")
+def get_regression(subject_kind: str, subject_id: int, db: Session = Depends(get_db),
+                   _user=Depends(require_capability("tax_registry.read"))):
+    from app.modules.tax.regression.runner import currency_problem, latest, view_report
+
+    if subject_kind not in ("rule_pack", "rate"):
+        raise BadRequestException("subject_kind must be rule_pack or rate.")
+    report = latest(db, subject_kind, subject_id)
+    return {"report": view_report(report),
+            "current_problem": currency_problem(db, subject_kind, subject_id)}
+
+
 @admin_router.get("/shadow/selections", summary="Rule packs chosen for shadow compare, with exit thresholds")
 def list_shadow_selections(db: Session = Depends(get_db), _user=Depends(require_capability("tax_registry.read"))):
     from app.modules.tax.shadow_models import TaxShadowSelection

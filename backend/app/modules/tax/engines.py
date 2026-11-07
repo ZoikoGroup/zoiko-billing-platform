@@ -119,6 +119,9 @@ class EngineRequest:
     line: LineInput
     activations: list
     business_buyer: Optional[bool]          # True / False (consumer treatment) / None (unresolved)
+    # Phase 7 PR 2: the regression runner lays a candidate (staged) rate over
+    # the published ones through this; None = the published registry.
+    rate_lookup: Optional[object] = None
 
 
 class TaxEngine(ABC):

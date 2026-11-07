@@ -129,3 +129,8 @@ export const listShadowSelections = () => api.get(`${BASE}/shadow/selections`);
 export const chooseShadowSelection = (body) => api.post(`${BASE}/shadow/selections`, body);
 export const endShadowSelection = (id) => api.post(`${BASE}/shadow/selections/${id}/end`);
 export const getShadowAggregate = () => api.get(`${BASE}/shadow/aggregate`);
+
+// ── Phase 7 PR 2: historical regression (attached before approval) ──────
+/** kind: rule_pack | rate */
+export const getRegression = (kind, id) => api.get(`${BASE}/regression/${kind}/${id}`);
+export const runRegression = (kind, id) => api.post(`${BASE}/regression/${kind}/${id}`);

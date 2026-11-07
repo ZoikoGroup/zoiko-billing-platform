@@ -75,6 +75,9 @@ The screens disable a button you may not use and say why.
    - Take `valid_from` from the legal instrument, and pick the legal source
      from 1.1.
 2. **Submit.** Validate, then **Submit for approval** with a reason.
+   Then click **Run regression** on the rate's detail (Phase 7). It
+   replays the anonymised fixtures and lists every case whose tax changes.
+   Approval is refused until a current report is attached.
 3. **Approve and publish.** Tax lead: in `/super-admin/tax/inbox` (or the
    rate's detail), check "Current vs proposed" and any conflicts. Then
    **Approve**, then **Publish**; each asks for an MFA code.
@@ -96,7 +99,8 @@ The screens disable a button you may not use and say why.
    - with a failed or missing report;
    - with an unapproved source;
    - whose declarations have drifted from the code.
-3. **Validate**, then **Submit for approval**.
+3. **Validate**, then **Submit for approval**. Then **Run regression** on the pack's detail; approval
+   needs a current report.
 4. **Approve and publish.** Tax lead: work through the pack's sign-off
    checklist, shown in the pack's detail and in `TAX_PHASE3B.md`:
    - coverage;
