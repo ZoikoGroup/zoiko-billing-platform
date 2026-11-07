@@ -144,3 +144,70 @@ ENVIRONMENT=staging python -m scripts.seed_tax_pilot_rehearsal --with-platform-s
 | `backend/tests/test_tax_phase6_staging_seed.py` (5) | The seed creates every runbook role, the platform staff (no organization), GB and AU entities on Legacy manual, TEST customers on a `.test` domain, products, and unique passwords; it is idempotent; it refuses production (explicit, and unset with DEBUG off); it refuses a deliverable email domain. The workflow's guards: both triggers, the `staging` environment, `ENVIRONMENT=staging`, production credentials off, no bypass, no live Stripe key, the production-host and production-VM refusals, its own units, migrations, and its own concurrency group. |
 
 **CI result:** _see PR_.
+
+## PR 2: tax monitoring
+
+### What monitoring and alerting the app already had
+
+| What | Where | What it does |
+|---|---|---|
+| **Attention Engine** | `super_admin/attention_service.py`, `AttentionItem` | The platform's alerting system. Each item has a severity (P0–P3), with SLA clocks, deduplication by `source_key`, escalation on repeats, auto-resolve, and the operator lifecycle (acknowledge, assign, resolve, suppress). Sources: scheduler job failures, kill-switch changes, Stripe/integration failures, entitlement enforcement and plan-change billing. Shown in the Super Admin Command Center. |
+| **Scheduler job tracking** | `core/scheduler.py` (`JobRunLog`) | Every recurring job's run, status and error. A failing job raises an Attention item, and it auto-resolves on recovery. |
+| **Telemetry and the Metric Dictionary** | `telemetry_service.py`, `metric_dictionary.py` | Cross-tenant operational counts, plus a code-reviewed registry where every Command Center metric must be defined |
+| **Health endpoints** | `/health`, `/ready` | Liveness and readiness; the deploy checks `/ready` |
+| **Launch readiness** | `launch_readiness_service.py` | Configuration checks, such as MFA and keys |
+| **Ops email** | ZB-OPS-* templates | Email that supplements the Attention Engine for some delivery incidents |
+| **Tax, already** | `aggregate_health`, the heartbeat, the circuit breaker | Provider health on `/super-admin/tax/providers`. A stale heartbeat and an open circuit already block issuing, but nothing raised an **alert** for them. |
+
+There is no Prometheus, Sentry or external pager in the codebase. The tax
+alerts therefore use the **Attention Engine**, the same system everything
+else alerts through. Their metrics are registered in the **Metric
+Dictionary**.
+
+### What PR 2 adds
+
+**`app/modules/tax/monitoring.py`:**
+- `collect()` computes aggregate metrics.
+- `evaluate()` compares them with the thresholds.
+- `publish()` opens or updates one Attention item per firing alert
+  (source `tax_monitoring`, key `tax:<alert>`) and auto-resolves the ones
+  that cleared.
+- It runs as the tracked scheduled job `tax_monitoring_job`, every
+  `TAX_MONITORING_INTERVAL_MINUTES`. A failing run itself raises the
+  standard job-failure alert.
+
+| Alert | Severity | Default threshold (setting) |
+|---|---|---|
+| `tax.outbox_oldest_unresolved` | P1 | 30 min (`TAX_ALERT_OUTBOX_OLDEST_AGE_MINUTES`) |
+| `tax.reconciliation_heartbeat` | P1 | 15 min, never run, or last pass failed (`TAX_ALERT_HEARTBEAT_STALE_MINUTES`) |
+| `tax.circuit_open:<provider>` | P1 | Circuit OPEN |
+| `tax.provider_unavailable:<market>` | P2 | 20% (`TAX_ALERT_PROVIDER_UNAVAILABLE_RATE`) over 60 min (`TAX_ALERT_RATE_WINDOW_MINUTES`), at least 10 quotes (`TAX_ALERT_RATE_MIN_QUOTES`) |
+| `tax.not_determined:<market>` | P3 | 50% (`TAX_ALERT_NOT_DETERMINED_RATE`), same window and minimum |
+| `tax.review_backlog` | P2 | 5 rows (`TAX_ALERT_REVIEW_BACKLOG`) |
+| `tax.secret_store_failures` | P1 | 1 refused quote in the window (`TAX_ALERT_SECRET_STORE_FAILURES`) |
+
+- **How "market" is measured:** the market is the quote's supply country.
+- **How secret-store failures are counted:** from quotes refused with
+  "provider credentials are unavailable", which every secret-store failure
+  on the quoting path records. No new table.
+- **Settings:** `TAX_MONITORING_ENABLED` (on) and
+  `TAX_MONITORING_INTERVAL_MINUTES` (5).
+- **Read-only endpoint:** `GET /api/v1/super-admin/tax-registry/monitoring`
+  returns the metrics, thresholds and each alert's state. It needs
+  `tax_registry.read` or `reliability.read`, the same as provider health.
+  Tenant users are refused.
+- **Metric Dictionary:** seven `zb.tax.*.v1` metrics.
+- **Runbook:** `TAX_MONITORING_RUNBOOK.md`, one entry per alert.
+
+**Aggregate only (T13):**
+- Metrics and alert texts carry counts, ages, rates, provider names and
+  country codes. Never an organization, invoice, customer or user.
+- Attention items carry no `organization_id`.
+
+### PR 2 tests
+
+| Test file | Covers |
+|---|---|
+| `backend/tests/privacy/test_tax_phase6_monitoring.py` (10) | Each alert fires at its threshold and clears through the Attention Engine: outbox age (fires later, clears once reconciled); heartbeat (never run, stale, failed, configurable, off when reconciliation is disabled); the circuit per provider; the rates per market (window, minimum count, configurable threshold); the review backlog; secret-store failures. **No tenant identifiers** in alerts or metrics, and no organization on the items. Endpoint: tax and reliability roles, aggregate only; tenant users 403. The job is scheduled; the metrics are in the dictionary; monitoring can be switched off. |
+
+**CI result:** _see PR_.

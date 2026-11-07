@@ -238,6 +238,13 @@ def get_job_definitions() -> list[tuple[str, int, str, str]]:
             "Financial Integrity Check",
         ),
         (
+            # ZB-TAX-ARCH-001 Phase 6 PR 2: aggregate tax metrics -> Attention Engine.
+            "app.modules.tax.monitoring:run_tax_monitoring_job",
+            getattr(settings, "TAX_MONITORING_INTERVAL_MINUTES", 5),
+            "tax_monitoring_job",
+            "Tax Monitoring and Alerts",
+        ),
+        (
             "app.modules.super_admin.tasks.reconciliation:run_reconciliation_job",
             settings.RECONCILIATION_INTERVAL_MINUTES,
             "reconciliation_job",

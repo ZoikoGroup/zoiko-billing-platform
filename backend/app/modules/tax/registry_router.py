@@ -746,6 +746,17 @@ def provider_health(db: Session = Depends(get_db),
     return aggregate_health(db)
 
 
+@admin_router.get("/monitoring", summary="Tax monitoring: aggregate metrics, thresholds and alert states")
+def tax_monitoring(db: Session = Depends(get_db),
+                   _user=Depends(require_any_capability("tax_registry.read", "reliability.read"))):
+    """Phase 6 PR 2. Aggregate only (T13). Read-only: alerts are raised by the
+    scheduled tax_monitoring_job into the Attention Engine."""
+    from app.modules.tax.monitoring import collect, evaluate
+
+    metrics = collect(db)
+    return {**metrics, "alerts": [{**a, "severity": a["severity"].name} for a in evaluate(metrics)]}
+
+
 def _provider_freeze(action: str):
     def handler(provider_name: str, db: Session = Depends(get_db),
                 current_user=Depends(require_capability("tax_registry.approve")),

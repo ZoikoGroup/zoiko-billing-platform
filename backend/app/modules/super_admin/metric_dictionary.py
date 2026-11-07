@@ -56,6 +56,41 @@ def _register(defn: MetricDefinition) -> MetricDefinition:
     return defn
 
 
+# ── Tax monitoring (ZB-TAX-ARCH-001 Phase 6 PR 2; app/modules/tax/monitoring.py) ──
+
+def _tax(metric_id, name, definition, unit, numerator, denominator=None):
+    _register(MetricDefinition(
+        metric_id=metric_id, display_name=name, definition=definition, domain="C", unit=unit,
+        numerator=numerator, denominator=denominator, period_basis="point_in_time", timezone="UTC",
+        currency_basis=None, authoritative_source="tax tables (live query); aggregate only, no tenant identifiers",
+        refresh_cadence_seconds=0, stale_threshold_seconds=None, unknown_threshold_seconds=None,
+        owner="Tax Engineering", version="v1", effective_date="2026-11-07",
+        drilldown_route="/super-admin/tax/providers",
+    ))
+
+
+_tax("zb.tax.outbox_oldest_unresolved_age_seconds.v1", "Oldest unresolved tax outbox row",
+     "Age of the oldest provider outbox row in PENDING, UNCERTAIN, REMOTE_COMMITTED or REVIEW_REQUIRED.",
+     "duration_seconds", "now - MIN(created_at) over unresolved tax_provider_outbox rows")
+_tax("zb.tax.reconciliation_heartbeat_age_seconds.v1", "Tax reconciliation heartbeat age",
+     "Seconds since the reconciliation worker last finished a pass.", "duration_seconds",
+     "now - tax_job_heartbeats.last_finished_at")
+_tax("zb.tax.circuits_open.v1", "Tax provider circuits open",
+     "Providers whose circuit breaker is OPEN.", "count", "COUNT(tax_provider_circuits WHERE state = OPEN)")
+_tax("zb.tax.provider_unavailable_rate.v1", "PROVIDER_UNAVAILABLE rate by market",
+     "Share of tax quotes per supply country that were PROVIDER_UNAVAILABLE in the window.", "rate",
+     "COUNT(quotes WHERE status = PROVIDER_UNAVAILABLE)", "COUNT(quotes) per market in the window")
+_tax("zb.tax.not_determined_rate.v1", "NOT_DETERMINED rate by market",
+     "Share of tax quotes per supply country that were NOT_DETERMINED (needs evidence, unsupported, "
+     "or a NOT_DETERMINED line) in the window.", "rate",
+     "COUNT(NOT_DETERMINED quotes)", "COUNT(quotes) per market in the window")
+_tax("zb.tax.review_required_backlog.v1", "Tax REVIEW_REQUIRED backlog",
+     "Provider outbox rows waiting for a person.", "count", "COUNT(tax_provider_outbox WHERE state = REVIEW_REQUIRED)")
+_tax("zb.tax.secret_store_failures.v1", "Tax secret-store failures",
+     "Quotes refused in the window because provider credentials were unavailable.", "count",
+     "COUNT(quotes WHERE refusal_reason mentions unavailable credentials)")
+
+
 # ── Domain C — cross-tenant operational telemetry ──────────────────────────
 
 _register(MetricDefinition(
