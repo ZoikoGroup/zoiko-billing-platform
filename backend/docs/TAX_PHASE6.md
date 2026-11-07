@@ -211,3 +211,47 @@ Dictionary**.
 | `backend/tests/privacy/test_tax_phase6_monitoring.py` (10) | Each alert fires at its threshold and clears through the Attention Engine: outbox age (fires later, clears once reconciled); heartbeat (never run, stale, failed, configurable, off when reconciliation is disabled); the circuit per provider; the rates per market (window, minimum count, configurable threshold); the review backlog; secret-store failures. **No tenant identifiers** in alerts or metrics, and no organization on the items. Endpoint: tax and reliability roles, aggregate only; tenant users 403. The job is scheduled; the metrics are in the dictionary; monitoring can be switched off. |
 
 **CI result:** _see PR_.
+
+## PR 3: PyJWT replaces python-jose
+
+**Why.** python-jose forced `pyasn1<0.5.0` and `ecdsa`, which have known
+advisories. It also forced `pyasn1-modules` to be held at 0.3.0 for
+google-auth. These were recorded as accepted risks in `requirements.txt`
+and `TAX_PHASE4D0.md`. Our tokens are HS256 only, and PyJWT needs none of
+those packages for HS256.
+
+**What changed:**
+- `requirements.txt`: `python-jose[cryptography]==3.4.0` is replaced by
+  `PyJWT==2.10.1`. The `pyasn1-modules==0.3.0` pin and both accepted-risk
+  notes are removed; `ecdsa` is no longer installed.
+- `app/core/security.py` and `app/modules/auth/google_oauth.py` use
+  `import jwt` and catch `jwt.PyJWTError`. The calls are otherwise the
+  same: `encode(..., algorithm=settings.ALGORITHM)` and
+  `decode(..., algorithms=[settings.ALGORITHM], issuer=settings.JWT_ISSUER)`.
+
+**Compatibility.**
+- **Same token format.** Both libraries produce the same compact HS256
+  JWS, with header `{"alg":"HS256","typ":"JWT"}` and `exp` as an integer.
+- **No forced logout.** Access and refresh tokens issued before the deploy
+  keep working until they expire.
+- **Claims pass PyJWT's checks unchanged.** Our `sub` is the user's email,
+  a string, which PyJWT 2.10 requires, so nothing had to be relaxed.
+- **Same security rules:**
+  - only HS256 is accepted, so `alg: none` and other algorithms are
+    refused;
+  - the issuer must match;
+  - `exp` is enforced;
+  - the token `type` (access, refresh, Google state, signup ticket) is
+    still checked by our code.
+
+### PR 3 tests
+
+| Test file | Covers |
+|---|---|
+| `backend/tests/test_jwt_pyjwt_migration.py` (10) | **Tokens issued by python-jose 3.4.0** (fixtures generated before the switch) still validate: an access token with all claims; a refresh token, only as refresh; an expired one is still rejected; a wrong key is rejected. Issue and verify round trip (HS256 header, integer `exp`); expiry; **tampering**: a changed payload, a changed signature, `alg: none`, HS512, a wrong key, malformed input; a missing or wrong issuer; Google OAuth state and signup tickets (round trip, tamper, wrong type). No code imports `jose`, and the requirements no longer pin python-jose, pyasn1 or ecdsa. |
+| `backend/tests/test_auth_token_security.py` | Unchanged; now uses PyJWT for its forged-token cases |
+
+The auth-related suites were also run with python-jose **uninstalled**, to
+prove nothing else imports it.
+
+**CI result:** _see PR_.
