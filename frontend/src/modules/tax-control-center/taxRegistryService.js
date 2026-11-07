@@ -122,3 +122,10 @@ export const listCoverage = ({ cursor } = {}) => api.get(`${REF}/coverage`, { pa
 /** Published reference rates for one jurisdiction on a date: never an amount owed, never an implied 0%. */
 export const lookupReferenceRates = ({ jurisdiction_id, as_of }) =>
   api.get(`${REF}/rates`, { params: { jurisdiction_id, as_of: as_of || undefined } });
+
+// ── Phase 7 PR 1: shadow compare (platform) ─────────────────────────────
+export const listShadowSelections = () => api.get(`${BASE}/shadow/selections`);
+/** Tax lead (TAX_PUBLISHER) with MFA step-up: body carries code / recovery_code on retry. */
+export const chooseShadowSelection = (body) => api.post(`${BASE}/shadow/selections`, body);
+export const endShadowSelection = (id) => api.post(`${BASE}/shadow/selections/${id}/end`);
+export const getShadowAggregate = () => api.get(`${BASE}/shadow/aggregate`);

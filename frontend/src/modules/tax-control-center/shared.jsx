@@ -70,6 +70,15 @@ const STATUS_STYLES = {
   COMMIT: { icon: KeyRound, label: "Commit (issues invoices)", tone: "slate" },
   MFA_ENROLLED: { icon: ShieldCheck, label: "MFA on", tone: "green" },
   MFA_NOT_ENROLLED: { icon: Circle, label: "MFA not set up", tone: "slate" },
+  // Shadow compare (Phase 7)
+  SHADOWING: { icon: Clock, label: "Shadowing", tone: "blue" },
+  ENDED: { icon: Archive, label: "Ended", tone: "slate" },
+  SHADOW_MATCH: { icon: CheckCircle2, label: "Matches", tone: "green" },
+  SHADOW_DIFFERENT: { icon: AlertTriangle, label: "Differs", tone: "amber" },
+  NOT_DETERMINED: { icon: XCircle, label: "Would be blocked: not determined", tone: "red" },
+  ERROR: { icon: XCircle, label: "Compare failed", tone: "red" },
+  EXIT_READY: { icon: BadgeCheck, label: "Exit threshold met (advice)", tone: "green" },
+  EXIT_NOT_YET: { icon: Clock, label: "Exit threshold not met yet", tone: "slate" },
 };
 
 const TONES = {

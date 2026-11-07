@@ -153,3 +153,21 @@ export const listMfaUsers = () => api.get(`${T}/mfa/users`);
 export const requestMfaReset = (userId, reason) => api.post(`${T}/mfa/users/${userId}/reset-request`, { reason });
 export const approveMfaReset = (userId) => api.post(`${T}/mfa/users/${userId}/reset-approve`);
 export const cancelMfaReset = (userId) => api.post(`${T}/mfa/users/${userId}/reset-cancel`);
+
+// ── Phase 7 PR 1: shadow compare (the entity stays legacy) ──────────────
+export const listShadowEnrolments = ({ seller_entity_id, cursor } = {}) =>
+  api.get(`${T}/shadow/enrolments`, page({ seller_entity_id, cursor }));
+export const proposeShadow = (body) => api.post(`${T}/shadow/enrolments`, body);
+export const decideShadow = (id, approve, body = {}) =>
+  api.post(`${T}/shadow/enrolments/${id}/${approve ? "approve" : "reject"}`, body);
+export const withdrawShadow = (id) => api.post(`${T}/shadow/enrolments/${id}/withdraw`);
+export const endShadow = (id, reason) => api.post(`${T}/shadow/enrolments/${id}/end`, reason ? { reason } : {});
+export const getShadowSummary = ({ seller_entity_id } = {}) =>
+  api.get(`${T}/shadow/summary`, { params: { seller_entity_id: seller_entity_id || undefined } });
+export const listShadowComparisons = ({ seller_entity_id, outcome, cause, cursor } = {}) =>
+  api.get(`${T}/shadow/comparisons`, page({ seller_entity_id: seller_entity_id || undefined,
+    outcome: outcome || undefined, cause: cause || undefined, cursor }));
+export const exportShadowComparisons = ({ seller_entity_id, outcome, cause } = {}) =>
+  api.get(`${T}/shadow/comparisons`, { params: { format: "csv", seller_entity_id: seller_entity_id || undefined,
+    outcome: outcome || undefined, cause: cause || undefined } });
+export const getShadowComparison = (id) => api.get(`${T}/shadow/comparisons/${id}`);

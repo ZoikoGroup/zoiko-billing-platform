@@ -312,6 +312,13 @@ NOT_APPLICABLE (G1, fixed).
     Needs the security owner's approval.
   - Phase 6 PR 1: a staging environment and a pilot-rehearsal seed
     (`TAX_PHASE6.md`), where the QA walkthrough can be run.
+  - **Phase 7 PR 1, shadow compare (handoff step 06):**
+    - a legacy entity can run a two-person shadow period;
+    - governed results are compared per invoice, with causes, drill-down
+      and CSV;
+    - the advisory exit signal uses the tax lead's threshold.
+
+    `TAX_PHASE7.md`.
   - Still open: QA and a manual WCAG pass.
 
 ### Gate 07: availability registry and visibility

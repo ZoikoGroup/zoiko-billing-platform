@@ -51,6 +51,7 @@ from app.modules.tax.policy_schemas import (
     ProviderConnectionCreate,
     ProviderCredentialsSet,
     ProviderModeChangeDecision,
+    ShadowEnrolRequest,
     ProviderModeChangeRequest,
     ReasonRequest,
     RegimeChangeRequest,
@@ -598,6 +599,107 @@ def tenant_evidence_bundle(kind: str, record_id: int, format: str = Query("json"
     if format == "html":
         return HTMLResponse(render_html(bundle), headers={"Cache-Control": "no-store", "X-Bundle-SHA256": bundle["bundle_sha256"]})
     return bundle
+
+
+# ── Phase 7 PR 1: shadow compare (entity stays LEGACY_MANUAL) ──
+
+@router.get("/shadow/enrolments", summary="Shadow enrolments (any tenant tax role)")
+def list_shadow_enrolments(seller_entity_id: Optional[int] = Query(None), page: PageParams = Depends(),
+                           db: Session = Depends(get_db), organization_id: int = Depends(get_organization_id)):
+    from app.modules.tax.shadow_service import ShadowEnrolmentService, exit_signal, view_enrolment
+
+    rows, next_cursor = paginate(ShadowEnrolmentService(db).list(organization_id, seller_entity_id), page)
+    return {"items": [{**view_enrolment(r), "exit_signal": exit_signal(db, r) if r.approved_at else None}
+                      for r in rows], "next_cursor": next_cursor}
+
+
+@router.post("/shadow/enrolments", status_code=status.HTTP_201_CREATED,
+             summary="Propose shadowing an entity (org admin; a different finance approver approves)",
+             dependencies=[Depends(get_current_org_admin)])
+def propose_shadow(data: ShadowEnrolRequest, db: Session = Depends(get_db),
+                   organization_id: int = Depends(get_organization_id), current_user=Depends(get_current_user)):
+    from app.modules.tax.shadow_service import ShadowEnrolmentService, view_enrolment
+
+    return view_enrolment(ShadowEnrolmentService(db).propose(organization_id, current_user.id, data.seller_entity_id,
+                                                             data.reason))
+
+
+def _shadow_action(action: str):
+    def handler(enrolment_id: int, data: Optional[DecisionRequest] = None, db: Session = Depends(get_db),
+                organization_id: int = Depends(get_organization_id), current_user=Depends(get_current_user)):
+        from app.modules.tax.shadow_service import ShadowEnrolmentService, view_enrolment
+
+        svc, reason = ShadowEnrolmentService(db), (data.reason if data else None)
+        if action in ("approve", "reject"):
+            row = svc.decide(organization_id, current_user.id, enrolment_id, approve=action == "approve", reason=reason)
+        elif action == "withdraw":
+            row = svc.withdraw(organization_id, current_user.id, enrolment_id)
+        else:
+            row = svc.end(organization_id, current_user.id, enrolment_id, reason)
+        return view_enrolment(row)
+    return handler
+
+
+for _action, _dep, _summary in (
+    ("approve", get_current_finance_approver, "Approve shadowing (a different user)"),
+    ("reject", get_current_finance_approver, "Reject shadowing"),
+    ("withdraw", get_current_org_admin, "Withdraw a shadow proposal"),
+    ("end", get_current_org_admin, "End shadowing"),
+):
+    router.add_api_route(f"/shadow/enrolments/{{enrolment_id}}/{_action}", _shadow_action(_action), methods=["POST"],
+                         dependencies=[Depends(_dep)], summary=_summary)
+
+
+@router.get("/shadow/summary", summary="Shadow summary: match rate, differences by cause, would-be blocks, exit signal")
+def shadow_summary(seller_entity_id: Optional[int] = Query(None), db: Session = Depends(get_db),
+                   organization_id: int = Depends(get_organization_id)):
+    from app.modules.tax.shadow_service import exit_threshold, summary
+
+    return {**summary(db, organization_id, seller_entity_id), "exit_threshold": exit_threshold(db)}
+
+
+SHADOW_CSV_COLUMNS = ("invoice_number", "issue_date", "currency", "outcome", "cause", "legacy_tax", "shadow_tax",
+                      "tax_difference", "pack_code", "pack_version", "reason")
+
+
+@router.get("/shadow/comparisons", summary="Shadow comparisons (drill-down; format=csv to export)")
+def list_shadow_comparisons(seller_entity_id: Optional[int] = Query(None),
+                            outcome: Optional[str] = Query(None, max_length=30),
+                            cause: Optional[str] = Query(None, max_length=60),
+                            format: str = Query("json", pattern="^(json|csv)$"),
+                            page: PageParams = Depends(), db: Session = Depends(get_db),
+                            organization_id: int = Depends(get_organization_id),
+                            current_user=Depends(get_current_user)):
+    from app.modules.tax.shadow_models import TaxShadowComparison
+    from app.modules.tax.shadow_service import view_comparison
+
+    q = db.query(TaxShadowComparison).filter(TaxShadowComparison.organization_id == organization_id)
+    if seller_entity_id:
+        q = q.filter(TaxShadowComparison.seller_entity_id == seller_entity_id)
+    if outcome:
+        q = q.filter(TaxShadowComparison.outcome == outcome.upper())
+    if cause:
+        q = q.filter(TaxShadowComparison.cause == cause.upper())
+    rows = q.order_by(TaxShadowComparison.id.desc()).all()
+    if format == "csv":
+        report = {"invoices": [view_comparison(r) for r in rows]}
+        REPORT_CSV_COLUMNS["shadow-comparisons"] = SHADOW_CSV_COLUMNS
+        return _report_response(db, organization_id, current_user, "shadow-comparisons", report, "csv")
+    rows, next_cursor = paginate(rows, page)
+    return {"items": [view_comparison(r) for r in rows], "next_cursor": next_cursor}
+
+
+@router.get("/shadow/comparisons/{comparison_id}", summary="One shadow comparison, per line and component")
+def get_shadow_comparison(comparison_id: int, db: Session = Depends(get_db),
+                          organization_id: int = Depends(get_organization_id)):
+    from app.modules.tax.shadow_models import TaxShadowComparison
+    from app.modules.tax.shadow_service import view_comparison
+
+    row = db.query(TaxShadowComparison).filter(TaxShadowComparison.id == comparison_id,
+                                               TaxShadowComparison.organization_id == organization_id).first()
+    if row is None:
+        raise NotFoundException("Shadow comparison", comparison_id)
+    return view_comparison(row, detail=True)
 
 
 @router.get("/mfa/users", summary="Who in this organization is enrolled in MFA (org admins)",

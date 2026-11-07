@@ -47,6 +47,7 @@ from app.modules.tax.registry_schemas import (
 )
 from app.modules.tax.enums import PlatformVersionStatus
 from app.modules.tax.policy_models import TaxCodeSetVersion, TaxMarketAvailabilityVersion, TaxRulePackVersion
+from app.modules.tax.policy_schemas import ShadowSelectionRequest  # Phase 7
 from app.modules.tax.policy_schemas import (
     AvailabilityAmendRequest,
     AvailabilityDraftRequest,
@@ -744,6 +745,48 @@ def provider_health(db: Session = Depends(get_db),
     from app.modules.tax.provider_issuance import aggregate_health
 
     return aggregate_health(db)
+
+
+@admin_router.get("/shadow/selections", summary="Rule packs chosen for shadow compare, with exit thresholds")
+def list_shadow_selections(db: Session = Depends(get_db), _user=Depends(require_capability("tax_registry.read"))):
+    from app.modules.tax.shadow_models import TaxShadowSelection
+    from app.modules.tax.shadow_service import view_selection
+
+    rows = db.query(TaxShadowSelection).order_by(TaxShadowSelection.id.desc()).all()
+    return {"items": [view_selection(db, r) for r in rows]}
+
+
+@admin_router.post("/shadow/selections", status_code=status.HTTP_201_CREATED,
+                   summary="Choose the rule pack (active or draft) for shadows and the exit threshold (tax lead; MFA)")
+def choose_shadow_selection(data: ShadowSelectionRequest, db: Session = Depends(get_db),
+                            current_user=Depends(require_capability("tax_registry.approve"))):
+    from app.modules.tax.shadow_service import ShadowSelectionService, view_selection
+
+    require_tax_step_up(db, current_user, StepUpRequest(code=data.code, recovery_code=data.recovery_code))
+    row = ShadowSelectionService(db).choose(current_user.id, data.rule_pack_version_id,
+                                            exit_min_invoices=data.exit_min_invoices, exit_min_days=data.exit_min_days,
+                                            reason=data.reason)
+    return view_selection(db, row)
+
+
+@admin_router.post("/shadow/selections/{selection_id}/end", summary="Stop using a rule pack for shadows")
+def end_shadow_selection(selection_id: int, db: Session = Depends(get_db),
+                         current_user=Depends(require_capability("tax_registry.approve"))):
+    from app.modules.tax.shadow_service import ShadowSelectionService, view_selection
+
+    return view_selection(db, ShadowSelectionService(db).end(current_user.id, selection_id))
+
+
+@admin_router.get("/shadow/aggregate", summary="Shadow compare across tenants: counts only (T13)")
+def shadow_aggregate(db: Session = Depends(get_db), _user=Depends(require_capability("tax_registry.read"))):
+    from app.modules.tax.shadow_models import TaxShadowEnrolment
+    from app.modules.tax.shadow_service import enrolment_state, summary
+
+    states = {}
+    for row in db.query(TaxShadowEnrolment):
+        state = enrolment_state(row)
+        states[state] = states.get(state, 0) + 1
+    return {"enrolments_by_state": states, **summary(db, None)}
 
 
 @admin_router.get("/monitoring", summary="Tax monitoring: aggregate metrics, thresholds and alert states")
