@@ -154,6 +154,10 @@ async def lifespan(app: FastAPI):
     # ZB-TAX-ARCH-001 Phase 4d-0: refuse an unsafe provider secret store.
     from app.modules.tax.secret_store import verify_secret_store_at_startup
     verify_secret_store_at_startup()
+    # ZB-TAX-ARCH-001 Phase 8: alert (P1) if pack code drifted from its
+    # approved hash. Never stops the app; the engine fails closed per pack.
+    from app.modules.tax.rule_pack_integrity import verify_rule_packs_at_startup
+    verify_rule_packs_at_startup()
     from app.core.worker_safety import warn_if_multiworker_without_redis
     warn_if_multiworker_without_redis(settings)
     if settings.ENABLE_RECURRING_BILLING_SCHEDULER:

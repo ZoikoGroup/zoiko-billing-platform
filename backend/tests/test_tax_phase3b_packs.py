@@ -323,8 +323,7 @@ def test_packs_declare_required_facts_rounding_and_coverage(pack):
 
 
 def test_packs_hold_no_rates():
-    src = (pathlib.Path("app/modules/tax/rule_packs") / "domestic.py").read_text(encoding="utf-8")
-    src += (pathlib.Path("app/modules/tax/rule_packs") / "__init__.py").read_text(encoding="utf-8")
+    src = "".join(f.read_text(encoding="utf-8") for f in sorted(pathlib.Path("app/modules/tax/rule_packs").glob("*.py")))
     assert not re.search(r"Decimal\(\s*[\"']\d", src) and "rate_percent=Decimal(rate" in src
 
 

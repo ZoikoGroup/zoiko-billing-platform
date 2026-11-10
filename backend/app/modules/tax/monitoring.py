@@ -26,6 +26,8 @@ Alerts and their default thresholds (all configurable in settings):
   tax.review_backlog             REVIEW_REQUIRED outbox rows at or above TAX_ALERT_REVIEW_BACKLOG (5)
   tax.secret_store_failures      quotes refused because provider credentials were unavailable over the
                                  window, at or above TAX_ALERT_SECRET_STORE_FAILURES (1)
+  tax.rule_pack_integrity        (P1, Phase 8) an ACTIVE rule pack whose running code is not its approved
+                                 code hash (rule_pack_integrity.py)
 """
 import logging
 from collections import defaultdict
@@ -82,6 +84,7 @@ def collect(db: Session, now: Callable = _now) -> dict:
     from app.modules.tax.provider_issuance import RECONCILIATION_JOB
     from app.modules.tax.provider_models import TaxJobHeartbeat, TaxProviderCircuit, TaxProviderOutbox
     from app.modules.tax.quote_models import TaxQuote, TaxQuoteLine
+    from app.modules.tax.rule_pack_integrity import check_active
 
     current = now()
     t = thresholds()
@@ -136,6 +139,7 @@ def collect(db: Session, now: Callable = _now) -> dict:
         "quotes_window_minutes": t["rate_window_minutes"],
         "by_market": by_market,
         "secret_store_failures": secret_failures,
+        "rule_pack_integrity": check_active(db),
         "thresholds": t,
     }
 
@@ -197,6 +201,10 @@ def evaluate(metrics: dict) -> list:
           f"{failures} quotes were refused because provider credentials were unavailable over the last "
           f"{metrics['quotes_window_minutes']} min (threshold {t['secret_store_failures']}).",
           AttentionSeverity.P1)
+
+    from app.modules.tax.rule_pack_integrity import alert_for
+
+    out.append(alert_for(metrics.get("rule_pack_integrity") or []))
     return out
 
 

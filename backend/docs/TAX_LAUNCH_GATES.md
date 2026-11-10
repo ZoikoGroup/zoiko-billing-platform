@@ -32,6 +32,11 @@ the product owner.
 - **Publishing takes two people.** A TAX_REVIEWER drafts, validates and
   submits. A different TAX_PUBLISHER approves and publishes, with MFA
   step-up. Everything is audited.
+- **Only the approved pack code runs (Phase 8 PR 1).** Each rule-pack
+  version records a code hash at registration. If the running code differs
+  from the ACTIVE version's hash, quotes for its markets are refused
+  (`RULE_PACK_INTEGRITY_FAILED`) and a P1 alert fires. Every native quote
+  records the pack version and hash (`TAX_PHASE8.md`).
 - **A published market isn't live for a tenant yet.** The tenant still
   needs two-person approval of the seller entity's registration or legal
   basis, the activation, and (for provider markets) the provider connection.

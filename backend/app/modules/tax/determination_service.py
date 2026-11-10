@@ -28,6 +28,7 @@ NEEDS_EVIDENCE / UNSUPPORTED) as the record of why determination stopped.
 """
 import hashlib
 import json
+import logging
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from decimal import ROUND_DOWN, Decimal
@@ -66,8 +67,15 @@ from app.modules.tax.enums import (
 from app.modules.tax.currencies import governed_currency_decimals
 from app.modules.tax.models import EntityTaxActivation, SellerLegalEntity
 from app.modules.tax.quote_models import TaxQuote, TaxQuoteComponent, TaxQuoteLine
+from app.modules.tax.rule_pack_integrity import INTEGRITY_FAILED, RulePackIntegrityError
 from app.modules.tax.secret_store import SecretStoreUnavailable
 from app.modules.tax.tenant_tax_service import TenantTaxService
+
+logger = logging.getLogger("zoiko_billing.tax.determination")
+
+#: Tenant-facing: no hashes or pack internals (T13).
+INTEGRITY_MESSAGE = ("Zoiko can't calculate tax for this market right now. This isn't something you can fix; "
+                     "our team has been alerted. Try again later.")
 
 SIX = Decimal("0.000001")
 HUNDRED = Decimal("100")
@@ -274,10 +282,22 @@ class TaxDeterminationService:
             quote.issues = refusal.issues
             quote.warnings = refusal.warnings
             self.db.add(quote)
+            if refusal.integrity is not None:
+                self._integrity_alert()
             self.db.commit()
             return quote
         self.db.commit()
         return quote
+
+    def _integrity_alert(self) -> None:
+        """Best effort: the P1 alert never blocks or changes the refusal."""
+        from app.modules.tax.rule_pack_integrity import check_active, raise_alert
+
+        try:
+            with self.db.begin_nested():
+                raise_alert(self.db, check_active(self.db))
+        except Exception as exc:                                  # noqa: BLE001
+            logger.warning("Rule-pack integrity alert could not be raised: %s", exc)
 
     def current_fingerprints(self, organization_id: int, document_type: str, document_id: int) -> tuple:
         doc, items = load_document(self.db, organization_id, document_type, document_id)
@@ -334,6 +354,11 @@ class TaxDeterminationService:
                     # falls back; the provider is unavailable.
                     raise _Refusal(TaxQuoteStatus.PROVIDER_UNAVAILABLE, "PROVIDER_UNAVAILABLE",
                                    f"Provider credentials are unavailable: {exc.message}", warnings=issues)
+                except RulePackIntegrityError as exc:
+                    # Phase 8 PR 1: the running pack code is not the approved
+                    # code. NOT_DETERMINED, never a fallback; P1 alert.
+                    raise _Refusal(TaxQuoteStatus.UNSUPPORTED, INTEGRITY_FAILED, INTEGRITY_MESSAGE,
+                                   warnings=issues, integrity=exc)
                 if engine is None:
                     routing_problems.append(f"line {item.line_number}: {reason}")
                     continue
@@ -514,6 +539,8 @@ class TaxDeterminationService:
         quote.engine_kind = engine.kind
         quote.engine_name = engine.name
         quote.engine_version = engine.version
+        quote.rule_pack_version_id = getattr(engine, "rule_pack_version_id", None)
+        quote.rule_pack_code_hash = getattr(engine, "rule_pack_code_hash", None)
         quote.rounding_rule = engine.rounding_rule
         quote.rounding_mode = mode
         quote.warnings = warnings or None
@@ -646,10 +673,11 @@ def _check_provider_line(engine, line_number: int, activations, result: LineResu
 
 
 class _Refusal(Exception):
-    def __init__(self, status: TaxQuoteStatus, code: str, reason: str, issues=None, warnings=None):
+    def __init__(self, status: TaxQuoteStatus, code: str, reason: str, issues=None, warnings=None, integrity=None):
         super().__init__(reason)
         self.status, self.code, self.reason = status, code, reason
         self.issues, self.warnings = issues or None, warnings or None
+        self.integrity = integrity
 
 
 def view_quote(quote: TaxQuote) -> dict:
@@ -659,7 +687,8 @@ def view_quote(quote: TaxQuote) -> dict:
         "engine": None if quote.engine_kind is None else {
             "kind": quote.engine_kind.name, "name": quote.engine_name, "version": quote.engine_version,
             "rounding_rule": quote.rounding_rule.name if quote.rounding_rule else None,
-            "rounding_mode": quote.rounding_mode.name if quote.rounding_mode else None},
+            "rounding_mode": quote.rounding_mode.name if quote.rounding_mode else None,
+            "rule_pack_version_id": quote.rule_pack_version_id, "rule_pack_code_hash": quote.rule_pack_code_hash},
         "currency": quote.currency, "tax_date": quote.tax_date, "pricing_mode": quote.pricing_mode,
         "context_fingerprint": quote.context_fingerprint, "document_hash": quote.document_hash,
         "totals": {"subtotal": quote.subtotal, "discount_amount": quote.discount_amount,

@@ -148,6 +148,31 @@ read. Provider quoting and issuing fail closed.
 
 ---
 
+## tax.rule_pack_integrity (P1)
+
+**Fires when:** an ACTIVE native rule pack's running code is not the code
+its version was approved with. It is checked at startup, on every
+monitoring run, and whenever a quote is refused for this reason.
+
+**Means:** a deploy changed a pack's code (or removed it) without a new
+approved version. Quotes for that pack's markets are refused with
+NOT_DETERMINED / `RULE_PACK_INTEGRITY_FAILED`. Nothing falls back to
+another engine. Other markets and legacy invoicing are unaffected.
+
+**Do:**
+1. Open the pack in the console (`/super-admin/tax/rule-packs`). It shows
+   the approved and running hashes and MISMATCH or CODE_MISSING.
+2. Find the deploy that changed `app/modules/tax/rule_packs/`.
+3. **If the change was not meant to change the pack:** roll back the
+   deploy. The alert clears on the next monitoring run.
+4. **If it was:** bump the pack's `version` in code, then register, review
+   and publish the new version (two people, with golden tests). The new
+   version supersedes the old one, and the alert clears.
+5. Never edit `code_hash` in the database; the guard refuses it.
+6. See `TAX_PHASE8.md`.
+
+---
+
 ## Daily anomaly checks (Phase 7 PR 3)
 
 These come from the daily `tax_anomaly_job`. No invoice is ever changed by

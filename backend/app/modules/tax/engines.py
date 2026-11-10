@@ -213,6 +213,10 @@ class RulePackEngine(TaxEngine):
         self.pack = pack
         self.name = pack.code
         self.version = pack.version
+        # Phase 8 PR 1: the approved registry row and code hash, recorded on
+        # every quote (None for test-only packs injected by tests).
+        self.rule_pack_version_id = getattr(pack, "registry_version_id", None)
+        self.rule_pack_code_hash = getattr(pack, "registry_code_hash", None)
         self.rounding_rule = pack.rounding_rule
         self.rounding_mode = pack.rounding_mode
         self.required_facts = pack.required_facts
@@ -285,11 +289,23 @@ class EngineResolver:
         from app.modules.tax.enums import PlatformVersionStatus
         from app.modules.tax.policy_models import TaxRulePackVersion
 
+        from app.modules.tax.policy_service import source_dependency_status
+        from app.modules.tax.rule_pack_integrity import CODE_MISSING, MATCH, RulePackIntegrityError, integrity_of
+
         jurisdiction = activation.jurisdiction.code if activation.jurisdiction else None
         tax_type = activation.tax_type.code if activation.tax_type else None
+        failure = None
         for row in self.db.query(TaxRulePackVersion).filter(TaxRulePackVersion.status == PlatformVersionStatus.ACTIVE):
+            if not any(m.get("jurisdiction_code") == jurisdiction and m.get("tax_type") == tax_type
+                       for m in row.markets or []):
+                continue
+            # Phase 8 PR 1: the running code must be the approved code. A
+            # missing pack, another version, or a different hash fails closed.
+            state = integrity_of(row)
             pack_cls = registered_rule_packs().get(row.code)
-            if pack_cls is None or getattr(pack_cls, "version", None) != row.version:
+            if state["integrity"] != MATCH or pack_cls is None:
+                failure = failure or RulePackIntegrityError(row.code, row.version,
+                                                            state["integrity"] if pack_cls else CODE_MISSING)
                 continue
             # The published declaration must still match the code (no drift).
             declared_mode = pack_cls.rounding_mode.name if pack_cls.rounding_mode else None
@@ -297,12 +313,13 @@ class EngineResolver:
                 continue
             # T16: a source whose usage rights were revoked (or that lost its
             # approval) freezes the pack at use time; no fallback.
-            from app.modules.tax.policy_service import source_dependency_status
-
             if not all(source_dependency_status(self.db, ref)["approved"] for ref in getattr(pack_cls, "source_refs", ())):
                 continue
-            if any(m.get("jurisdiction_code") == jurisdiction and m.get("tax_type") == tax_type for m in row.markets or []):
-                return pack_cls()
+            pack = pack_cls()
+            pack.registry_version_id, pack.registry_code_hash = row.id, row.code_hash
+            return pack
+        if failure is not None:
+            raise failure
         return None
 
     def _connection_adapter(self, activation):

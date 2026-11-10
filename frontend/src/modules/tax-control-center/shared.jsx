@@ -70,6 +70,10 @@ const STATUS_STYLES = {
   COMMIT: { icon: KeyRound, label: "Commit (issues invoices)", tone: "slate" },
   MFA_ENROLLED: { icon: ShieldCheck, label: "MFA on", tone: "green" },
   MFA_NOT_ENROLLED: { icon: Circle, label: "MFA not set up", tone: "slate" },
+  // Rule-pack integrity (Phase 8 PR 1)
+  INTEGRITY_MATCH: { icon: ShieldCheck, label: "Code matches approved hash", tone: "green" },
+  INTEGRITY_MISMATCH: { icon: XCircle, label: "Code differs from approved hash", tone: "red" },
+  INTEGRITY_CODE_MISSING: { icon: XCircle, label: "Approved code not running", tone: "red" },
   // Shadow compare (Phase 7)
   SHADOWING: { icon: Clock, label: "Shadowing", tone: "blue" },
   ENDED: { icon: Archive, label: "Ended", tone: "slate" },

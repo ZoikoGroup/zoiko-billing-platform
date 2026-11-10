@@ -20,6 +20,23 @@ import { RegressionPanel } from "./RegressionPanel";
 
 const EDITABLE = ["PENDING_REVIEW", "VALIDATION_FAILED", "VALIDATED"];
 
+/* Phase 8 PR 1: the approved code hash against the code running now. A
+ * mismatch on an ACTIVE pack means quotes for its markets are refused. */
+function IntegrityBanner({ pack }) {
+  if (!pack.integrity || pack.integrity === "MATCH" || pack.status !== "ACTIVE") return null;
+  return (
+    <div role="alert" className="rounded-xl border border-red-300 bg-red-50 p-3 text-sm text-red-900 dark:border-red-700 dark:bg-red-950 dark:text-red-100">
+      <strong>Quotes for this pack's markets are refused (RULE_PACK_INTEGRITY_FAILED).</strong>{" "}
+      {pack.integrity === "CODE_MISSING"
+        ? "The approved version's code is not running."
+        : "The running code differs from the approved code hash."}{" "}
+      Roll back the deploy, or register, review and publish a new pack version.
+    </div>
+  );
+}
+
+const shortHash = (h) => (h ? `${h.slice(0, 12)}…` : "none");
+
 function SourceDependencies({ deps }) {
   if (!deps?.length) return <p className={`text-sm ${MUTED}`}>No source dependencies declared.</p>;
   return (
@@ -124,8 +141,12 @@ function PackDetail({ pack, catalogueEntry, user, onChanged }) {
   return (
     <>
       <InlineError message={error} />
+      <IntegrityBanner pack={pack} />
       <DefinitionList rows={[
         ["Pack", `${pack.code} v${pack.version}`], ["Status", <TaxStatusBadge key="s" status={s} />],
+        ["Code hash (approved)", <code key="h" className="break-all" title={pack.code_hash || ""}>{pack.code_hash || "Not recorded"}</code>],
+        ["Code hash (running)", <code key="r" className="break-all">{pack.running_code_hash || "Not running"}</code>],
+        ["Integrity", pack.integrity ? <TaxStatusBadge key="i" status={`INTEGRITY_${pack.integrity}`} /> : null],
         ["Markets", (pack.markets || []).map((m) => `${m.jurisdiction_code} ${m.tax_type}`).join(", ")],
         ["Rounding", `${humanize(pack.rounding_rule)} · ${humanize(pack.rounding_mode)}`],
         ["Required facts", (pack.required_facts || []).join(", ")], ["Notes", pack.notes],
@@ -210,6 +231,9 @@ export default function RulePacksScreen({ user }) {
     { key: "markets", label: "Markets", render: (r) => (r.markets || []).map((m) => `${m.jurisdiction_code} ${m.tax_type}`).join(", ") },
     { key: "report", label: "Golden tests", render: (r) => (r.golden_test_report ? `${r.golden_test_report.passed} passed / ${r.golden_test_report.failed} failed` : "Not attached") },
     { key: "status", label: "Status", render: (r) => <TaxStatusBadge status={r.status} /> },
+    { key: "integrity", label: "Code hash", render: (r) => (r.integrity
+      ? <span className="flex flex-wrap items-center gap-1"><TaxStatusBadge status={`INTEGRITY_${r.integrity}`} /><code className={`text-xs ${MUTED}`}>{shortHash(r.code_hash)}</code></span>
+      : "—") },
   ];
 
   return (
