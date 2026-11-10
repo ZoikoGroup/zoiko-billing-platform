@@ -9,6 +9,7 @@ super administrators have no standing access to tenant tax data (§12.1,
 §13 T13). Support access goes through the existing JIT grant flow instead.
 """
 from datetime import date
+from decimal import Decimal
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, Header, Query, Request, UploadFile, status
@@ -1002,6 +1003,66 @@ for _action, _dep, _summary in (
                          methods=["POST"], dependencies=[Depends(_dep)], summary=_summary)
 
 
+# ── Phase 8 PR 4: retroactive analysis (tenant-private report) ──────────
+
+def _retro_counts(rows) -> dict:
+    by_status, per_currency = {}, {}
+    for r in rows:
+        by_status[r.status] = by_status.get(r.status, 0) + 1
+        if r.status == "COMPARED":
+            cur = per_currency.setdefault(r.currency or "?", {"net": Decimal("0"), "over": Decimal("0"),
+                                                              "under": Decimal("0")})
+            cur["net"] += r.difference or 0
+            cur["over" if (r.difference or 0) > 0 else "under"] += abs(r.difference or 0)
+    return {"by_status": by_status, "per_currency": per_currency}
+
+
+@router.get("/retro-analyses", summary="Retroactive analyses of this organization's issued invoices")
+def tenant_retro_analyses(db: Session = Depends(get_db), organization_id: int = Depends(get_organization_id),
+                          current_user=Depends(require_tax_report_role)):
+    from app.modules.tax.retro_models import TaxRetroAnalysis, TaxRetroResult
+    from app.modules.tax.retro_service import remediation_allowed
+
+    rows = db.query(TaxRetroResult).filter(TaxRetroResult.organization_id == organization_id).all()
+    grouped = {}
+    for r in rows:
+        grouped.setdefault(r.analysis_id, []).append(r)
+    items = []
+    for analysis_id in sorted(grouped, reverse=True):
+        a = db.get(TaxRetroAnalysis, analysis_id)
+        items.append({"id": a.id, "trigger_kind": a.trigger_kind, "basis_label": a.basis_label,
+                      "range_from": a.range_from, "range_to": a.range_to, "status": a.status,
+                      "finished_at": a.finished_at, "documents": len(grouped[analysis_id]),
+                      **_retro_counts(grouped[analysis_id])})
+    return {"items": items, "remediation_enabled": remediation_allowed(organization_id),
+            "under_collection": "Report only: no debit notes or extra charges."}
+
+
+@router.get("/retro-analyses/{analysis_id}/documents", summary="Per-document comparison (this organization)")
+def tenant_retro_documents(analysis_id: int, format: str = Query("json", pattern="^(json|csv)$"),
+                           page: PageParams = Depends(), db: Session = Depends(get_db),
+                           organization_id: int = Depends(get_organization_id),
+                           current_user=Depends(require_tax_report_role)):
+    from app.modules.tax.retro_models import TaxRetroResult
+    from app.modules.tax.retro_service import superseded_map, view_tenant_document
+
+    rows = db.query(TaxRetroResult).filter(TaxRetroResult.organization_id == organization_id,
+                                           TaxRetroResult.analysis_id == analysis_id).order_by(TaxRetroResult.id).all()
+    if not rows:
+        raise NotFoundException("Retroactive analysis", analysis_id)
+    latest = superseded_map(db, organization_id, [r.quote_id for r in rows])
+
+    def view(r):
+        newer = latest.get(r.quote_id)
+        return view_tenant_document(r, newer if newer and newer != r.analysis_id and newer > r.analysis_id else None)
+
+    if format == "csv":
+        report = {"invoices": [{**view(r), "superseded_by": view(r)["superseded_by"]} for r in rows]}
+        return _report_response(db, organization_id, current_user, "retro-analysis", report, "csv")
+    items, next_cursor = paginate(rows, page)
+    return {"items": [view(r) for r in items], "next_cursor": next_cursor}
+
+
 @router.post("/quotes", status_code=status.HTTP_201_CREATED, summary="Request a governed tax quote for a draft",
              dependencies=[Depends(get_current_billing_admin)])
 def create_tax_quote(
@@ -1103,6 +1164,9 @@ REPORT_CSV_COLUMNS = {
     "legacy-discount-overcollection": ("invoice_number", "issue_date", "status", "currency", "discount_percentage",
                                        "document_discount", "subtotal", "tax_amount", "estimated_overcollected_tax"),
     "duplicate-tax-rows": ("invoice_number", "duplicate_rows"),
+    # Phase 8 PR 4
+    "retro-analysis": ("invoice_id", "status", "reason", "currency", "original_tax", "comparison_tax", "difference",
+                       "direction", "basis_label", "superseded_by", "inputs_hash"),
 }
 
 

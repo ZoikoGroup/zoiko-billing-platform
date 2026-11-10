@@ -11,8 +11,9 @@ e-invoicing, or change legacy invoicing.
 |---|---|---|
 | 1 | Rule-pack integrity (step 07) | Merged (#157) |
 | 2 | Scheduled activation (step 07) | Merged (#158) |
-| 3 | Emergency rollback (§10.3) | This PR |
-| 4 | Retroactive change analysis (§10.3, T04) | Planned |
+| 3 | Emergency rollback (§10.3) | Merged (#159) |
+| 4 | Retroactive change analysis (§10.3, T04) | This PR |
+| 4b | Governed tax-only credit and retroactive remediation drafts | Outline below; not built |
 | 5 | Source change detection and review cadence (steps 01–03, §10.2) | Planned |
 | 6 | Tenant reference rates and reports screens (G-5b-1) | Planned |
 
@@ -23,6 +24,10 @@ e-invoicing, or change legacy invoicing.
 - **Remediation enablement:** the Phase 7 remediation allow-lists
   (`TAX_REMEDIATION_*_ORGS`) stay empty until the product owner decides per
   organization.
+- **Under-collection after a retroactive change** (PR 4, product and tax
+  lead): the analysis reports under-collected tax only. No debit notes or
+  extra charges are created. Whether and how to recover under-collected tax
+  is a product and tax-lead decision.
 - **Single-person break-glass market stop** (PR 3, for the tax lead and the
   security owner): there is no market-scoped stop that one person can apply
   to a native market. Today a native market stops through a two-person
@@ -454,4 +459,185 @@ may become it) and the request guard.
 | `frontend/.../TaxControlCenter.test.jsx` (+5) | Propose (axe; unusable versions listed, not offered); quarantine only for a followed version; a different publisher approves with step-up and the rolled-back state shows (axe); reviewers can't propose and R shows what it restores; the inbox. |
 
 **CI result:** _see PR_.
+
+---
+
+## PR 4: retroactive change analysis
+
+`app/modules/tax/retro_service.py`, `retro_models.py`. Approved with the plan;
+answers and fixes A to D are recorded below. **Strictly read-only** for
+issued records: quotes, snapshots, invoices and credit notes are never
+written. Tests compare every issued-record row byte for byte before and
+after (T04).
+
+### Triggers and scope
+
+| Trigger | Enqueued when | Documents (committed invoice quotes) | Comparison basis |
+|---|---|---|---|
+| Rollback with a restore | PR 3 approval | every quote made with V, whatever its date | P's logic: "Comparison against restored logic, not a determination" |
+| Rollback, quarantine only | PR 3 approval | every quote made with V | none: each document `MANUAL_REVIEW_REQUIRED` ("the rules for this tax date were quarantined") |
+| Retroactive rate version | its publish | native quotes using that component in the jurisdiction, dated in the past part of its validity: selected by the rate's **key**, not the superseded version id (fix A), so a product-scope rate covering dates served by GENERAL is included | the rate now in force, under the quote's own pack version |
+| Retroactive pack version | its publish | quotes of that pack dated in the past part of its validity | that pack version |
+
+- **Provider quotes** in those markets and dates are listed
+  `NOT_ANALYSABLE` ("decided by the tax provider; a provider re-run isn't
+  available").
+- **Out of scope by construction:** availability rollbacks (they follow the
+  clock; nothing is retroactive) and tenant-configured rates (no trigger
+  changes them).
+- **"Past"** is the local legal date in the jurisdiction's zone; for
+  multi-zone jurisdictions the zone furthest ahead (UTC+14), so a date counts
+  as past once it has started anywhere.
+
+### Rate corrections today, and the gate
+
+- **Before this PR** a staged rate with a past `valid_from`, including a
+  correction superseding a rate already used by issued invoices, published
+  with no analysis.
+- **Now** a rate or pack version whose validity covers past dates needs a
+  **current preview** to be approved and published
+  (`TAX_RETRO_PREVIEW_REQUIRED`, on; off in the test suite, where the gate's
+  own tests turn it on). A retroactive pack version can't be scheduled.
+- **A preview** (`POST /super-admin/tax-registry/retro-previews/{rate|rule_pack}/{id}`)
+  runs the same comparison against the candidate and stores **aggregates
+  only**. It is current when:
+  - it is for the same subject;
+  - the candidate and the versions in force are unchanged (`inputs_hash`);
+  - the **sorted in-scope committed quote ids** are unchanged
+    (`scope_hash`; fix 4: a quote created before the preview and committed
+    after it makes it stale);
+  - it is at most `TAX_RETRO_PREVIEW_MAX_AGE_HOURS` (24) old.
+- The approver sees the preview on the rate or pack screen. Publishing
+  enqueues the full per-tenant analysis.
+
+### Commit-time facts (fix 2)
+
+A pack comparison uses the values recorded at commit, never today's:
+
+| Fact | Commit-time source |
+|---|---|
+| Currency, tax date | `tax_quotes` (snapshot) |
+| Line inputs and amounts, tax code, supply category, transaction class | `tax_quote_lines` (snapshot) |
+| Activation (jurisdiction, tax type) | `tax_quote_components.activation_id`, frozen once approved |
+| Registry product scope | `tax_quotes.decision_facts` (new), else the line's component rate version (immutable) |
+| Seller country, buyer billing country, buyer status | `tax_quotes.decision_facts` (new in this PR, frozen with the quote) |
+
+- No commit-time value (quotes committed before this PR) →
+  `MANUAL_REVIEW_REQUIRED`, "commit-time value unknown", never assumed.
+- A current value that differs from the commit-time one →
+  `MANUAL_REVIEW_REQUIRED`, "facts changed since commit".
+- A basis that doesn't determine a line → `MANUAL_REVIEW_REQUIRED`.
+- Each result records the exact versions and hashes used and an
+  `inputs_hash`, so a re-run gives the same answer.
+
+### Execution
+
+`tax_retro_analysis_job` (every `TAX_RETRO_ANALYSIS_INTERVAL_MINUTES`):
+- one row per affected organization, locked `FOR UPDATE SKIP LOCKED`, so two
+  workers never take the same tenant and results never mix tenants;
+- batches of `TAX_RETRO_BATCH_SIZE` (200) after a stored cursor, committed
+  per batch: resumable;
+- results unique per (analysis, quote): idempotent;
+- each comparison runs in a rolled-back savepoint;
+- progress is visible to the platform as counts; a failure raises P1
+  `tax.retro_analysis:<id>` and is retried.
+
+### Outputs and privacy (T13)
+
+- **Tenant report** (org admin and finance approver; another org 404,
+  platform users 403): `GET /tax/retro-analyses` and
+  `GET /tax/retro-analyses/{id}/documents` (JSON or audited, formula-safe
+  CSV): per document and line, original vs comparison outcome, rate and tax,
+  totals per currency, and "superseded by analysis #N" (fix D).
+- **Platform** (`GET /super-admin/tax-registry/retro-analyses`): organizations
+  affected (a count), documents by status, net difference per currency and
+  the over/under split. **Fix B:** below 3 organizations, amounts are bands
+  (< 1k, 1k–10k, 10k–100k, > 100k) in views and alerts; counts stay exact.
+- **Retention:** results and per-organization runs are tenant tax records
+  under the tenant record guard (erasure purge only).
+
+### Communication (fix C)
+
+- **Rollback triggers:** the analysis updates the PR 3 tenant review item
+  (no second item) and the PR 3 P1 Attention item `tax.rollback_applied:<id>`
+  (same incident, no disconnected alert). Admins get one "analysis ready"
+  email (ZB-TAX-002) referencing the rollback: the rollback email said what
+  happened; this one says the comparison is ready.
+- **Rate and pack triggers:** a new review item (`TAX_RETRO_ANALYSIS`), the
+  ZB-TAX-002 email and a P2 Attention item `tax.retro_analysis:<id>`.
+- Emails and alerts never carry amounts (banded on the platform side).
+
+### Remediation: preview only
+
+- Over-collection shows, per document and component, the proposed tax-only
+  correction. `TAX_RETRO_REMEDIATION_ORGS` (empty) is the allow-list for
+  drafts in PR 4b.
+- **The governed credit path can't express a tax-only correction:**
+  `GovernedCreditService` credits a fraction of a whole line (net and tax
+  together) from the snapshot. What is missing is listed in the PR 4b
+  outline. Nothing works around it.
+- Under-collection: report only (see open questions).
+
+### Tenant-configured rates (answer 5)
+
+Before this PR a tenant could propose (and approve) a tenant-configured
+activation with a past `effective_from` without analysis. It is now refused
+(fail closed) when invoices were already issued in that jurisdiction on or
+after that date: "retroactive analysis of tenant rates isn't available yet".
+A first tenant rate with a past start, over no issued invoices, is still
+allowed.
+
+### Overlapping analyses (fix D)
+
+Results stay independent per analysis. **Rule for PR 4b:** remediation
+drafts must use the latest DONE analysis covering a document and refuse a
+document whose latest analysis is superseded or still running.
+
+### Finding (fix B)
+
+Phase 7's platform aggregates (P10 legacy over-collection and duplicate
+rows, the anomaly alerts) show exact counts and amounts even when one or two
+organizations are affected. They should get the same banding; not changed
+in this PR.
+
+### Migration
+
+`a5d9f3b7c1e8`: `tax_quotes.decision_facts` (frozen; the quote guard is
+recreated), `tax_retro_analyses`, `tax_retro_org_runs`, `tax_retro_results`
+(tenant guard triggers).
+
+### PR 4 tests
+
+| Test file | Covers |
+|---|---|
+| `tests/privacy/test_tax_phase8_retro.py` (14) | **Rate correction:** refused without a preview; the preview's aggregates (no tenant rows); published; the job compares 20.00 vs 18.00 (OVER 2.00) with the exact versions; **T04 byte-identical**. Under-collection report only. **Fix A:** a product-scope rate selects the document by key. **Fix 4:** a quote created before the preview and committed after makes it stale; older than 24 hours is stale. **Pack:** refused without a preview, can't be scheduled, compared (UNDER 5.00). **Fix 2:** commit-time value unknown and facts changed since commit are both manual review. Provider quotes NOT_ANALYSABLE. **Rollback:** restored logic with its label (T04); quarantine is manual review with no comparison; the PR 3 review item and alert are updated, one email without amounts (fix C). Idempotent and resumable. Tenant report private (finance and admin; billing 403; other org 404/empty; platform 403); CSV; platform aggregates banded with no identifiers; P2 alert banded. Exact amounts from 3 organizations; bands. Superseded by a later analysis. Past-dated tenant rate over issued invoices refused. |
+| `tests/test_tax_phase8_pg.py` (+1) | Results can't be edited or deleted; `decision_facts` frozen with the quote. |
+| `tests/test_tax_phase8_retro_race_pg.py` (1, commits, CI race step) | Two workers: each document analysed once, never mixing tenants; the analysis finishes once. |
+| `frontend/.../TaxControlCenter.test.jsx` (+2), `ProviderScreens.test.jsx` (+2) | Platform list with progress and banded aggregates (axe); the preview gate on a pack and running a preview (axe); the tenant report with superseded marks, preview-only remediation, line table and CSV (axe); other roles closed. |
+
+**CI result:** _see PR_.
+
+---
+
+## PR 4b outline: governed tax-only credit and retroactive remediation drafts (not built)
+
+Needs its own plan and approval.
+
+1. **Governed tax-only credit** in `GovernedCreditService`: credit a
+   per-component tax amount with zero credited net, bounded by the remaining
+   creditable tax of each component (after earlier credits), recorded in
+   `credit_note_tax_lines` with the same signed-amount and reconciliation
+   rules (T09, T18), shown on the invoice and ledger as a tax adjustment.
+   Tenant maker-checker (a different finance approver), audited.
+2. **Retroactive remediation drafts:** for an over-collected document, a
+   DRAFT tax-only credit note built with (1), from the **latest DONE
+   analysis** covering it; refuse a document whose latest analysis is
+   superseded or still running. Gated per organization by
+   `TAX_RETRO_REMEDIATION_ORGS` (empty = preview only), never twice per
+   (analysis, document), re-checking existing credits at creation.
+3. **Under-collection** stays report only unless the product and tax-lead
+   decision says otherwise.
+4. **Tests:** reconciliation to the cent with earlier partial credits;
+   allow-list; the latest-analysis rule; two-person approval; T04 for the
+   original invoice.
 

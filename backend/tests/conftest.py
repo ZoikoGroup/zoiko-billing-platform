@@ -118,6 +118,21 @@ def _regression_gate_off_by_default():
 
 
 @pytest.fixture(autouse=True)
+def _retro_preview_gate_off_by_default():
+    """ZB-TAX-ARCH-001 Phase 8 PR 4: a rate or pack version covering past dates
+    needs a current retroactive analysis preview (TAX_RETRO_PREVIEW_REQUIRED, on
+    in every deployment). Fixture worlds publish past-dated rates, so it is off
+    here; tests/privacy/test_tax_phase8_retro.py (and the PR 2 retroactive
+    test) turn it on and prove the gate."""
+    from app.config import settings
+
+    original = settings.TAX_RETRO_PREVIEW_REQUIRED
+    settings.TAX_RETRO_PREVIEW_REQUIRED = False
+    yield
+    settings.TAX_RETRO_PREVIEW_REQUIRED = original
+
+
+@pytest.fixture(autouse=True)
 def _retention_gate_off_by_default():
     """ZB-TAX-ARCH-001 Phase 8 PR 3: publishing a rule pack needs it in
     rule_packs/retention.json (TAX_RULE_PACK_RETENTION_REQUIRED, on in every

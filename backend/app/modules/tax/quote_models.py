@@ -118,6 +118,10 @@ class TaxQuote(Base):
     rule_pack_version_id    = Column(Integer, ForeignKey("tax_rule_pack_versions.id", ondelete="RESTRICT"),
                                      nullable=True, index=True)
     rule_pack_code_hash     = Column(String(64), nullable=True)
+    # Phase 8 PR 4: the facts a native pack reads, as decided (seller and
+    # billing country, buyer status, each line's registry product scope), so
+    # a retroactive comparison uses commit-time values, never today's.
+    decision_facts          = Column(JSON, nullable=True)
 
     provider_name           = Column(String(100), nullable=True)
     provider_response_hash  = Column(String(64), nullable=True)

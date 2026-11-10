@@ -470,6 +470,14 @@ class TaxDeterminationService:
                            f"Engine {engine.name} {engine.version} does not declare a rounding mode.",
                            warnings=warnings)
         _apply_rates(lines, decimals, engine.rounding_rule, engine.rounding_mode)
+        # Phase 8 PR 4: the facts the pack read, for retroactive analysis.
+        quote.decision_facts = {
+            "seller_country": (facts.get("seller_entity") or {}).get("country_code"),
+            "billing_country": ((((facts.get("buyer") or {}).get("addresses") or {}).get("BILLING")) or {}).get(
+                "country_code"),
+            "business_buyer": bool(business),
+            "line_scopes": {str(k): v.get("registry_product_scope") for k, v in line_facts.items()},
+        }
         self._persist(quote, organization_id, engine, lines, decimals, warnings)
 
     def _exemption_claims(self, organization_id: int, facts: dict, activations: list, tax_date) -> tuple:

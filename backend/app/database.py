@@ -554,6 +554,16 @@ CRITICAL_COLUMNS: list[tuple[str, str, str, str]] = [
         "ZB-TAX-ARCH-001 Phase 4d: two-person manual address resolutions",
     ),
     (
+        "tax_quotes", "decision_facts",
+        "alembic/versions/a5d9f3b7c1e8_tax_phase8_retro_analysis.py",
+        "ZB-TAX-ARCH-001 Phase 8: commit-time facts for retroactive analysis",
+    ),
+    (
+        "tax_retro_results", "inputs_hash",
+        "alembic/versions/a5d9f3b7c1e8_tax_phase8_retro_analysis.py",
+        "ZB-TAX-ARCH-001 Phase 8: retroactive analysis results",
+    ),
+    (
         "tax_rule_pack_versions", "code_version",
         "alembic/versions/f4c8e2a6b9d1_tax_phase8_rollback.py",
         "ZB-TAX-ARCH-001 Phase 8: emergency rollback",
@@ -737,6 +747,7 @@ import app.modules.tax.shadow_models  # noqa: F401,E402
 import app.modules.tax.regression_models  # noqa: F401,E402
 import app.modules.tax.anomaly_models  # noqa: F401,E402
 import app.modules.tax.remediation_models  # noqa: F401,E402 — ZB-TAX-ARCH-001 Phase 7 remediation (tenant) — ZB-TAX-ARCH-001 Phase 7 anomaly runs (aggregate) — ZB-TAX-ARCH-001 Phase 7 regression reports — ZB-TAX-ARCH-001 Phase 7 shadow compare
+import app.modules.tax.retro_models  # noqa: F401,E402  Phase 8 PR 4: retroactive analysis
 import app.modules.tax.provider_issuance  # noqa: F401,E402 — registers the locked-draft guard (issuing via provider)
 import app.modules.chatbot.models  # noqa: F401,E402 — 28-table AI assistant schema
 import app.modules.notifications.models  # noqa: F401,E402 — ZB-* email pipeline foundation

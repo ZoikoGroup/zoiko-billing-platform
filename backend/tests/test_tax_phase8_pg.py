@@ -164,3 +164,23 @@ def test_a_decided_rollback_request_is_final(uk):
     _rejects(pg, "UPDATE tax_rollback_requests SET reason = 'edited' WHERE id = :i", {"i": rid})
     _rejects(pg, "UPDATE tax_rollback_requests SET status = 'APPROVED' WHERE id = :i", {"i": rid})
     _rejects(pg, "DELETE FROM tax_rollback_requests WHERE id = :i", {"i": rid})
+
+
+# ── PR 4: retroactive analysis results are retained tenant records ──────
+
+def test_retro_results_are_frozen_and_not_deletable(uk):
+    pg = uk["db"]
+    inv = draft(uk, [(uk["svc"], 100, 1)])
+    q = quote(uk, inv)
+    aid = pg.execute(text(
+        "INSERT INTO tax_retro_analyses (mode, trigger_kind, trigger_id, basis, basis_label, versions_used, "
+        "inputs_hash, scope_hash, status, orgs_total, orgs_done, documents_total, documents_done, created_at) "
+        "VALUES ('FULL', 'rate', 1, 'rate_in_force', 'x', '{}', 'h', 's', 'DONE', 0, 0, 0, 0, now()) RETURNING id"
+    )).scalar()
+    rid = pg.execute(text(
+        "INSERT INTO tax_retro_results (analysis_id, organization_id, quote_id, status, basis_label, versions_used, "
+        "difference, created_at) VALUES (:a, :o, :q, 'COMPARED', 'x', '{}', 2.00, now()) RETURNING id"),
+        {"a": aid, "o": uk["org"].id, "q": q.id}).scalar()
+    _rejects(pg, "UPDATE tax_retro_results SET difference = 0 WHERE id = :i", {"i": rid})
+    _rejects(pg, "DELETE FROM tax_retro_results WHERE id = :i", {"i": rid})
+    _rejects(pg, "UPDATE tax_quotes SET decision_facts = '{}' WHERE id = :i", {"i": q.id})        # frozen with the quote

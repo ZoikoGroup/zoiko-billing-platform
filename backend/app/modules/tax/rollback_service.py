@@ -295,6 +295,10 @@ class RollbackService:
                                                          if k != "per_organization"})
         self._alert(request, v, result)
         self._tell_tenants(request, v, result)
+        if request.kind == "rule_pack":                    # Phase 8 PR 4: retroactive analysis of V's documents
+            from app.modules.tax import retro_service
+
+            retro_service.enqueue(self.db, retro_service.rollback_trigger(self.db, request), actor_id)
         return request
 
     # ── apply ──

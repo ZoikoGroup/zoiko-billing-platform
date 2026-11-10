@@ -154,7 +154,10 @@ def test_same_start_is_a_full_replacement(w, v2):
     assert v1.valid_to is None
 
 
-def test_retroactive_pack_versions_wait_for_pr4(w, v2):
+def test_retroactive_pack_versions_wait_for_pr4(w, v2, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "TAX_RETRO_PREVIEW_REQUIRED", True)      # PR 4: allowed only with a preview
     db = w["db"]
     published_pack(w, version="1")
     retro = approved_pack(w, valid_from=date(2020, 1, 1))
@@ -208,7 +211,7 @@ def test_activation_after_the_start_date_is_refused(w, v2):
     db = w["db"]
     published_pack(w, version="1")
     late = approved_pack(w, valid_from=BOUNDARY)
-    with pytest.raises(RegistryStateError, match="after that start"):
+    with pytest.raises(RegistryStateError, match="can't be scheduled"):          # PR 4: retroactive = publish now only
         RulePackService(db).publish(actor_id=w["publisher"].id, version_id=late.id,
                                     activate_at_local="2031-01-01T09:00", timezone="Europe/London")
     db.rollback()

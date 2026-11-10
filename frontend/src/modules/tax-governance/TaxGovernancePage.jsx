@@ -1,4 +1,6 @@
-import { Lock } from "lucide-react";
+import {
+  History, Lock,
+} from "lucide-react";
 import { NavLink, Navigate, useParams } from "react-router-dom";
 import {
   AlertOctagon, BadgeCheck, BarChart3, Building2, ClipboardList, Copy, FileCheck2, KeyRound, LayoutDashboard, Package,
@@ -18,6 +20,7 @@ import { ReferenceRatesScreen } from "./ReferenceRatesScreen";
 import { MfaScreen } from "./MfaScreen";
 import { ShadowScreen } from "./ShadowScreen";
 import { RemediationScreen } from "./RemediationScreen";
+import { RetroScreen } from "./RetroScreen";
 
 /* Tenant Settings → Taxes (ZB-TAX-ARCH-001 Phase 5b): T1–T8. Tenant data
  * only, through the tenant tax API. The existing Tax Rates and Tax
@@ -39,6 +42,7 @@ export const GOVERNANCE_SECTIONS = [
   { key: "reports", label: "Reports", icon: BarChart3, element: ReportsScreen },
   { key: "shadow", label: "Shadow compare", icon: Copy, element: ShadowScreen },
   { key: "remediation", label: "Remediation", icon: Wrench, element: RemediationScreen },
+  { key: "retro", label: "Retroactive analysis", icon: History, element: RetroScreen },
   { key: "mfa", label: "MFA", icon: KeyRound, element: MfaScreen },
 ];
 

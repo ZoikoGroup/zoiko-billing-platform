@@ -258,9 +258,10 @@ failed").
 
 ### Hand over to retroactive analysis (PR 4)
 
-The applied request's `result` (`GET /api/v1/super-admin/tax-registry/rollbacks`)
-holds the pack, V, P and R, the rolled-back range and the counts. PR 4's
-analysis takes it as input: every committed quote made with V.
+Approving a pack rollback enqueues its retroactive analysis automatically.
+Follow it at `/super-admin/tax/retro` (aggregates and progress); when it is
+done, the rollback's P1 item and each affected tenant's review item say so,
+and tenants see their own report.
 
 ---
 
@@ -275,6 +276,26 @@ STALE and NOT_DETERMINED, committed quotes for analysis and the number of
 organizations affected.
 
 **Do:** follow "Verify" and "Hand over" above, then acknowledge.
+
+---
+
+## tax.retro_analysis:\<id\> (P2, or P1 when it failed)
+
+**Fires when:** a retroactive analysis of a rate or pack change finishes
+(P2), or any analysis fails (P1, retried by the job). Rollback analyses
+update the rollback's own item instead.
+
+**Means:** issued invoices were compared after a change for past dates. The
+text gives organization and document counts and per-currency amounts
+(banded below 3 organizations). Nothing issued was changed.
+
+**Do:**
+1. Review the aggregates at `/super-admin/tax/retro`.
+2. Over-collection: correction drafts arrive with PR 4b; for now tenants
+   see a preview in their report.
+3. Under-collection: report only; escalate to the tax lead.
+4. Failed: check the backend log for the analysis id; the job retries.
+5. Acknowledge.
 
 ---
 

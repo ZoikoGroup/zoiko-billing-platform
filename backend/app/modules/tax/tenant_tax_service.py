@@ -260,6 +260,7 @@ class TenantTaxService:
         if legal_basis_id is not None:
             self._get(EntityTaxLegalBasis, legal_basis_id, organization_id, "Legal basis")
         self._check_tenant_config_fields(mode, tenant_rate_percent, tenant_source_citation, tenant_source_url)
+        self._refuse_past_dated_tenant_rate(organization_id, seller_entity_id, jurisdiction_id, mode, effective_from)
         if (mode == TaxOperatingMode.PROVIDER_APPROVED) != (provider_connection_id is not None):
             raise BadRequestException("A provider activation references exactly one provider connection; other "
                                       "modes reference none.")
@@ -352,6 +353,29 @@ class TenantTaxService:
                 problems.append("the provider connection belongs to a different seller entity")
         return problems
 
+    def _refuse_past_dated_tenant_rate(self, organization_id: int, seller_entity_id: int, jurisdiction_id: int,
+                                       mode, effective_from: date) -> None:
+        """Phase 8 PR 4: a tenant-configured rate can't start on a past date
+        that already has committed invoices in that jurisdiction: there is no
+        tenant retroactive analysis yet, so fail closed."""
+        if mode != TaxOperatingMode.TENANT_CONFIG_APPROVED or effective_from is None:
+            return
+        from app.modules.tax.enums import TaxQuoteStatus
+        from app.modules.tax.quote_models import TaxQuote, TaxQuoteComponent
+        from app.modules.tax.retro_service import legal_today
+
+        jurisdiction = self.db.get(TaxJurisdiction, jurisdiction_id)
+        if effective_from >= legal_today(jurisdiction.timezone if jurisdiction else None):
+            return
+        issued = self.db.query(TaxQuote.id).join(TaxQuoteComponent, TaxQuoteComponent.tax_quote_id == TaxQuote.id).filter(
+            TaxQuote.organization_id == organization_id, TaxQuote.seller_entity_id == seller_entity_id,
+            TaxQuote.status == TaxQuoteStatus.COMMITTED, TaxQuote.tax_date >= effective_from,
+            TaxQuoteComponent.jurisdiction_id == jurisdiction_id).first()
+        if issued is not None:
+            raise BadRequestException(
+                "A tenant-configured rate can't start on a past date that already has issued invoices in this "
+                "jurisdiction: retroactive analysis of tenant rates isn't available yet. Start it today or later.")
+
     def decide_activation(self, organization_id: int, actor_id: int, activation_id: int, *, approve: bool,
                           reason: Optional[str] = None) -> EntityTaxActivation:
         row = self._get(EntityTaxActivation, activation_id, organization_id, "Tax activation")
@@ -360,6 +384,8 @@ class TenantTaxService:
         self._assert_checker(row.proposed_by, actor_id)
         now = _now()
         if approve:
+            self._refuse_past_dated_tenant_rate(organization_id, row.seller_entity_id, row.jurisdiction_id, row.mode,
+                                                row.effective_from)
             problems = self.approval_problems(row)
             if row.mode == TaxOperatingMode.PROVIDER_APPROVED:
                 from app.modules.tax.pseudonym import key_fingerprint

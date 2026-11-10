@@ -170,6 +170,12 @@ class Settings(BaseSettings):
     TAX_REGRESSION_REQUIRED: bool = True
     # ZB-TAX-ARCH-001 Phase 8 PR 3: publishing needs the version in rule_packs/retention.json.
     TAX_RULE_PACK_RETENTION_REQUIRED: bool = True
+    # ZB-TAX-ARCH-001 Phase 8 PR 4: retroactive change analysis.
+    TAX_RETRO_ANALYSIS_INTERVAL_MINUTES: int = 5
+    TAX_RETRO_BATCH_SIZE: int = 200
+    TAX_RETRO_PREVIEW_MAX_AGE_HOURS: int = 24
+    TAX_RETRO_PREVIEW_REQUIRED: bool = True   # retroactive rate/pack versions need a current preview
+    TAX_RETRO_REMEDIATION_ORGS: str = ""      # empty = preview only (drafts arrive with PR 4b)
     TAX_REGRESSION_MAX_AGE_HOURS: int = 72
     # Phase 7 PR 3: daily anomaly checks (app/modules/tax/anomaly_service.py).
     TAX_ANOMALY_ENABLED: bool = True

@@ -16,6 +16,7 @@ const { svc, current } = vi.hoisted(() => ({
     "listAuthorities", "listTaxTypes", "listComponents", "listTaxPeople", "getEvidenceBundle", "getRegression", "runRegression",
     "cancelScheduledActivation", "decideActivationCancellation",
     "listRollbackCandidates", "proposeRollback", "decideRollback",
+    "getRetroPreview", "runRetroPreview", "listRetroAnalyses",
   ].map((k) => [k, vi.fn()])),
 }));
 vi.mock("../../api/client", async (importOriginal) => ({
@@ -65,6 +66,7 @@ beforeEach(() => {
   svc.listTaxTypes.mockImplementation(() => page([{ id: 2, code: "VAT", name: "Value added tax" }]));
   svc.listComponents.mockImplementation(() => page([{ id: 1, code: "GB-VAT", name: "UK VAT", jurisdiction_code: "GB", tax_type: "VAT" }]));
   svc.getRegression.mockResolvedValue({ report: null, current_problem: "no regression report has been run" });
+  svc.getRetroPreview.mockResolvedValue({ retroactive: false, preview: null, current_problem: "no retroactive analysis preview has been run" });
   svc.listTaxPeople.mockImplementation(() => page([
     { id: 9, name: "Mara Maker", platform_role: "TAX_REVIEWER", active: true },
     { id: 7, name: "Chen Checker", platform_role: "TAX_PUBLISHER", active: true },
@@ -730,6 +732,54 @@ describe("emergency rollback", () => {
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
     await waitFor(() => expect(svc.approveInboxItem).toHaveBeenCalledWith("rollback", 4, {}));
     expect(await screen.findByText(/Applied: SEV1 rollback/)).toBeInTheDocument();
+  });
+});
+
+
+// ── Phase 8 PR 4: retroactive analysis (aggregates only) ────────────────
+
+describe("retroactive analysis", () => {
+  const banded = { organizations_affected: 1, documents: 2, by_status: { COMPARED: 1, MANUAL_REVIEW_REQUIRED: 1 },
+                   per_currency: { GBP: { net: "< 1k (over)", over: "< 1k", under: "< 1k", documents: 1 } },
+                   amounts: "banded (fewer than 3 organizations)" };
+
+  it("lists analyses with progress and banded aggregates, no tenant identifiers", async () => {
+    svc.listRetroAnalyses.mockImplementation(() => page([
+      { id: 3, trigger_kind: "rollback", trigger_id: 4, severity: "SEV1", status: "DONE",
+        basis_label: "Comparison against restored logic, not a determination", range_from: "2031-01-01", range_to: "2031-03-01",
+        progress: { organizations_done: 1, organizations_total: 1, documents_total: 2 }, aggregates: banded },
+      { id: 4, trigger_kind: "rate", trigger_id: 9, status: "RUNNING", basis_label: "Comparison against the rate now in force for the tax date",
+        range_from: "2011-01-04", range_to: "2026-11-10", progress: { organizations_done: 2, organizations_total: 5, documents_total: 40 },
+        aggregates: null },
+    ]));
+    const { container } = renderAt("/super-admin/tax/retro");
+    expect(await screen.findByText(/Analysis #3: Rollback #4 \(SEV1\)/)).toBeInTheDocument();
+    expect(screen.getByText(/restored logic, not a determination/)).toBeInTheDocument();
+    expect(screen.getByText(/net < 1k \(over\), over-collected < 1k/)).toBeInTheDocument();
+    expect(screen.getByText(/Amounts banded \(fewer than 3 organizations\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Progress: 2 of 5 organization\(s\); 40 document\(s\)/)).toBeInTheDocument();
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it("a retroactive pack version shows the preview gate and runs a preview", async () => {
+    const pack = { id: 12, code: "GB-VAT-DOMESTIC-SERVICES", version: "2", status: "APPROVED", markets: [], rounding_rule: "PER_LINE",
+                   rounding_mode: "HALF_UP", required_facts: [], source_dependencies: [], golden_test_report: null, maker_user_id: 9,
+                   valid_from: "2026-05-01", created_at: "2026-11-05T09:00:00Z" };
+    svc.listRulePacks.mockImplementation(() => page([pack]));
+    svc.getRetroPreview.mockResolvedValueOnce({ retroactive: true, preview: null, current_problem: "no retroactive analysis preview has been run" })
+      .mockResolvedValue({ retroactive: true, current_problem: null, preview: { basis_label: "Comparison against the pack version now in force for the tax date",
+        range_from: "2026-05-01", range_to: "2026-11-10", created_at: "2026-11-10T10:00:00Z", aggregates: banded } });
+    svc.runRetroPreview.mockResolvedValue({ id: 7 });
+    const { container } = renderAt("/super-admin/tax/rule-packs");
+    fireEvent.click(await screen.findByRole("button", { name: "Open #12" }));
+    const dialog = await screen.findByRole("dialog", { name: "Rule pack #12" });
+    const panel = await within(dialog).findByRole("group", { name: "Retroactive analysis preview" });
+    expect(within(panel).getByText("This version changes tax for past dates.")).toBeInTheDocument();
+    expect(within(panel).getByText(/refused until it is current: no retroactive analysis preview/)).toBeInTheDocument();
+    expect(await axe(container)).toHaveNoViolations();
+    fireEvent.click(within(panel).getByRole("button", { name: "Run preview" }));
+    await waitFor(() => expect(svc.runRetroPreview).toHaveBeenCalledWith("rule_pack", 12));
+    expect(await within(panel).findByText(/1 organization\(s\), 2 document\(s\)/)).toBeInTheDocument();
   });
 });
 
