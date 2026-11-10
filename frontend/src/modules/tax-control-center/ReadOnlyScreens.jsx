@@ -108,7 +108,10 @@ export function ExplorerScreen() {
                 <td className={`px-2 py-2 font-semibold ${STRONG}`}>{j.code}</td>
                 <td className={`px-2 py-2 ${STRONG}`}>{j.name}</td>
                 <td className={`px-2 py-2 ${STRONG}`}>{humanize(j.level)}</td>
-                <td className={`px-2 py-2 ${STRONG}`}>{humanize(j.reference_status)}</td>
+                <td className={`px-2 py-2 ${STRONG}`}>
+                  {humanize(j.reference_status)}
+                  {j.billing_clearance && <span className={`block text-xs ${MUTED}`}>{j.billing_clearance}</span>}
+                </td>
                 <td className={`px-2 py-2 ${STRONG}`}>{j.published_rate_versions}</td>
                 <td className={`px-2 py-2 ${MUTED}`}>{formatDateTime(j.last_published_at)}</td>
               </tr>

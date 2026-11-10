@@ -176,6 +176,17 @@ class Settings(BaseSettings):
     TAX_RETRO_PREVIEW_MAX_AGE_HOURS: int = 24
     TAX_RETRO_PREVIEW_REQUIRED: bool = True   # retroactive rate/pack versions need a current preview
     TAX_RETRO_REMEDIATION_ORGS: str = ""      # empty = preview only (drafts arrive with PR 4b)
+    # ZB-TAX-ARCH-001 Phase 8 PR 5: source change detection and review cadence.
+    TAX_SOURCE_MONITOR_ENABLED: bool = True
+    TAX_SOURCE_MONITOR_INTERVAL_MINUTES: int = 60
+    TAX_SOURCE_MONITOR_CONTACT_URL: str = "https://zoikobilling.com/tax-source-monitoring"
+    TAX_SOURCE_CADENCE_HIGH_HOURS: int = 24
+    TAX_SOURCE_CADENCE_NATIONAL_HOURS: int = 168
+    TAX_SOURCE_CADENCE_RESEARCH_DAYS: int = 91
+    TAX_SOURCE_FAIL_ALERT_AFTER: int = 3
+    TAX_SOURCE_FETCH_TIMEOUT_SECONDS: int = 20
+    TAX_SOURCE_MAX_BYTES: int = 5242880
+    TAX_RATE_REVERIFY_DAYS: int = 14
     TAX_REGRESSION_MAX_AGE_HOURS: int = 72
     # Phase 7 PR 3: daily anomaly checks (app/modules/tax/anomaly_service.py).
     TAX_ANOMALY_ENABLED: bool = True

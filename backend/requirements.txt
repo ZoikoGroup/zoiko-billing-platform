@@ -33,6 +33,11 @@ pillow>=10.0.0
 reportlab>=4.0.0
 httpx>=0.27.0
 
+# ZB-TAX-ARCH-001 Phase 8 PR 5: text extraction from official PDF sources for
+# change detection (source_normalize.py). Pinned: a new version could change
+# the extracted text and so every PDF source's normalized hash.
+pypdf==5.1.0
+
 # Stripe Checkout/webhooks (services/stripe_service.py, routers/stripe_router.py,
 # routers/webhook_router.py). Inert until STRIPE_* env vars are set.
 # API-1: pinned to a single major version range (was >=9.0.0, six majors

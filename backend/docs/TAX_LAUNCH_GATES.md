@@ -108,6 +108,10 @@ external provider".
   (`TAX_PHASE3B.md`).
 
 ### Gate 02: provenance, freshness, effective-dated history
+- **Phase 8 PR 5:** detection and cadence mechanism in place (monitors,
+  observations, change reviews, manual-check and re-verification reminders,
+  revalidation due dates and alerts); **sources, tiers and cadences pending
+  tax-lead sign-off.** Not passed.
 - **Evidence:**
   - Captured, server-hashed source revisions.
   - The STANDARD/GENERAL rate published through the Phase 1 pipeline, with
@@ -236,6 +240,8 @@ outbox, reconciliation, evidence and failing closed.
 - **Status:** ☐ **Open.** No provider is contracted.
 
 ### Gate 02: provenance and freshness
+- **Phase 8 PR 5:** detection and cadence mechanism in place; sources, tiers
+  and cadences pending tax-lead sign-off. Not passed.
 - **Evidence:**
   - The provider's update cadence and change notices.
   - The resolver's `dataset_version` reporting.

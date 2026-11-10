@@ -105,6 +105,35 @@ class ActivationCancelRequest(_Strict):
     reason: str = Field(..., min_length=3, max_length=2000)
 
 
+class SourceMonitorCreate(_Strict):
+    """Phase 8 PR 5. The URL must be https on an allowlisted official host."""
+    title: str = Field(..., min_length=3, max_length=300)
+    monitoring_url: str = Field(..., min_length=10, max_length=1000)
+    risk_tier: Literal["HIGH_VOLATILITY", "NATIONAL_VAT_GST", "RESEARCH_ONLY"]
+    handoff_ref: Optional[str] = Field(None, max_length=20)
+    jurisdiction_id: Optional[int] = None
+
+
+class SourceMonitorTier(_Strict):
+    risk_tier: Literal["HIGH_VOLATILITY", "NATIONAL_VAT_GST", "RESEARCH_ONLY"]
+
+
+class SourceMonitorChangeRequest(_Strict):
+    action: Literal["DISABLE", "DELETE", "LOWER_TIER", "TO_MANUAL", "CHANGE_URL"]
+    reason: str = Field(..., min_length=3, max_length=2000)
+    value: Optional[str] = Field(None, max_length=1000)
+
+
+class SourceReviewClose(_Strict):
+    outcome: Literal["EVIDENCE_CAPTURED", "DISMISSED", "CHECKED"]
+    reason: Optional[str] = Field(None, max_length=2000)
+    source_revision_id: Optional[int] = None
+
+
+class ReviewDueNote(_Strict):
+    note: str = Field(..., min_length=3, max_length=2000)
+
+
 class RollbackProposeRequest(_Strict):
     """Phase 8 PR 3. restore_to_id None = quarantine only (rule packs whose
     version a later one already follows)."""

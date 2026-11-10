@@ -53,6 +53,11 @@ from app.modules.tax.policy_schemas import ShadowSelectionRequest  # Phase 7
 from app.modules.tax.policy_schemas import (
     ActivationCancelRequest,
     AvailabilityAmendRequest,
+    ReviewDueNote,
+    SourceMonitorChangeRequest,
+    SourceMonitorCreate,
+    SourceMonitorTier,
+    SourceReviewClose,
     RollbackProposeRequest,
     AvailabilityDraftRequest,
     CodeSetDraftRequest,
@@ -894,6 +899,147 @@ def list_retro_analyses(page: PageParams = Depends(), db: Session = Depends(get_
     rows = db.query(TaxRetroAnalysis).filter(TaxRetroAnalysis.mode == "FULL").order_by(TaxRetroAnalysis.id.desc()).all()
     items, next_cursor = paginate(rows, page)
     return {"items": [view_platform(r) for r in items], "next_cursor": next_cursor}
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# Phase 8 PR 5 — official source monitoring (detection only; platform data).
+# One TAX_REVIEWER may create, raise the tier, check now and close reviews;
+# changes that can weaken detection need a second TAX_REVIEWER or PUBLISHER.
+# ═════════════════════════════════════════════════════════════════════════
+
+def _reviewer_or_publisher(user) -> None:
+    from app.core.capabilities import has_capability
+
+    if not (has_capability(user, "tax_registry.write") or has_capability(user, "tax_registry.approve")):
+        raise ForbiddenException("Tax reviewers and publishers manage source monitoring.")
+
+
+@admin_router.get("/source-monitors", summary="Monitored official sources")
+def list_source_monitors(db: Session = Depends(get_db), _user=Depends(require_capability("tax_registry.read"))):
+    from app.modules.tax.source_monitor_models import TaxSourceMonitor
+    from app.modules.tax.source_monitor_service import view_monitor
+
+    rows = db.query(TaxSourceMonitor).filter(TaxSourceMonitor.retired_at.is_(None)).order_by(TaxSourceMonitor.id).all()
+    return {"items": [view_monitor(m, db) for m in rows]}
+
+
+@admin_router.post("/source-monitors", status_code=status.HTTP_201_CREATED, summary="Monitor an official source")
+def create_source_monitor(data: SourceMonitorCreate, db: Session = Depends(get_db),
+                          current_user=Depends(require_capability("tax_registry.write"))):
+    from app.modules.tax.source_monitor_service import SourceMonitorService, view_monitor
+
+    m = SourceMonitorService(db).create(actor_id=current_user.id, **data.model_dump())
+    db.commit()
+    return view_monitor(m, db)
+
+
+@admin_router.post("/source-monitors/{monitor_id}/raise-tier", summary="Check a source more often (one person)")
+def raise_monitor_tier(monitor_id: int, data: SourceMonitorTier, db: Session = Depends(get_db),
+                       current_user=Depends(require_capability("tax_registry.write"))):
+    from app.modules.tax.source_monitor_service import SourceMonitorService, view_monitor
+
+    m = SourceMonitorService(db).raise_tier(actor_id=current_user.id, monitor_id=monitor_id, risk_tier=data.risk_tier)
+    db.commit()
+    return view_monitor(m, db)
+
+
+@admin_router.post("/source-monitors/{monitor_id}/check", summary="Check a source now (courtesy limits apply)")
+def check_source_now(monitor_id: int, db: Session = Depends(get_db),
+                     current_user=Depends(require_capability("tax_registry.write"))):
+    from app.modules.tax.source_monitor_service import SourceMonitorService, view_monitor
+
+    svc = SourceMonitorService(db)
+    m = svc.get(monitor_id)
+    outcome = svc.check(m)
+    svc._log(current_user.id, "TaxSourceMonitor", m.id, monitor="checked_now", outcome=outcome)
+    db.commit()
+    return {"outcome": outcome, "monitor": view_monitor(m, db)}
+
+
+@admin_router.post("/source-monitors/{monitor_id}/changes", status_code=status.HTTP_201_CREATED,
+                   summary="Propose a change that can weaken detection (a second person decides)")
+def propose_monitor_change(monitor_id: int, data: SourceMonitorChangeRequest, db: Session = Depends(get_db),
+                           current_user=Depends(require_capability("tax_registry.read"))):
+    from app.modules.tax.source_monitor_service import SourceMonitorService, view_change
+
+    _reviewer_or_publisher(current_user)
+    c = SourceMonitorService(db).propose_change(actor_id=current_user.id, monitor_id=monitor_id, **data.model_dump())
+    db.commit()
+    return view_change(c)
+
+
+def _decide_monitor_change(approve: bool):
+    def handler(change_id: int, data: Optional[PolicyActionRequest] = None, db: Session = Depends(get_db),
+                current_user=Depends(require_capability("tax_registry.read"))):
+        from app.modules.tax.source_monitor_service import SourceMonitorService, view_change
+
+        _reviewer_or_publisher(current_user)
+        data = data or PolicyActionRequest()
+        c = SourceMonitorService(db).decide_change(actor_id=current_user.id, change_id=change_id, approve=approve,
+                                                   reason=data.reason)
+        db.commit()
+        return view_change(c)
+    return handler
+
+
+admin_router.add_api_route("/source-monitor-changes/{change_id}/approve", _decide_monitor_change(True),
+                           methods=["POST"], summary="Approve a monitor change (a different person)")
+admin_router.add_api_route("/source-monitor-changes/{change_id}/reject", _decide_monitor_change(False),
+                           methods=["POST"], summary="Reject a monitor change")
+
+
+@admin_router.get("/source-monitors/{monitor_id}/observations", summary="A source's checks (append-only)")
+def list_observations(monitor_id: int, page: PageParams = Depends(), db: Session = Depends(get_db),
+                      _user=Depends(require_capability("tax_registry.read"))):
+    from app.modules.tax.source_monitor_models import TaxSourceObservation
+    from app.modules.tax.source_monitor_service import view_observation
+
+    rows = db.query(TaxSourceObservation).filter(TaxSourceObservation.monitor_id == monitor_id).order_by(
+        TaxSourceObservation.id.desc()).all()
+    items, next_cursor = paginate(rows, page)
+    return {"items": [view_observation(o) for o in items], "next_cursor": next_cursor}
+
+
+@admin_router.get("/source-reviews", summary="Change reviews and reminders")
+def list_source_reviews(review_status: Optional[str] = Query("OPEN", alias="status"), page: PageParams = Depends(),
+                        db: Session = Depends(get_db), _user=Depends(require_capability("tax_registry.read"))):
+    from app.modules.tax.source_monitor_models import TaxSourceReview
+    from app.modules.tax.source_monitor_service import view_review
+
+    q = db.query(TaxSourceReview)
+    if review_status:
+        q = q.filter(TaxSourceReview.status == review_status.upper())
+    items, next_cursor = paginate(q.order_by(TaxSourceReview.id.desc()).all(), page)
+    return {"items": [view_review(r) for r in items], "next_cursor": next_cursor}
+
+
+@admin_router.post("/source-reviews/{review_id}/close", summary="Close a review: evidence captured, dismissed or checked")
+def close_source_review(review_id: int, data: SourceReviewClose, db: Session = Depends(get_db),
+                        current_user=Depends(require_capability("tax_registry.write"))):
+    from app.modules.tax.source_monitor_service import SourceMonitorService, view_review
+
+    r = SourceMonitorService(db).close_review(actor_id=current_user.id, review_id=review_id, **data.model_dump())
+    db.commit()
+    return view_review(r)
+
+
+@admin_router.get("/review-dues", summary="Revalidation due dates (overdue first)")
+def list_review_dues(db: Session = Depends(get_db), _user=Depends(require_capability("tax_registry.read"))):
+    from app.modules.tax.source_monitor_models import TaxReviewDue
+    from app.modules.tax.source_monitor_service import view_due
+
+    rows = db.query(TaxReviewDue).order_by(TaxReviewDue.next_review_due).all()
+    return {"items": [view_due(d) for d in rows]}
+
+
+@admin_router.post("/review-dues/{due_id}/reviewed", summary="Record a revalidation")
+def mark_due_reviewed(due_id: int, data: ReviewDueNote, db: Session = Depends(get_db),
+                      current_user=Depends(require_capability("tax_registry.write"))):
+    from app.modules.tax.source_monitor_service import SourceMonitorService, view_due
+
+    d = SourceMonitorService(db).mark_reviewed(actor_id=current_user.id, due_id=due_id, note=data.note)
+    db.commit()
+    return view_due(d)
 
 
 # ═════════════════════════════════════════════════════════════════════════

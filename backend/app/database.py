@@ -554,6 +554,11 @@ CRITICAL_COLUMNS: list[tuple[str, str, str, str]] = [
         "ZB-TAX-ARCH-001 Phase 4d: two-person manual address resolutions",
     ),
     (
+        "tax_source_monitors", "next_check_due",
+        "alembic/versions/b6e0a4c8d2f9_tax_phase8_source_monitoring.py",
+        "ZB-TAX-ARCH-001 Phase 8: source change detection",
+    ),
+    (
         "tax_quotes", "decision_facts",
         "alembic/versions/a5d9f3b7c1e8_tax_phase8_retro_analysis.py",
         "ZB-TAX-ARCH-001 Phase 8: commit-time facts for retroactive analysis",
@@ -748,6 +753,7 @@ import app.modules.tax.regression_models  # noqa: F401,E402
 import app.modules.tax.anomaly_models  # noqa: F401,E402
 import app.modules.tax.remediation_models  # noqa: F401,E402 — ZB-TAX-ARCH-001 Phase 7 remediation (tenant) — ZB-TAX-ARCH-001 Phase 7 anomaly runs (aggregate) — ZB-TAX-ARCH-001 Phase 7 regression reports — ZB-TAX-ARCH-001 Phase 7 shadow compare
 import app.modules.tax.retro_models  # noqa: F401,E402  Phase 8 PR 4: retroactive analysis
+import app.modules.tax.source_monitor_models  # noqa: F401,E402  Phase 8 PR 5: source monitoring
 import app.modules.tax.provider_issuance  # noqa: F401,E402 — registers the locked-draft guard (issuing via provider)
 import app.modules.chatbot.models  # noqa: F401,E402 — 28-table AI assistant schema
 import app.modules.notifications.models  # noqa: F401,E402 — ZB-* email pipeline foundation
