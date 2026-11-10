@@ -238,6 +238,13 @@ def get_job_definitions() -> list[tuple[str, int, str, str]]:
             "Financial Integrity Check",
         ),
         (
+            # ZB-TAX-ARCH-001 Phase 8 PR 4: retroactive change analysis (batched, resumable).
+            "app.modules.tax.retro_service:run_tax_retro_analysis_job",
+            getattr(settings, "TAX_RETRO_ANALYSIS_INTERVAL_MINUTES", 5),
+            "tax_retro_analysis_job",
+            "Tax Retroactive Analysis",
+        ),
+        (
             # ZB-TAX-ARCH-001 Phase 8 PR 2: scheduled rule-pack / availability activation.
             "app.modules.tax.activation:run_tax_activation_job",
             getattr(settings, "TAX_ACTIVATION_INTERVAL_MINUTES", 1),

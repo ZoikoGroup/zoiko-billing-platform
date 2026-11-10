@@ -172,6 +172,11 @@ export const exportShadowComparisons = ({ seller_entity_id, outcome, cause } = {
     outcome: outcome || undefined, cause: cause || undefined } });
 export const getShadowComparison = (id) => api.get(`${T}/shadow/comparisons/${id}`);
 
+// ── Phase 8 PR 4: retroactive analysis (this organization only) ─
+export const listRetroAnalyses = () => api.get(`${T}/retro-analyses`);
+export const listRetroDocuments = (id, { cursor } = {}) => api.get(`${T}/retro-analyses/${id}/documents`, page({ cursor }));
+export const exportRetroDocuments = (id) => api.get(`${T}/retro-analyses/${id}/documents`, { params: { format: "csv" } });
+
 // ── Phase 7 PR 4: targeted remediation (preview by default; two people) ─
 export const getOvercollectionRemediation = () => api.get(`${T}/remediation/overcollection/preview`);
 export const getDuplicateRemediation = () => api.get(`${T}/remediation/duplicates/preview`);

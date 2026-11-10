@@ -181,6 +181,7 @@ jobs:
           # approval racing the activation job (Phase 8 PR 3). They COMMIT to
           # this throwaway database, so they run last and alone.
           TAX_PG_RACE_COMMITS=1 python -m pytest tests/test_tax_phase4d0_worker_pg.py tests/test_tax_phase8_race_pg.py \
+            tests/test_tax_phase8_retro_race_pg.py \
             -v -rs --junitxml=tax-pg-race-results.xml || {
             python scripts/ci_annotate_failures.py junit tax-pg-race-results.xml
             exit 1

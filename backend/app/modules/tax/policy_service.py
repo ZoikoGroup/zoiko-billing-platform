@@ -743,11 +743,15 @@ class RulePackService(_VersionWorkflow):
                                           "that governs its start date.")
             start = local_midnight_utc(row.valid_from, tz)
             if when > start:
-                raise RegistryStateError(
-                    f"{row.code} v{row.version} is in force from {row.valid_from} ({tz}); activating it at "
-                    f"{when.isoformat(timespec='minutes')} is after that start, so it would be retroactive. "
-                    "Retroactive pack versions wait for retroactive change analysis (Phase 8 PR 4); "
-                    "activate before the start date or choose a later one.")
+                # Phase 8 PR 4: retroactive only with a current analysis
+                # preview, and only published now (never scheduled).
+                if when > utcnow():
+                    raise RegistryStateError(
+                        f"{row.code} v{row.version} would be retroactive; a retroactive version can't be scheduled. "
+                        "Publish it now, with a current retroactive analysis preview.")
+                from app.modules.tax import retro_service
+
+                retro_service.require_current_preview(self.db, "rule_pack", row.id)
 
     def _retention_check(self, row) -> None:
         """Phase 8 PR 3: only a version listed in the retention manifest with
@@ -758,6 +762,24 @@ class RulePackService(_VersionWorkflow):
         problem = publish_problem(row.code, code_version_of(row), row.code_hash)
         if problem:
             raise RegistryStateError(problem)
+
+    def _is_retroactive(self, row, when: datetime) -> bool:
+        from app.modules.tax.activation import local_midnight_utc
+
+        pred = self.current_for(row)
+        if row.valid_from is None or (pred is not None and pred.valid_from == row.valid_from):
+            return False
+        tz = (getattr(row, "activate_tz", None) or self._timezone(row))
+        return bool(tz) and when > local_midnight_utc(row.valid_from, tz)
+
+    def _activate(self, row, actor_id, now: datetime, scheduled: bool = False):
+        retroactive = self._is_retroactive(row, now)
+        row = super()._activate(row, actor_id, now, scheduled)
+        if retroactive:                                     # Phase 8 PR 4: the full per-tenant analysis
+            from app.modules.tax import retro_service
+
+            retro_service.enqueue(self.db, retro_service.pack_trigger(self.db, row, now), actor_id)
+        return row
 
     def _close_predecessor(self, row, now: datetime) -> None:
         pred = self.current_for(row)

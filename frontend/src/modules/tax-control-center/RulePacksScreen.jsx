@@ -14,6 +14,7 @@ import {
 import { RegressionPanel } from "./RegressionPanel";
 import { CancelSchedule, PublishModal, ScheduleInfo } from "./ScheduleControls";
 import { RollbackControls } from "./RollbackControls";
+import { RetroPreviewPanel } from "./RetroScreens";
 
 /* P7 Rule packs: the native packs available in code (their declarations,
  * live source-dependency status), their registry versions, the golden-test
@@ -239,6 +240,9 @@ function PackDetail({ pack, catalogueEntry, user, onChanged }) {
       <GoldenReportModal open={reporting} pack={pack} onClose={() => setReporting(false)}
                          onDone={(updated) => { setReporting(false); onChanged(updated); }} />
       <RegressionPanel kind="rule_pack" id={pack.id} user={user} />
+      {["PENDING_REVIEW", "VALIDATION_FAILED", "VALIDATED", "IN_APPROVAL", "APPROVED"].includes(pack.status) && (
+        <RetroPreviewPanel kind="rule_pack" id={pack.id} user={user} />
+      )}
       <EvidenceExport noun="rule pack" filename={`tax-evidence-rule_pack-${pack.id}`}
                       fetchBundle={(format) => getEvidenceBundle("rule_pack", pack.id, format)} />
       {stepUp.modal}

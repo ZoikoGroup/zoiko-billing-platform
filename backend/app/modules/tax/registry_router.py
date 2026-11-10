@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.core.capabilities import require_any_capability, require_capability
 from app.core.dependencies import get_current_user
-from app.core.exceptions import BadRequestException
+from app.core.exceptions import BadRequestException, ForbiddenException
 from app.database import get_db
 from app.modules.tax.enums import JurisdictionLevel, RedistributionPermission, StagedRateStatus, StagingOrigin
 from app.modules.tax.pagination import PageParams, decode_cursor, encode_cursor, paginate
@@ -852,6 +852,48 @@ def _decide_rollback(action: str):
 for _action in ("approve", "reject", "withdraw"):
     admin_router.add_api_route(f"/rollbacks/{{request_id}}/{_action}", _decide_rollback(_action), methods=["POST"],
                                summary=f"{_action.capitalize()} an emergency rollback request")
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# Phase 8 PR 4 — retroactive analysis: previews (gate for retroactive rate
+# and pack versions) and FULL analyses. Aggregates only (T13); amounts are
+# banded when fewer than 3 organizations are affected.
+# ═════════════════════════════════════════════════════════════════════════
+
+@admin_router.post("/retro-previews/{kind}/{subject_id}", status_code=status.HTTP_201_CREATED,
+                   summary="Run a retroactive analysis preview for a staged rate or pack version")
+def run_retro_preview(kind: str, subject_id: int, db: Session = Depends(get_db),
+                      current_user=Depends(require_capability("tax_registry.read"))):
+    from app.core.capabilities import has_capability
+    from app.modules.tax import retro_service
+
+    if not (has_capability(current_user, "tax_registry.write") or has_capability(current_user, "tax_registry.approve")):
+        raise ForbiddenException("Tax reviewers and publishers can run a retroactive analysis preview.")
+    row = retro_service.run_preview(db, kind, subject_id, current_user.id)
+    db.commit()
+    return {**retro_service.view_platform(row), "current_problem": None}
+
+
+@admin_router.get("/retro-previews/{kind}/{subject_id}", summary="The latest preview and whether it is current")
+def get_retro_preview(kind: str, subject_id: int, db: Session = Depends(get_db),
+                      _user=Depends(require_capability("tax_registry.read"))):
+    from app.modules.tax import retro_service
+
+    row = retro_service.latest_preview(db, kind, subject_id)
+    retroactive = retro_service.subject_is_retroactive(db, kind, subject_id)
+    return {"preview": retro_service.view_platform(row) if row else None,
+            "current_problem": retro_service.preview_problem(db, kind, subject_id), "retroactive": retroactive}
+
+
+@admin_router.get("/retro-analyses", summary="Retroactive analyses (aggregates only)")
+def list_retro_analyses(page: PageParams = Depends(), db: Session = Depends(get_db),
+                        _user=Depends(require_capability("tax_registry.read"))):
+    from app.modules.tax.retro_models import TaxRetroAnalysis
+    from app.modules.tax.retro_service import view_platform
+
+    rows = db.query(TaxRetroAnalysis).filter(TaxRetroAnalysis.mode == "FULL").order_by(TaxRetroAnalysis.id.desc()).all()
+    items, next_cursor = paginate(rows, page)
+    return {"items": [view_platform(r) for r in items], "next_cursor": next_cursor}
 
 
 # ═════════════════════════════════════════════════════════════════════════

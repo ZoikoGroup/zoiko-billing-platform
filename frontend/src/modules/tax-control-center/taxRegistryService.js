@@ -104,6 +104,11 @@ export const cancelScheduledActivation = (kind, id, reason) =>
 export const decideActivationCancellation = (id, approve, body = {}) =>
   api.post(`${BASE}/activation-cancellations/${id}/${approve ? "approve" : "reject"}`, body);
 
+// ── Phase 8 PR 4: retroactive analysis (aggregates only) ──
+export const getRetroPreview = (kind, id) => api.get(`${BASE}/retro-previews/${kind}/${id}`);
+export const runRetroPreview = (kind, id) => api.post(`${BASE}/retro-previews/${kind}/${id}`);
+export const listRetroAnalyses = ({ cursor } = {}) => api.get(`${BASE}/retro-analyses`, { params: { cursor } });
+
 // ── Phase 8 PR 3: emergency rollback ──
 export const listRollbackCandidates = (kind, versionId) =>
   api.get(`${BASE}/rollbacks/candidates`, { params: { kind, version_id: versionId } });

@@ -816,6 +816,7 @@ class TaxRegistryPipeline:
         from app.modules.tax.regression.runner import require_current
 
         require_current(self.db, "rate", row.id)            # Phase 7 PR 2
+        self._retro_gate(row)                               # Phase 8 PR 4
         try:
             self.approvals.approve(change.approval_request, approver_user_id=actor_id)
         except SelfApprovalError as exc:
@@ -850,6 +851,16 @@ class TaxRegistryPipeline:
         return row
 
     # ── publish (§10.1 step 7) ──
+    def _retro_gate(self, row) -> bool:
+        """Phase 8 PR 4: a rate whose validity covers past dates needs a
+        current retroactive analysis preview. Returns whether it is retroactive."""
+        from app.modules.tax import retro_service
+
+        if not retro_service.rate_is_retroactive(self.db, row):
+            return False
+        retro_service.require_current_preview(self.db, "rate", row.id)
+        return True
+
     def publish(self, *, actor_id: int, staged_id: int) -> TaxRateVersion:
         row = self.get_staged(staged_id)
         if row.status != StagedRateStatus.APPROVED:
@@ -858,6 +869,7 @@ class TaxRegistryPipeline:
         self._assert_not_maker(row, change, actor_id, "publish")
         self._require_evidence(row)
         self._require_clean(row)
+        retroactive = self._retro_gate(row)
 
         now = utcnow()
         predecessor = None
@@ -897,5 +909,10 @@ class TaxRegistryPipeline:
         self._log(actor_id, PlatformAuditAction.TAX_RATE_PUBLISHED, "TaxRateVersion", version.id,
                   new={"rate_percent": version.rate_percent, "valid_from": version.valid_from,
                        "valid_to": version.valid_to, "predecessor_id": version.predecessor_id},
-                  metadata={"staged_rate_id": row.id, "approval_request_id": change.approval_request_id})
+                  metadata={"staged_rate_id": row.id, "approval_request_id": change.approval_request_id,
+                            "retroactive": retroactive})
+        if retroactive:                                     # Phase 8 PR 4: the full per-tenant analysis
+            from app.modules.tax import retro_service
+
+            retro_service.enqueue(self.db, retro_service.rate_trigger(self.db, version=version), actor_id)
         return version

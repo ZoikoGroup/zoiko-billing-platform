@@ -46,6 +46,11 @@ the product owner.
   fails closed (`RULE_PACK_ROLLED_BACK`) and issued invoices never change.
   The code of every published version must keep shipping (retention
   manifest, CI and the runtime check).
+- **Retroactive changes are analysed (Phase 8 PR 4).** A rate or pack
+  version covering past dates needs a current analysis preview to be
+  approved; publishing it, or approving a pack rollback, runs a read-only
+  per-tenant comparison of issued invoices. Remediation is preview only
+  until PR 4b.
 - **A published market isn't live for a tenant yet.** The tenant still
   needs two-person approval of the seller entity's registration or legal
   basis, the activation, and (for provider markets) the provider connection.

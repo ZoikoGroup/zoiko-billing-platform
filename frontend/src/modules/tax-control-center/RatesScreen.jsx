@@ -13,6 +13,7 @@ import {
   useReferenceList, useStepUp,
 } from "./shared";
 import { RegressionPanel } from "./RegressionPanel";
+import { RetroPreviewPanel } from "./RetroScreens";
 
 /* P3 Rates and change review: staged rates through validate, submit,
  * approve (or reject) and publish, with the proposal shown beside the rate
@@ -219,6 +220,7 @@ function RateDetail({ staged, user, onChanged, onEdit }) {
           act(action, () => stagedRateAction(staged.id, action, { reason })); }}
       />
       <RegressionPanel kind="rate" id={staged.id} user={user} />
+      {staged.status !== "PUBLISHED" && <RetroPreviewPanel kind="rate" id={staged.id} user={user} />}
       <EvidenceExport noun="rate" filename={`tax-evidence-rate-${staged.id}`}
                       fetchBundle={(format) => getEvidenceBundle("rate", staged.id, format)} />
       {stepUp.modal}

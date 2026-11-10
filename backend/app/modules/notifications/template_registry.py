@@ -3858,6 +3858,24 @@ TEMPLATE_REGISTRY: Dict[str, TemplateMeta] = {
         active=True,
         owner_hook="tax/rollback_service.py:RollbackService._email",
     ),
+    # Phase 8 PR 4 (ZB-TAX-ARCH-001): a retroactive analysis of the organization's invoices is ready.
+    "ZB-TAX-002": TemplateMeta(
+        template_id="ZB-TAX-002",
+        tier=NotificationTier.T0,
+        trigger_event_name="tax.retro_analysis_ready",
+        title="Retroactive tax analysis ready",
+        subject="A retroactive tax analysis of your invoices is ready",
+        preheader="A retroactive tax analysis of your invoices is ready.",
+        body_template="Hello {{recipient_first_name}}, we compared your issued invoices for {{date_range}} after {{trigger}}. Issued invoices are not changed.",
+        primary_action_label="Open the report",
+        sender_identity="Zoiko Billing Tax",
+        control_rule="T0 operational notice; no amounts, invoice numbers or customer names",
+        required_variables=("recipient_first_name", "trigger", "date_range"),
+        sender_identity_kind="platform",
+        control_rule_flags=_T0_MANDATORY_FLAGS,
+        active=True,
+        owner_hook="tax/retro_service.py:_tell_tenant",
+    ),
 }
 
 #: event_name -> [template_id, ...]. Built from TEMPLATE_REGISTRY.

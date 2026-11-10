@@ -369,6 +369,8 @@ class ReviewItemKind(str, enum.Enum):
     CREDIT_EXCEEDS_ORIGINAL = "credit_exceeds_original"   # credit notes exceed the invoice total or its tax
     # Phase 8 PR 3: an emergency rollback affected this organization's quotes or market.
     TAX_ROLLBACK_APPLIED    = "tax_rollback_applied"
+    # Phase 8 PR 4: a retroactive analysis found documents of this organization.
+    TAX_RETRO_ANALYSIS      = "tax_retro_analysis"
 
 
 class ReviewItemStatus(str, enum.Enum):

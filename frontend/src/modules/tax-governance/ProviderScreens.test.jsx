@@ -23,6 +23,7 @@ const { svc, current } = vi.hoisted(() => ({
     "withdrawShadow", "endShadow", "getShadowSummary", "listShadowComparisons", "exportShadowComparisons",
     "getShadowComparison", "getOvercollectionRemediation", "getDuplicateRemediation", "listRemediationBatches",
     "proposeRemediation", "decideRemediation", "withdrawRemediation", "reverseRemediation",
+    "listRetroAnalyses", "listRetroDocuments", "exportRetroDocuments",
   ].map((k) => [k, vi.fn()])),
 }));
 vi.mock("../../api/client", async (importOriginal) => ({ ...(await importOriginal()), getStoredUser: () => current.user }));
@@ -637,3 +638,51 @@ describe("remediation", () => {
     expect(svc.getOvercollectionRemediation).not.toHaveBeenCalled();
   });
 });
+
+
+// ── Phase 8 PR 4: retroactive analysis (this organization only) ─────────
+
+describe("retroactive analysis", () => {
+  const analysis = { id: 3, trigger_kind: "rate", basis_label: "Comparison against the rate now in force for the tax date",
+                     range_from: "2011-01-04", range_to: "2026-11-10", status: "DONE", finished_at: "2026-11-10T10:00:00Z", documents: 2,
+                     by_status: { COMPARED: 1, MANUAL_REVIEW_REQUIRED: 1 }, per_currency: { GBP: { net: "2.00", over: "2.00", under: "0" } } };
+  const docs = [
+    { id: 1, analysis_id: 3, invoice_id: 77, status: "COMPARED", direction: "OVER", currency: "GBP", original_tax: "20.00",
+      comparison_tax: "18.00", difference: "2.00", superseded_by: 5, basis_label: analysis.basis_label,
+      lines: [{ line_number: 1, original: { outcome: "STANDARD", rate: "20.000000", tax: "20.00" },
+                comparison: { outcome: "STANDARD", rate: "18", tax: "18.00" } }],
+      remediation_preview: { kind: "tax-only credit (preview)", amount: "2.00", drafts: "Draft credit notes arrive with PR 4b (governed tax-only credit); this is a preview." } },
+    { id: 2, analysis_id: 3, invoice_id: 78, status: "MANUAL_REVIEW_REQUIRED", reason: "commit-time value unknown: seller country",
+      difference: null, basis_label: analysis.basis_label, lines: null },
+  ];
+
+  it("shows the organization's own comparisons, superseded marks and the preview-only remediation", async () => {
+    svc.listRetroAnalyses.mockResolvedValue({ items: [analysis], remediation_enabled: false,
+                                              under_collection: "Report only: no debit notes or extra charges." });
+    svc.listRetroDocuments.mockImplementation(() => page(docs));
+    current.user = APPROVER;
+    const { container } = renderAt("retro");
+    expect(await screen.findByText(/Analysis #3: Rate/)).toBeInTheDocument();
+    expect(screen.getByText(/Corrections are a preview only for now/)).toBeInTheDocument();
+    expect(screen.getByText(/GBP/).closest("li")).toHaveTextContent("net 2.00, over-collected 2.00");
+    fireEvent.click(screen.getByRole("button", { name: "Show documents" }));
+    expect(await screen.findByText("Invoice #77")).toBeInTheDocument();
+    expect(screen.getByText(/Tax charged 20.00 GBP; comparison 18.00; over-collected 2.00/)).toBeInTheDocument();
+    expect(screen.getByText("Superseded by analysis #5.")).toBeInTheDocument();
+    expect(screen.getByText(/Proposed tax-only credit \(preview\): 2.00 GBP. Draft credit notes arrive with PR 4b/)).toBeInTheDocument();
+    expect(screen.getByText(/commit-time value unknown: seller country/)).toBeInTheDocument();
+    expect(screen.getByRole("table", { name: "Original and comparison per line" })).toBeInTheDocument();
+    expect(await axe(container)).toHaveNoViolations();
+    svc.exportRetroDocuments.mockResolvedValue("invoice_id,status\n77,COMPARED\n");
+    fireEvent.click(screen.getByRole("button", { name: "Export CSV" }));
+    await waitFor(() => expect(svc.exportRetroDocuments).toHaveBeenCalledWith(3));
+  });
+
+  it("is closed to other tenant roles", async () => {
+    current.user = BILLING;
+    renderAt("retro");
+    expect(await screen.findByText(/Retroactive analysis is for organization admins and finance approvers/)).toBeInTheDocument();
+    expect(svc.listRetroAnalyses).not.toHaveBeenCalled();
+  });
+});
+
