@@ -341,7 +341,7 @@ def test_http_schedule_cancel_and_inbox(w, v2, client_for, monkeypatch):
     refused = client_for(w["publisher"]).post(f"{base}/rule-packs/{row.id}/publish",
                                               json={"activate_at_local": "2030-06-01T09:00"})
     assert refused.json()["error"] == "TAX_REGISTRY_STEP_UP_REQUIRED"              # scheduling needs MFA too
-    monkeypatch.setattr(settings, "MFA_STEP_UP_BYPASS", True)                     # the rest is about the flow
+    monkeypatch.setattr(settings, "TAX_REGISTRY_STEP_UP_REQUIRED", False)          # the rest is about the flow
     body = client_for(w["publisher"]).post(f"{base}/rule-packs/{row.id}/publish",
                                            json={"activate_at_local": "2030-06-01T09:00", "timezone": "Europe/London"})
     assert body.status_code == 200, body.text
