@@ -158,6 +158,9 @@ class Settings(BaseSettings):
     TAX_ALERT_NOT_DETERMINED_RATE: float = 0.5
     TAX_ALERT_REVIEW_BACKLOG: int = 5
     TAX_ALERT_SECRET_STORE_FAILURES: int = 1
+    # ZB-TAX-ARCH-001 Phase 8 PR 2: scheduled activation.
+    TAX_ACTIVATION_INTERVAL_MINUTES: int = 1
+    TAX_ALERT_ACTIVATION_LATE_MINUTES: int = 10
     # Phase 7 PR 1: shadow compare (app/modules/tax/shadow_service.py).
     TAX_SHADOW_ENABLED: bool = True
     TAX_SHADOW_INTERVAL_MINUTES: int = 15

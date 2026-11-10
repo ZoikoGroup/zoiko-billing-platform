@@ -165,8 +165,9 @@ def test_monitoring_raises_and_clears_the_alert(uk, monkeypatch):
 
 
 def test_missing_pack_code_fails_closed(uk, monkeypatch):
-    from app.modules.tax.engines import RULE_PACKS
+    from app.modules.tax.engines import RULE_PACK_VERSIONS, RULE_PACKS
 
+    monkeypatch.delitem(RULE_PACK_VERSIONS, (UkVatDomesticServices.code, "1"))   # v1's code removed by a deploy
     monkeypatch.setitem(RULE_PACKS, UkVatDomesticServices.code,
                         type("UkV2", (UkVatDomesticServices,), {"version": "2"}))
     rpi.clear_cache()

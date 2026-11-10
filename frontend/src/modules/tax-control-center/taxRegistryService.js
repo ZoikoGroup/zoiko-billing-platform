@@ -97,8 +97,16 @@ export function rulePackAction(id, action, body = {}) {
   return api.post(`${BASE}/rule-packs/${id}/${action}`, body);
 }
 
+// ── Phase 8 PR 2: scheduled activation ──
+const SCHEDULE_PATHS = { rule_pack: "rule-packs", market_availability: "market-availability" };
+export const cancelScheduledActivation = (kind, id, reason) =>
+  api.post(`${BASE}/${SCHEDULE_PATHS[kind]}/${id}/cancel-schedule`, { reason });
+export const decideActivationCancellation = (id, approve, body = {}) =>
+  api.post(`${BASE}/activation-cancellations/${id}/${approve ? "approve" : "reject"}`, body);
+
 /** The approve route for an inbox item of the given kind. */
 export function approveInboxItem(kind, id, body) {
+  if (kind === "activation_cancel") return decideActivationCancellation(id, true, body);
   if (kind === "staged_rate") return stagedRateAction(id, "approve", body);
   if (kind === "market_availability") return availabilityAction(id, "approve", body);
   if (kind === "rule_pack") return rulePackAction(id, "approve", body);

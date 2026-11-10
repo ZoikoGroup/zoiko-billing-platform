@@ -101,10 +101,10 @@ def code_hash(pack_cls) -> Optional[str]:
 def running_hash(code: str, version: str) -> Optional[str]:
     """The hash of the code running for (code, version), or None when that
     version of the pack is not in the running code."""
-    from app.modules.tax.policy_service import RulePackService
+    from app.modules.tax.engines import rule_pack_class
 
-    pack = RulePackService.catalogue().get(code)
-    if pack is None or getattr(pack, "version", None) != version:
+    pack = rule_pack_class(code, version)
+    if pack is None or not hasattr(pack, "declaration"):
         return None
     return code_hash(pack)
 

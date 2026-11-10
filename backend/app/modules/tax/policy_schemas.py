@@ -71,6 +71,10 @@ class PolicyActionRequest(_Strict):
     reason: Optional[str] = Field(None, max_length=2000)
     code: Optional[str] = Field(None, min_length=6, max_length=8)
     recovery_code: Optional[str] = Field(None, min_length=6, max_length=20)
+    # Phase 8 PR 2 (publish only): schedule at jurisdiction-local legal time.
+    activate_at_local: Optional[str] = Field(None, max_length=40)
+    timezone: Optional[str] = Field(None, max_length=64)
+    utc_offset: Optional[str] = Field(None, max_length=6)
 
 
 # ── Tenant: registrations, legal bases, activations ─────────────────────
@@ -87,11 +91,18 @@ class GoldenTestReport(_Strict):
 class RulePackRegisterRequest(_Strict):
     code: str = Field(..., min_length=1, max_length=60)
     notes: Optional[str] = Field(None, max_length=4000)
+    valid_from: Optional[date] = None        # Phase 8 PR 2: local legal start date; None = from the start
+    version: Optional[str] = Field(None, max_length=30)   # default: the newest version in code
 
 
 class RulePackAmendRequest(_Strict):
     golden_test_report: Optional[GoldenTestReport] = None
     notes: Optional[str] = Field(None, max_length=4000)
+    valid_from: Optional[date] = None
+
+
+class ActivationCancelRequest(_Strict):
+    reason: str = Field(..., min_length=3, max_length=2000)
 
 
 class RegistrationCreate(_Strict):

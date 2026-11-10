@@ -37,6 +37,10 @@ the product owner.
   from the ACTIVE version's hash, quotes for its markets are refused
   (`RULE_PACK_INTEGRITY_FAILED`) and a P1 alert fires. Every native quote
   records the pack version and hash (`TAX_PHASE8.md`).
+- **Packs are effective-dated (Phase 8 PR 2).** The quote's tax date picks
+  the pack version in force, like rates (gate 02's effective-dated
+  history now covers packs). Packs and availability can be scheduled at
+  jurisdiction-local time; cancelling a schedule takes two people and MFA.
 - **A published market isn't live for a tenant yet.** The tenant still
   needs two-person approval of the seller entity's registration or legal
   basis, the activation, and (for provider markets) the provider connection.

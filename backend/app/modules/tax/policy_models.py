@@ -18,6 +18,7 @@ from sqlalchemy import (
     JSON,
     Boolean,
     Column,
+    Date,
     DateTime,
     ForeignKey,
     Index,
@@ -67,7 +68,21 @@ class _PolicyApprovalMixin:
         return Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
 
-class TaxMarketAvailabilityVersion(_PolicyApprovalMixin, Base):
+class _ScheduleMixin:
+    """Phase 8 PR 2: a publish can be scheduled. activate_at is UTC, entered
+    as jurisdiction-local legal time (kept as entered, with its zone)."""
+
+    activate_at       = Column(DateTime(timezone=True), nullable=True, index=True)
+    activate_at_local = Column(String(40), nullable=True)
+    activate_tz       = Column(String(64), nullable=True)
+    activation_error  = Column(Text, nullable=True)
+
+    @declared_attr
+    def scheduled_by_user_id(cls):
+        return Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+
+class TaxMarketAvailabilityVersion(_ScheduleMixin, _PolicyApprovalMixin, Base):
     """Jurisdiction × tax type × transaction class -> the mode the platform
     supports there, with evidence for each §13.2 launch gate."""
     __tablename__ = "tax_market_availability_versions"
@@ -138,7 +153,7 @@ class TaxCode(Base):
     __table_args__ = (UniqueConstraint("code_set_version_id", "code", name="uq_tax_codes_set_code"),)
 
 
-class TaxRulePackVersion(_PolicyApprovalMixin, Base):
+class TaxRulePackVersion(_ScheduleMixin, _PolicyApprovalMixin, Base):
     """Registry of native rule-pack versions (Phase 3a: table only; packs and
     their approval routes arrive in 3b). A pack's logic is code registered in
     app.modules.tax.engines.RULE_PACKS; this row records which code version
@@ -162,20 +177,45 @@ class TaxRulePackVersion(_PolicyApprovalMixin, Base):
     # Phase 8 PR 1: SHA-256 of the pack's code and declarations
     # (rule_pack_integrity.py), recorded at registration and frozen.
     code_hash          = Column(String(64), nullable=True)
+    # Phase 8 PR 2: effective-dated packs, like rates. DATEs in the
+    # jurisdiction's legal calendar, end-exclusive; the quote's tax date picks
+    # the version. valid_from NULL = from the start; valid_to is set once, on
+    # the predecessor, when its successor activates.
+    valid_from         = Column(Date, nullable=True)
+    valid_to           = Column(Date, nullable=True)
     status             = Column(CaseInsensitiveEnum(PlatformVersionStatus), nullable=False, index=True,
                                 default=PlatformVersionStatus.PENDING_REVIEW,
                                 server_default=PlatformVersionStatus.PENDING_REVIEW.name)
     predecessor_id     = Column(Integer, ForeignKey("tax_rule_pack_versions.id", ondelete="RESTRICT"), nullable=True)
 
+    # Several versions of one pack may be ACTIVE, for date ranges that don't
+    # overlap (Phase 8 PR 2): enforced in the service and, on Postgres, by
+    # ex_tax_rule_pack_active_ranges.
     __table_args__ = (
         UniqueConstraint("code", "version", name="uq_tax_rule_pack_versions_code_version"),
-        Index("uq_tax_rule_pack_one_active", "code", unique=True,
-              sqlite_where=text("status = 'ACTIVE'"), postgresql_where=text("status = 'ACTIVE'")),
     )
 
 
+class TaxActivationCancellation(Base):
+    """A two-person request to cancel a scheduled activation (Phase 8 PR 2).
+    Platform data only; frozen once decided."""
+    __tablename__ = "tax_activation_cancellations"
+
+    id              = Column(Integer, primary_key=True, index=True)
+    version_kind    = Column(String(30), nullable=False)          # rule_pack | market_availability
+    version_id      = Column(Integer, nullable=False, index=True)
+    reason          = Column(Text, nullable=False)
+    status          = Column(String(20), nullable=False, default="PROPOSED", index=True)
+    proposed_by     = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    decided_by      = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    decided_at      = Column(DateTime(timezone=True), nullable=True)
+    decision_reason = Column(Text, nullable=True)
+    created_at      = Column(DateTime(timezone=True), nullable=False)
+
+
 #: Platform policy tables (§12.1): never tenant data, never purged with a tenant.
-POLICY_TABLES = ("tax_market_availability_versions", "tax_code_set_versions", "tax_codes", "tax_rule_pack_versions")
+POLICY_TABLES = ("tax_market_availability_versions", "tax_code_set_versions", "tax_codes", "tax_rule_pack_versions",
+                 "tax_activation_cancellations")
 
 # Content columns frozen once a version leaves the editable states.
 AVAILABILITY_CONTENT_FIELDS = ("jurisdiction_id", "tax_type_id", "transaction_class", "mode",
@@ -183,15 +223,19 @@ AVAILABILITY_CONTENT_FIELDS = ("jurisdiction_id", "tax_type_id", "transaction_cl
 CODE_SET_CONTENT_FIELDS = ("code", "version", "notes", "created_by_user_id", "created_at")
 RULE_PACK_CONTENT_FIELDS = ("code", "version", "markets", "rounding_rule", "rounding_mode", "required_facts",
                             "coverage", "source_dependencies", "golden_test_report", "notes", "created_by_user_id",
-                            "created_at", "code_hash")
+                            "created_at", "code_hash", "valid_from")
+#: Set exactly once on an ACTIVE row (the predecessor's end date).
+RULE_PACK_SET_ONCE_FIELDS = ("valid_to",)
 
 
 # ── Postgres-only DDL (frozen copy in migration c5e2d8a4b7f1) ────────────
 
-def _version_guard_sql(table: str, content_fields: tuple) -> list:
+def _version_guard_sql(table: str, content_fields: tuple, set_once: tuple = ()) -> list:
     content = ", ".join(f"'{f}', NEW.{f}" for f in content_fields)
     old_content = ", ".join(f"'{f}', OLD.{f}" for f in content_fields)
     fn = f"{table}_guard"
+    minus = "".join(f" - '{f}'" for f in ("status", "superseded_at") + set_once)
+    once = "".join(f"\n               OR (OLD.{f} IS NOT NULL AND NEW.{f} IS DISTINCT FROM OLD.{f})" for f in set_once)
     return [
         f"""
         CREATE OR REPLACE FUNCTION {fn}() RETURNS trigger AS $$
@@ -213,7 +257,7 @@ def _version_guard_sql(table: str, content_fields: tuple) -> list:
               USING ERRCODE = 'integrity_constraint_violation';
           END IF;
           IF OLD.status = 'ACTIVE' AND (
-               (to_jsonb(NEW) - 'status' - 'superseded_at') IS DISTINCT FROM (to_jsonb(OLD) - 'status' - 'superseded_at')
+               (to_jsonb(NEW){minus}) IS DISTINCT FROM (to_jsonb(OLD){minus}){once}
                OR NEW.status NOT IN ('ACTIVE', 'SUPERSEDED')
                OR (NEW.status = 'SUPERSEDED' AND NEW.superseded_at IS NULL)) THEN
             RAISE EXCEPTION '{table} % is active: it can only be superseded', OLD.id
@@ -233,7 +277,42 @@ def _version_guard_sql(table: str, content_fields: tuple) -> list:
 
 PG_AVAILABILITY_GUARDS = _version_guard_sql("tax_market_availability_versions", AVAILABILITY_CONTENT_FIELDS)
 PG_CODE_SET_GUARDS = _version_guard_sql("tax_code_set_versions", CODE_SET_CONTENT_FIELDS)
-PG_RULE_PACK_GUARDS = _version_guard_sql("tax_rule_pack_versions", RULE_PACK_CONTENT_FIELDS)
+PG_RULE_PACK_GUARDS = _version_guard_sql("tax_rule_pack_versions", RULE_PACK_CONTENT_FIELDS, RULE_PACK_SET_ONCE_FIELDS) + [
+    "CREATE EXTENSION IF NOT EXISTS btree_gist",
+    """
+    ALTER TABLE tax_rule_pack_versions
+      ADD CONSTRAINT ex_tax_rule_pack_active_ranges
+      EXCLUDE USING gist (code WITH =, daterange(valid_from, valid_to, '[)') WITH &&)
+      WHERE (status = 'ACTIVE') DEFERRABLE INITIALLY DEFERRED
+    """,
+]
+PG_ACTIVATION_CANCELLATION_GUARDS = [
+    """
+    CREATE OR REPLACE FUNCTION tax_activation_cancellations_guard() RETURNS trigger AS $$
+    BEGIN
+      IF TG_OP = 'DELETE' THEN
+        RAISE EXCEPTION 'tax_activation_cancellations % cannot be deleted', OLD.id
+          USING ERRCODE = 'integrity_constraint_violation';
+      END IF;
+      IF OLD.status <> 'PROPOSED' AND to_jsonb(NEW) IS DISTINCT FROM to_jsonb(OLD) THEN
+        RAISE EXCEPTION 'tax_activation_cancellations % is decided and final', OLD.id
+          USING ERRCODE = 'integrity_constraint_violation';
+      END IF;
+      IF (to_jsonb(NEW) - 'status' - 'decided_by' - 'decided_at' - 'decision_reason')
+         IS DISTINCT FROM (to_jsonb(OLD) - 'status' - 'decided_by' - 'decided_at' - 'decision_reason') THEN
+        RAISE EXCEPTION 'tax_activation_cancellations % request content is frozen', OLD.id
+          USING ERRCODE = 'integrity_constraint_violation';
+      END IF;
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql
+    """,
+    """
+    CREATE TRIGGER trg_tax_activation_cancellations_guard
+      BEFORE UPDATE OR DELETE ON tax_activation_cancellations
+      FOR EACH ROW EXECUTE FUNCTION tax_activation_cancellations_guard()
+    """,
+]
 PG_TAX_CODE_GUARDS = [
     """
     CREATE OR REPLACE FUNCTION tax_codes_guard() RETURNS trigger AS $$
@@ -279,3 +358,4 @@ _attach(TaxMarketAvailabilityVersion.__table__, PG_AVAILABILITY_GUARDS)
 _attach(TaxCodeSetVersion.__table__, PG_CODE_SET_GUARDS)
 _attach(TaxCode.__table__, PG_TAX_CODE_GUARDS)
 _attach(TaxRulePackVersion.__table__, PG_RULE_PACK_GUARDS)
+_attach(TaxActivationCancellation.__table__, PG_ACTIVATION_CANCELLATION_GUARDS)

@@ -28,6 +28,8 @@ Alerts and their default thresholds (all configurable in settings):
                                  window, at or above TAX_ALERT_SECRET_STORE_FAILURES (1)
   tax.rule_pack_integrity        (P1, Phase 8) an ACTIVE rule pack whose running code is not its approved
                                  code hash (rule_pack_integrity.py)
+  tax.activation_late            (P1, Phase 8) a SCHEDULED version more than
+                                 TAX_ALERT_ACTIVATION_LATE_MINUTES (10) past its activation time (activation.py)
 """
 import logging
 from collections import defaultdict
@@ -84,6 +86,7 @@ def collect(db: Session, now: Callable = _now) -> dict:
     from app.modules.tax.provider_issuance import RECONCILIATION_JOB
     from app.modules.tax.provider_models import TaxJobHeartbeat, TaxProviderCircuit, TaxProviderOutbox
     from app.modules.tax.quote_models import TaxQuote, TaxQuoteLine
+    from app.modules.tax.activation import late_scheduled
     from app.modules.tax.rule_pack_integrity import check_active
 
     current = now()
@@ -140,6 +143,7 @@ def collect(db: Session, now: Callable = _now) -> dict:
         "by_market": by_market,
         "secret_store_failures": secret_failures,
         "rule_pack_integrity": check_active(db),
+        "activation_late": late_scheduled(db, current),
         "thresholds": t,
     }
 
@@ -205,6 +209,10 @@ def evaluate(metrics: dict) -> list:
     from app.modules.tax.rule_pack_integrity import alert_for
 
     out.append(alert_for(metrics.get("rule_pack_integrity") or []))
+
+    from app.modules.tax.activation import alert_for as activation_alert
+
+    out.append(activation_alert(metrics.get("activation_late") or []))
     return out
 
 

@@ -1,9 +1,11 @@
 """tests/test_tax_phase8_pg.py
 ---------------------------
-ZB-TAX-ARCH-001 Phase 8 PR 1 guarantees only PostgreSQL provides: a
+ZB-TAX-ARCH-001 Phase 8 guarantees only PostgreSQL provides. PR 1: a
 submitted rule-pack version's code hash is frozen by the version guard, and a
 quote's rule-pack provenance (version id and code hash) is frozen by the
-tenant guard, after migration d2a6c8e4f1b7 recreated both.
+tenant guard, after migration d2a6c8e4f1b7 recreated both. PR 2 (migration
+e3b7d9f1a2c4): an ACTIVE pack's valid_to is set once, ACTIVE date ranges of
+one pack never overlap, and a decided activation cancellation is final.
 
 Same contract as the earlier PG modules: runs only with TAX_PG_TEST_URL (a
 migrated PostgreSQL database), skipped with a reason when unset, an error when
@@ -103,3 +105,37 @@ def test_changed_pack_code_fails_closed_on_postgres(uk, monkeypatch):
     rpi.clear_cache()
     q = quote(uk, draft(uk, [(uk["svc"], 100, 1)]))
     assert q.status == TaxQuoteStatus.UNSUPPORTED and q.refusal_code == rpi.INTEGRITY_FAILED and not q.lines
+
+
+# ── PR 2: effective-dated packs and scheduled activation ────────────────
+
+def _rejects_now(session, sql, params=None):
+    """Like _rejects, with deferred constraints checked immediately."""
+    with pytest.raises(IntegrityError):
+        with session.begin_nested():
+            session.execute(text("SET CONSTRAINTS ALL IMMEDIATE"))
+            session.execute(text(sql), params or {})
+
+
+COPY = ("INSERT INTO tax_rule_pack_versions (code, version, markets, rounding_rule, rounding_mode, status, "
+        "created_at, valid_from) SELECT code, :v, markets, rounding_rule, rounding_mode, 'ACTIVE', created_at, "
+        "CAST(:f AS date) FROM tax_rule_pack_versions WHERE id = :i")
+
+
+def test_valid_to_is_set_once_and_active_ranges_never_overlap(uk):
+    pg, pack = uk["db"], uk["pack"]
+    _accepts(pg, "UPDATE tax_rule_pack_versions SET valid_to = DATE '2031-01-01' WHERE id = :i", {"i": pack.id})
+    _rejects(pg, "UPDATE tax_rule_pack_versions SET valid_to = DATE '2032-01-01' WHERE id = :i", {"i": pack.id})
+    _rejects_now(pg, COPY, {"v": "8", "f": "2030-06-01", "i": pack.id})          # overlaps [start, 2031-01-01)
+    with pg.begin_nested():
+        pg.execute(text("SET CONSTRAINTS ALL IMMEDIATE"))
+        pg.execute(text(COPY), {"v": "9", "f": "2031-01-01", "i": pack.id})     # follows it: no overlap
+
+
+def test_a_decided_cancellation_is_final(uk):
+    pg = uk["db"]
+    pg.execute(text("INSERT INTO tax_activation_cancellations (version_kind, version_id, reason, status, created_at) "
+                    "VALUES ('rule_pack', :i, 'fixture', 'REJECTED', now())"), {"i": uk["pack"].id})
+    cid = pg.execute(text("SELECT max(id) FROM tax_activation_cancellations")).scalar()
+    _rejects(pg, "UPDATE tax_activation_cancellations SET reason = 'edited' WHERE id = :i", {"i": cid})
+    _rejects(pg, "DELETE FROM tax_activation_cancellations WHERE id = :i", {"i": cid})

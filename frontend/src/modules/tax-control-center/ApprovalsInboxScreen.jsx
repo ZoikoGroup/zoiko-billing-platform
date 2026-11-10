@@ -16,6 +16,7 @@ const KINDS = [
   { value: "market_availability", label: "Market availability", section: "availability" },
   { value: "rule_pack", label: "Rule packs", section: "rule-packs" },
   { value: "tax_code_set", label: "Tax-code sets", section: null },
+  { value: "activation_cancel", label: "Activation cancellations", section: null },
 ];
 
 export default function ApprovalsInboxScreen() {
@@ -34,7 +35,8 @@ export default function ApprovalsInboxScreen() {
     try {
       const result = await stepUp.run((body) => approveInboxItem(item.kind, item.id, body));
       if (result) {
-        setNotice(`Approved: ${item.title}. Publish it from its screen.`);
+        setNotice(item.kind === "activation_cancel" ? `Approved: ${item.title}. The version is back to Approved.`
+          : `Approved: ${item.title}. Publish it from its screen.`);
         list.reload();
       }
     } catch (err) {
@@ -73,6 +75,7 @@ export default function ApprovalsInboxScreen() {
                     {meta?.label || humanize(item.kind)} #{item.id} · submitted by {nameOf(item.submitted_by)} ·{" "}
                     {formatDateTime(item.submitted_at)}
                   </p>
+                  {item.reason && <p className={`text-xs ${STRONG}`}>Reason: {item.reason}</p>}
                   {!item.can_approve && (
                     <p id={`why-${key}`} className={`mt-1 text-xs ${MUTED}`}>
                       <strong>Approve unavailable:</strong> {item.reason_if_not}
