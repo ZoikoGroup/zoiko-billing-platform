@@ -18,6 +18,7 @@ TAX_PG_TEST_URL plus TAX_PG_RACE_COMMITS=1, last and alone in the CI tax step.
 import os
 import threading
 import time
+import traceback
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
@@ -96,7 +97,7 @@ def test_rollback_approval_and_activation_job_never_both_win(engine, monkeypatch
                                              reason="race", severity="SEV1", cancel_schedule=True,
                                              timezone="Europe/London")
     setup.commit()
-    ids = {"p": p.id, "v": v.id, "s": s.id, "request": request.id}
+    ids = {"p": p.id, "v": v.id, "s": s.id, "request": request.id, "approver": b.id}   # read before close
     setup.close()
 
     slow_apply = RollbackService._apply_pack
@@ -112,12 +113,16 @@ def test_rollback_approval_and_activation_job_never_both_win(engine, monkeypatch
         db = Session(bind=engine)
         try:
             barrier.wait()
-            RollbackService(db).decide(actor_id=b.id, request_id=ids["request"], approve=True)
+            RollbackService(db).decide(actor_id=ids["approver"], request_id=ids["request"], approve=True)
             db.commit()
             outcome["rollback"] = "applied"
         except RegistryStateError as exc:
             db.rollback()
             outcome["rollback"] = f"refused: {exc.message}"
+        except Exception as exc:                             # surfaced in the assertion, never swallowed
+            db.rollback()
+            traceback.print_exc()
+            outcome["rollback"] = f"error: {type(exc).__name__}: {exc}"
         finally:
             db.close()
 
@@ -127,6 +132,10 @@ def test_rollback_approval_and_activation_job_never_both_win(engine, monkeypatch
             barrier.wait()
             time.sleep(0.05)
             outcome["job"] = activate_due(db)
+        except Exception as exc:                             # surfaced in the assertion, never swallowed
+            db.rollback()
+            traceback.print_exc()
+            outcome["job"] = f"error: {type(exc).__name__}: {exc}"
         finally:
             db.close()
 
@@ -144,6 +153,8 @@ def test_rollback_approval_and_activation_job_never_both_win(engine, monkeypatch
                         and s_now.activate_at is None and outcome.get("rollback") == "applied")
         job_won = (s_now.status == S.ACTIVE and v_now.status == S.ACTIVE and v_now.valid_to == date(2032, 1, 1)
                    and req.status == "PROPOSED" and "already followed" in outcome.get("rollback", ""))
+        assert not str(outcome.get("rollback", "")).startswith("error:"), outcome
+        assert not str(outcome.get("job", "")).startswith("error:"), outcome
         assert rollback_won != job_won, (outcome, req.status, v_now.status, s_now.status)
         if rollback_won:
             r = check.query(TaxRulePackVersion).filter(TaxRulePackVersion.rollback_of_id == ids["v"]).one()
