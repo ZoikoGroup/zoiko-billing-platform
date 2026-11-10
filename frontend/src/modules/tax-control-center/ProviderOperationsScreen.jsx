@@ -4,7 +4,9 @@ import { canApproveTaxRegistry, ROLE_REASON } from "./access";
 import {
   ActionBar, InlineError, MUTED, PANEL, ReasonModal, STRONG, TaxStatusBadge, formatAge, humanize, useStepUp,
 } from "./shared";
-import { getPlatformDuplicates, getPlatformOvercollection, getProviderHealth, providerHealthAction } from "./taxRegistryService";
+import {
+  getPlatformDuplicates, getPlatformOvercollection, getProviderHealth, listAnomalyRuns, providerHealthAction,
+} from "./taxRegistryService";
 
 /* P9 Provider operations and P10 Findings (Phase 5c PR 2). Aggregate only
  * (T13): counts, ages and totals; never an organization, invoice or
@@ -100,6 +102,44 @@ export default function ProviderOperationsScreen({ user }) {
   );
 }
 
+const ANOMALY_LABELS = { snapshot: "Invoices that differ from their tax snapshot", provider_drift: "Provider totals that differ from ours",
+  credits: "Credit notes exceeding the original" };
+
+/** Phase 7 PR 3: the latest daily anomaly check, counts and market shares only. */
+function AnomalyChecks() {
+  const [runs, setRuns] = useState(null);
+  const [error, setError] = useState(null);
+  useEffect(() => {
+    listAnomalyRuns().then((d) => setRuns(d.items || [])).catch((err) => setError(err?.message || "Couldn't load anomaly checks."));
+  }, []);
+  if (error) return <InlineError message={error} />;
+  if (!runs) return null;
+  const last = runs[0];
+  return (
+    <div aria-labelledby="anomaly-title">
+      <h3 id="anomaly-title" className={`mb-1 text-sm font-bold ${STRONG}`}>Daily anomaly checks</h3>
+      {!last ? <p className={`text-sm ${MUTED}`}>No check has run yet.</p> : (
+        <>
+          <p className={`text-xs ${MUTED}`}>Last run {new Date(last.started_at).toLocaleString()}. Each tenant has review items for its own invoices.</p>
+          <ul className={`mt-1 text-sm ${STRONG}`}>
+            {Object.entries(last.counts).map(([k, v]) => (
+              <li key={k}>{ANOMALY_LABELS[k] || humanize(k)}: {v.found} of {v.checked} checked</li>
+            ))}
+          </ul>
+          <ul className={`mt-1 text-sm ${STRONG}`} aria-label="Markets">
+            {Object.entries(last.markets).map(([m, v]) => (
+              <li key={m} className="flex flex-wrap items-center gap-2">
+                <span>{m}: {v.invoices} invoice(s), zero tax {Math.round(v.zero_tax_share * 100)}% (baseline {Math.round(v.baseline_zero_tax_share * 100)}%)</span>
+                {(v.zero_tax_alert || v.rate_mix_alert) && <TaxStatusBadge status="REVIEW_REQUIRED" />}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function FindingsScreen() {
   const [over, setOver] = useState(null);
   const [dups, setDups] = useState(null);
@@ -144,6 +184,7 @@ export function FindingsScreen() {
           <p className={`text-xs ${MUTED}`}>{dups.note}</p>
         </div>
       )}
+      <AnomalyChecks />
     </section>
   );
 }

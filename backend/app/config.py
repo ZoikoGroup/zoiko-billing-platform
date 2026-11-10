@@ -166,6 +166,15 @@ class Settings(BaseSettings):
     # regression report (app/modules/tax/regression/runner.py).
     TAX_REGRESSION_REQUIRED: bool = True
     TAX_REGRESSION_MAX_AGE_HOURS: int = 72
+    # Phase 7 PR 3: daily anomaly checks (app/modules/tax/anomaly_service.py).
+    TAX_ANOMALY_ENABLED: bool = True
+    TAX_ANOMALY_INTERVAL_MINUTES: int = 1440
+    TAX_ANOMALY_LOOKBACK_DAYS: int = 2
+    TAX_ANOMALY_WINDOW_DAYS: int = 1
+    TAX_ANOMALY_BASELINE_DAYS: int = 30
+    TAX_ANOMALY_MIN_INVOICES: int = 10
+    TAX_ANOMALY_ZERO_TAX_SHIFT: float = 0.2
+    TAX_ANOMALY_RATE_MIX_SHIFT: float = 0.3
     # Phase 5d-F: where platform-account MFA changes are reported (a
     # mailbox the security team watches). Empty: only the user is emailed.
     SECURITY_CONTACT_EMAIL: str = ""
