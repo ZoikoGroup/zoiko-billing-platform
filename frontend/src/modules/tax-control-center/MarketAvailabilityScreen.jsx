@@ -6,6 +6,7 @@ import { approveBlockedReason, canApproveTaxRegistry, canWriteTaxRegistry } from
 import {
   GATES, GATE_STATUSES, MODES, TRANSACTION_CLASSES, emptyGates, gateProblems, mandatoryGates,
 } from "./gates";
+import { CancelSchedule, PublishModal, ScheduleInfo } from "./ScheduleControls";
 import {
   getEvidenceBundle, amendAvailability, availabilityAction, draftAvailability, listJurisdictions, listMarketAvailability, listTaxTypes,
 } from "./taxRegistryService";
@@ -178,6 +179,7 @@ function AvailabilityDetail({ version, user, onChanged, onEdit }) {
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState(null);
   const [reasonFor, setReasonFor] = useState(null);
+  const [publishing, setPublishing] = useState(false);
   const stepUp = useStepUp();
   const fallback = approveBlockedReason(user, version);
   const verdict = useApprovalVerdict("market_availability", version, fallback);
@@ -209,6 +211,8 @@ function AvailabilityDetail({ version, user, onChanged, onEdit }) {
         ["Notes", version.notes],
       ]} />
       <ValidationList title="Validation errors" items={version.validation_errors} />
+      <ScheduleInfo version={version} />
+      <CancelSchedule version={version} kind="market_availability" user={user} stepUp={stepUp} onChanged={onChanged} />
       <div>
         <h3 className={`mb-2 text-sm font-bold ${STRONG}`}>Launch gates</h3>
         {version.mode === "PROVIDER_APPROVED" && (
@@ -249,8 +253,12 @@ function AvailabilityDetail({ version, user, onChanged, onEdit }) {
           onClick: () => act("approve", () => stepUp.run((body) => availabilityAction(version.id, "approve", body))) },
         { key: "reject", label: "Reject", hidden: !canApprove || s !== "IN_APPROVAL", onClick: () => setReasonFor("reject") },
         { key: "publish", label: "Publish", variant: "primary", hidden: !canApprove || s !== "APPROVED", reason: fallback,
-          onClick: () => act("publish", () => stepUp.run((body) => availabilityAction(version.id, "publish", body))) },
+          onClick: () => setPublishing(true) },
       ]} />
+      <PublishModal open={publishing} version={version} noun="availability version" busy={false} error={null}
+                    onCancel={() => setPublishing(false)}
+                    onSubmit={(when) => { setPublishing(false);
+                      act("publish", () => stepUp.run((body) => availabilityAction(version.id, "publish", { ...when, ...body }))); }} />
       <ReasonModal open={Boolean(reasonFor)} busy={false} error={null}
                    title={reasonFor === "reject" ? "Reject this availability version" : "Submit for approval"}
                    submitLabel={reasonFor === "reject" ? "Reject" : "Submit"} onCancel={() => setReasonFor(null)}

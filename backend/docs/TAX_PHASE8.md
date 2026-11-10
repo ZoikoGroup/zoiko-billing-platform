@@ -9,8 +9,8 @@ e-invoicing, or change legacy invoicing.
 
 | PR | Scope | Status |
 |---|---|---|
-| 1 | Rule-pack integrity (step 07) | This PR |
-| 2 | Scheduled activation (step 07) | Planned |
+| 1 | Rule-pack integrity (step 07) | Merged (#157) |
+| 2 | Scheduled activation (step 07) | This PR |
 | 3 | Emergency rollback (§10.3) | Planned |
 | 4 | Retroactive change analysis (§10.3, T04) | Planned |
 | 5 | Source change detection and review cadence (steps 01–03, §10.2) | Planned |
@@ -161,3 +161,140 @@ the ORM guard already froze) and the rule-pack version guard with
 | `frontend/.../TaxControlCenter.test.jsx` (+3) | Match (axe), mismatch alert, code-missing alert. |
 
 **CI result:** _see PR_.
+
+---
+
+## PR 2: scheduled activation
+
+### The decision: packs follow the tax date, availability follows the clock
+
+Approved with the plan.
+
+- **Rule packs are effective-dated, like rates.** Each version has
+  `valid_from` and `valid_to` (local legal DATEs, end-exclusive). The
+  quote's tax date picks the version in force:
+  - an invoice dated 31 Dec that is quoted or issued on 2 Jan uses the old
+    rules (T03);
+  - backdated drafts and re-quotes stay stable;
+  - selection compares dates, so DST and time zones don't affect which
+    version applies (T17); a version can start on 29 Feb.
+- **Market availability switches at `activate_at`,** whatever the tax
+  date. It says whether a market is calculated *now*; a suspension must
+  never wait for a tax date.
+
+### Effective-dated packs
+
+- `valid_from` is set by the reviewer (on registration, or "Set start date"
+  on a draft) and frozen with the content. Null means "from the start".
+- When a version activates, the open-ended ACTIVE version of the same pack
+  is its predecessor:
+  - **later start:** the predecessor's `valid_to` is set to the new
+    version's `valid_from`. It stays ACTIVE and keeps deciding earlier tax
+    dates. `valid_to` can be set once on an ACTIVE row (ORM guard and
+    Postgres trigger);
+  - **same start:** a full replacement (for a bug fix); the predecessor is
+    SUPERSEDED, as before;
+  - **earlier start:** refused.
+- Several versions of a pack can therefore be ACTIVE, for date ranges that
+  never overlap:
+  - the service checks it;
+  - on Postgres, `ex_tax_rule_pack_active_ranges` (an exclusion over code
+    and date range, `btree_gist`) replaces the one-ACTIVE-per-code index.
+- **Every ACTIVE version must stay in the running code.** A new version goes
+  in a new module beside the old one; the code registry is keyed by (code,
+  version) (`engines.RULE_PACK_VERSIONS`, `rule_pack_class`). Registration
+  takes an optional `version`; the default is the newest in code.
+- **Issuance:** PR 1's check now asks whether the quote's version is still
+  ACTIVE *for the quote's tax date*, with the same hash. A quote for a date
+  before a new version starts stays valid when it activates; a quote for a
+  date on or after it becomes STALE.
+- **Retroactive versions are refused** until PR 4's analysis exists: a
+  version must activate no later than local midnight at the start of its
+  `valid_from` (in the jurisdiction's zone, or the zone given for
+  multi-zone jurisdictions).
+
+### Scheduling
+
+- **Publish** takes an optional `activate_at_local` (for example
+  `2030-06-01T09:00`), `timezone` and `utc_offset`:
+  - no time, or a time already past: published now, as before;
+  - a future time: status **SCHEDULED** until then. It is audited, needs
+    MFA like publishing, and the publisher must differ from the maker.
+- **Converting the local time (T17):**
+  - the zone is the jurisdiction's; multi-zone jurisdictions (AU, CA, US)
+    must name one;
+  - a time in the spring-forward gap is refused ("does not exist");
+  - a time in the autumn overlap needs the UTC offset ("happens twice");
+  - the stored record keeps the local text, the zone and the UTC instant.
+- One SCHEDULED version per pack code or availability cell at a time.
+
+### The activation job
+
+`tax_activation_job` ("Tax Scheduled Activation", every
+`TAX_ACTIVATION_INTERVAL_MINUTES`, default 1):
+
+- takes each SCHEDULED version whose time has come, locks it
+  (`FOR UPDATE SKIP LOCKED` on Postgres) and re-checks its status;
+- re-runs validation, PR 1's integrity hash, the Phase 7 regression gate
+  and the date-range rules;
+- activates it, recording the scheduling publisher as publisher and
+  "activated by schedule" in the platform audit log;
+- if a check fails: the version stays SCHEDULED with `activation_error`,
+  and nothing changes;
+- is idempotent: a second run or a second worker does nothing.
+
+### The late alert
+
+`tax.activation_late` (**P1**): a SCHEDULED version more than
+`TAX_ALERT_ACTIVATION_LATE_MINUTES` (10) past its time, whether the job
+stopped or a check failed. The text names the pack or market, minutes late
+and whether a check failed (no tenant data). Runbook:
+`TAX_MONITORING_RUNBOOK.md`.
+
+### Cancelling a scheduled activation (two people, MFA)
+
+- **Propose:** a TAX_PUBLISHER, or the TAX_REVIEWER who submitted the
+  version, with a reason (`POST …/{rule-packs|market-availability}/{id}/cancel-schedule`).
+- **Decide:** a different TAX_PUBLISHER approves with MFA step-up, or
+  rejects with a reason (`POST /activation-cancellations/{id}/approve|reject`).
+  The request appears in the approvals inbox.
+- **Approving** returns the version to APPROVED, so it can be published or
+  scheduled again.
+- **Too late:** once the version is ACTIVE, approving fails ("use emergency
+  rollback", PR 3).
+- **Records:** `tax_activation_cancellations` (frozen once decided: ORM
+  guard and Postgres trigger), plus the version's audit history.
+
+### Console
+
+- **Publish dialog:** "Publish now" or "Schedule", with a local date and
+  time, the zone (the jurisdiction's by default), an optional UTC offset
+  and a live UTC preview (the server is authoritative).
+- **Versions:** a Scheduled badge; the activation time in local and UTC;
+  a red alert when the activation checks failed.
+- **Packs:** an "In force" column and "Set start date" on drafts.
+- **Cancellation:** propose, then approve or reject, in the version and in
+  the approvals inbox.
+
+### Migration
+
+`e3b7d9f1a2c4`:
+- adds `valid_from`/`valid_to` to packs;
+- adds the scheduling columns to packs and availability;
+- creates `tax_activation_cancellations`;
+- on Postgres, replaces the one-ACTIVE index with the exclusion and
+  recreates the pack guard and the cancellation guard.
+
+The downgrade restores the one-ACTIVE index; it fails if several versions
+of a pack are ACTIVE (supersede them first).
+
+### PR 2 tests
+
+| Test file | Covers |
+|---|---|
+| `tests/privacy/test_tax_phase8_scheduled_activation.py` (16) | Local time to UTC: BST, AEDT, the spring-forward gap refused, the autumn overlap needs an offset, leap day, unknown zone. **T03:** the tax date picks v1 or v2; a 31 Dec quote after v2 activates uses v1 and issues; a 1 Jan quote made under v1 goes STALE. **T17:** a version starting on 29 Feb. A version can't start before the one it follows; same start replaces; retroactive versions refused; activation after the start date refused; one schedule per pack. The job activates at the time, not before, exactly once, audited. A failed re-check stays SCHEDULED with an error; the P1 alert fires after 10 minutes and clears once activated. Availability switches at its time for old tax dates too; a suspension published now is immediate. Cancellation: not for tenant users; one pending; the proposer can't decide; approval returns the version to APPROVED and the job skips it; a decided request is final; rejection needs a reason; the submitting reviewer may propose; an activation that already ran can't be cancelled. HTTP: scheduling needs MFA; schedule, cancel, inbox entry, approve, list. |
+| `tests/test_tax_phase8_pg.py` (+2, CI Postgres step) | `valid_to` set once on an ACTIVE pack; overlapping ACTIVE ranges rejected by the exclusion, a following range accepted; a decided cancellation can't be edited or deleted. |
+| `frontend/.../TaxControlCenter.test.jsx` (+7) | UTC preview across DST; schedule a pack in the jurisdiction's zone (axe); publish now; a failed activation check and proposing a cancellation; a different publisher approves with step-up; schedule availability with an offset; the inbox lists a cancellation with its reason. |
+
+**CI result:** _see PR_.
+

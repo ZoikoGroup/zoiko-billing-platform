@@ -296,6 +296,7 @@ class PlatformVersionStatus(str, enum.Enum):
     VALIDATED         = "validated"
     IN_APPROVAL       = "in_approval"
     APPROVED          = "approved"
+    SCHEDULED         = "scheduled"        # Phase 8 PR 2: approved, activates at activate_at
     ACTIVE            = "active"
     SUPERSEDED        = "superseded"
     REJECTED          = "rejected"

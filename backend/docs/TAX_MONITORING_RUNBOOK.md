@@ -173,6 +173,32 @@ another engine. Other markets and legacy invoicing are unaffected.
 
 ---
 
+## tax.activation_late (P1)
+
+**Fires when:** a SCHEDULED rule-pack or market-availability version is
+more than `TAX_ALERT_ACTIVATION_LATE_MINUTES` (10) past its activation
+time.
+
+**Means:** a scheduled tax change has not taken effect. Either the
+activation job isn't running, or its checks failed (the alert says "check
+failed").
+
+**Do:**
+1. Open the version in the console. A red alert shows the activation
+   error, if any.
+2. **Check failed:** fix the cause and the next run (every minute)
+   activates it. Common causes:
+   - integrity: the pack's code differs (see `tax.rule_pack_integrity`);
+   - the regression report is not current: run it;
+   - the start date has passed, so it would now be retroactive: cancel the
+     schedule (two people) and choose a later start date in a new version.
+3. **No error:** the job isn't running. Check the scheduler ("Tax
+   Scheduled Activation" in the tracked jobs) and the backend log.
+4. To stop it instead: a TAX_PUBLISHER proposes "Cancel scheduled
+   activation", and a different TAX_PUBLISHER approves with MFA.
+
+---
+
 ## Daily anomaly checks (Phase 7 PR 3)
 
 These come from the daily `tax_anomaly_job`. No invoice is ever changed by

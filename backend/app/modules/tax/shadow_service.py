@@ -180,7 +180,7 @@ class ShadowSelectionService:
     def choose(self, actor_id: int, rule_pack_version_id: int, *, exit_min_invoices: int, exit_min_days: int,
                reason: str) -> TaxShadowSelection:
         from app.modules.super_admin.models import PlatformAuditAction
-        from app.modules.tax.engines import registered_rule_packs
+        from app.modules.tax.engines import rule_pack_class
         from app.modules.tax.enums import PlatformVersionStatus
         from app.modules.tax.policy_models import TaxRulePackVersion
 
@@ -189,8 +189,8 @@ class ShadowSelectionService:
             raise NotFoundException("Rule pack version", rule_pack_version_id)
         if pack.status in (PlatformVersionStatus.SUPERSEDED, PlatformVersionStatus.REJECTED):
             raise BadRequestException(f"A {pack.status.name} rule pack can't be used for shadows.")
-        cls = registered_rule_packs().get(pack.code)
-        if cls is None or getattr(cls, "version", None) != pack.version:
+        cls = rule_pack_class(pack.code, pack.version)
+        if cls is None:
             raise BadRequestException("That rule pack version isn't the one in code; register the current version.")
         if exit_min_invoices < 1 or exit_min_days < 1:
             raise BadRequestException("The exit threshold needs at least 1 invoice and 1 day.")
@@ -228,7 +228,7 @@ class ShadowSelectionService:
 # ── the shadow computation ──────────────────────────────────────────────
 
 class _ShadowResolver:
-    def engine_for(self, activation):
+    def engine_for(self, activation, tax_date=None):
         from app.modules.tax.engines import RulePackEngine
 
         return RulePackEngine(activation.pack_cls()), None
@@ -240,15 +240,15 @@ def _shadow_determination(db: Session, selections: list):
     quote. Same _determine: the shadow is exactly what governed issuing would
     compute with that pack."""
     from app.modules.tax.determination_service import TaxDeterminationService
-    from app.modules.tax.engines import registered_rule_packs
+    from app.modules.tax.engines import rule_pack_class
     from app.modules.tax.policy_models import TaxRulePackVersion
     from app.modules.tax.registry_models import TaxJurisdiction, TaxTypeDefinition
 
     packs = []
     for sel in selections:
         row = db.get(TaxRulePackVersion, sel.rule_pack_version_id)
-        cls = registered_rule_packs().get(row.code) if row else None
-        if row is not None and cls is not None and getattr(cls, "version", None) == row.version:
+        cls = rule_pack_class(row.code, row.version) if row else None
+        if row is not None and cls is not None:
             packs.append((sel, row, cls))
 
     class ShadowDetermination(TaxDeterminationService):

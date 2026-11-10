@@ -24,6 +24,7 @@ const STATUS_STYLES = {
   PASSED: { icon: CheckCircle2, label: "Passed", tone: "green" },
   CAPTURED: { icon: CheckCircle2, label: "Evidence captured", tone: "green" },
   APPROVED: { icon: BadgeCheck, label: "Approved", tone: "blue" },
+  SCHEDULED: { icon: Clock, label: "Scheduled", tone: "blue" },
   VALIDATED: { icon: ShieldCheck, label: "Validated", tone: "blue" },
   IN_APPROVAL: { icon: Clock, label: "In approval", tone: "amber" },
   PENDING_REVIEW: { icon: FileEdit, label: "Draft", tone: "slate" },

@@ -90,8 +90,10 @@ class GovernedIssuanceGate:
         from app.modules.tax.policy_models import TaxRulePackVersion
         from app.modules.tax.rule_pack_integrity import running_hash
 
+        from app.modules.tax.engines import pack_in_range
+
         row = self.db.get(TaxRulePackVersion, quote.rule_pack_version_id)
-        if row is None or row.status != PlatformVersionStatus.ACTIVE:
+        if row is None or row.status != PlatformVersionStatus.ACTIVE or not pack_in_range(row, quote.tax_date):
             return False
         return bool(quote.rule_pack_code_hash) and quote.rule_pack_code_hash == row.code_hash             == running_hash(row.code, row.version)
 

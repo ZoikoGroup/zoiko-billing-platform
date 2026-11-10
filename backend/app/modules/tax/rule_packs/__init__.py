@@ -10,13 +10,15 @@ sign-off (TAX_PHASE3B.md checklist); a pack cannot be used before its
 registry row is published.
 
 Each pack lives in its own module (Phase 8 PR 1): a pack's code hash covers
-the modules that define it, so this file only registers them.
+the modules that define it, so this file only registers them. A new version
+of a pack goes in a new module next to the old one (Phase 8 PR 2: packs are
+effective-dated, so every ACTIVE version must stay in the running code).
 """
-from app.modules.tax.engines import RULE_PACKS
+from app.modules.tax.engines import register_rule_pack
 from app.modules.tax.rule_packs.au_gst import AuGstDomesticServices
 from app.modules.tax.rule_packs.gb_vat import UkVatDomesticServices
 
 NATIVE_PACKS = (UkVatDomesticServices, AuGstDomesticServices)
 
 for _pack in NATIVE_PACKS:
-    RULE_PACKS[_pack.code] = _pack
+    register_rule_pack(_pack)

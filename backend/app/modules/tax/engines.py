@@ -226,9 +226,24 @@ class RulePackEngine(TaxEngine):
         return self.pack.determine(request)
 
 
-#: code -> RulePack class, filled by app.modules.tax.rule_packs (native packs
-#: only; see registered_rule_packs()).
+#: code -> the newest RulePack class of that code (the catalogue a reviewer
+#: registers from), filled by app.modules.tax.rule_packs (native packs only;
+#: see registered_rule_packs()).
 RULE_PACKS: dict = {}
+#: (code, version) -> RulePack class: every version shipped in code (Phase 8
+#: PR 2). Effective-dated packs keep each live version side by side.
+RULE_PACK_VERSIONS: dict = {}
+
+
+def _version_key(version) -> tuple:
+    return tuple((0, int(p)) if p.isdigit() else (1, p) for p in str(version).split("."))
+
+
+def register_rule_pack(cls) -> None:
+    RULE_PACK_VERSIONS[(cls.code, cls.version)] = cls
+    newest = RULE_PACKS.get(cls.code)
+    if newest is None or _version_key(cls.version) >= _version_key(newest.version):
+        RULE_PACKS[cls.code] = cls
 
 
 def registered_rule_packs() -> dict:
@@ -236,6 +251,24 @@ def registered_rule_packs() -> dict:
     import app.modules.tax.rule_packs  # noqa: F401  (registers the packs)
 
     return RULE_PACKS
+
+
+def rule_pack_class(code: str, version: str):
+    """The class of that exact pack version in the running code, or None."""
+    packs = registered_rule_packs()
+    cls = RULE_PACK_VERSIONS.get((code, version))
+    if cls is None:
+        newest = packs.get(code)
+        cls = newest if newest is not None and getattr(newest, "version", None) == version else None
+    return cls
+
+
+def pack_in_range(row, tax_date) -> bool:
+    """Whether a rule-pack version's [valid_from, valid_to) contains the tax
+    date. Without a tax date, only the open-ended (current) version."""
+    if tax_date is None:
+        return row.valid_to is None
+    return (row.valid_from is None or row.valid_from <= tax_date) and (row.valid_to is None or tax_date < row.valid_to)
 
 
 # ── Providers (contract in provider_contract.py) ────────────────────────
@@ -285,7 +318,7 @@ class EngineResolver:
         self.provider_lookup = provider_lookup or self._connection_adapter
         self.tenant_rounding = tenant_rounding
 
-    def _registered_rule_pack(self, activation) -> Optional[RulePack]:
+    def _registered_rule_pack(self, activation, tax_date=None) -> Optional[RulePack]:
         from app.modules.tax.enums import PlatformVersionStatus
         from app.modules.tax.policy_models import TaxRulePackVersion
 
@@ -299,10 +332,14 @@ class EngineResolver:
             if not any(m.get("jurisdiction_code") == jurisdiction and m.get("tax_type") == tax_type
                        for m in row.markets or []):
                 continue
+            # Phase 8 PR 2: the version in force is the one whose date range
+            # contains the quote's tax date (effective-dated, like rates).
+            if not pack_in_range(row, tax_date):
+                continue
             # Phase 8 PR 1: the running code must be the approved code. A
             # missing pack, another version, or a different hash fails closed.
             state = integrity_of(row)
-            pack_cls = registered_rule_packs().get(row.code)
+            pack_cls = rule_pack_class(row.code, row.version)
             if state["integrity"] != MATCH or pack_cls is None:
                 failure = failure or RulePackIntegrityError(row.code, row.version,
                                                             state["integrity"] if pack_cls else CODE_MISSING)
@@ -337,12 +374,16 @@ class EngineResolver:
         connection = self.db.get(TaxProviderConnection, connection_id) if connection_id else None
         return ProviderConnectionService(self.db).usable_problem(connection)
 
-    def engine_for(self, activation) -> tuple:
-        """(engine or None, reason when None)."""
+    def engine_for(self, activation, tax_date=None) -> tuple:
+        """(engine or None, reason when None). The tax date picks the native
+        pack version in force (Phase 8 PR 2)."""
         if activation.mode == TaxOperatingMode.TENANT_CONFIG_APPROVED:
             return TenantConfigEngine(self.tenant_rounding), None
         if activation.mode == TaxOperatingMode.NATIVE_RULEPACK_APPROVED:
-            pack = self.rule_pack_lookup(activation)
+            if self.rule_pack_lookup == self._registered_rule_pack:
+                pack = self._registered_rule_pack(activation, tax_date)
+            else:
+                pack = self.rule_pack_lookup(activation)
             if pack is None:
                 return None, "No approved native rule pack covers this market."
             return RulePackEngine(pack), None

@@ -238,6 +238,13 @@ def get_job_definitions() -> list[tuple[str, int, str, str]]:
             "Financial Integrity Check",
         ),
         (
+            # ZB-TAX-ARCH-001 Phase 8 PR 2: scheduled rule-pack / availability activation.
+            "app.modules.tax.activation:run_tax_activation_job",
+            getattr(settings, "TAX_ACTIVATION_INTERVAL_MINUTES", 1),
+            "tax_activation_job",
+            "Tax Scheduled Activation",
+        ),
+        (
             # ZB-TAX-ARCH-001 Phase 7 PR 3: daily anomaly checks on issued invoices.
             "app.modules.tax.anomaly_service:run_tax_anomaly_job",
             getattr(settings, "TAX_ANOMALY_INTERVAL_MINUTES", 1440),

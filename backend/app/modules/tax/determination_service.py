@@ -348,7 +348,7 @@ class TaxDeterminationService:
             line_engines = {}
             for activation in activations:
                 try:
-                    engine, reason = self.resolver(organization_id).engine_for(activation)
+                    engine, reason = self.resolver(organization_id).engine_for(activation, tax_date=tax_date)
                 except SecretStoreUnavailable as exc:
                     # Phase 4d-0: an unreachable or refusing secret store never
                     # falls back; the provider is unavailable.

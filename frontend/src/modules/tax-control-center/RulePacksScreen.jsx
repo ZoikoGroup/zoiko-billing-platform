@@ -12,6 +12,7 @@ import {
   TaxTable, ValidationList, VersionTimeline, humanize, useApprovalVerdict, useCursorList, useStepUp,
 } from "./shared";
 import { RegressionPanel } from "./RegressionPanel";
+import { CancelSchedule, PublishModal, ScheduleInfo } from "./ScheduleControls";
 
 /* P7 Rule packs: the native packs available in code (their declarations,
  * live source-dependency status), their registry versions, the golden-test
@@ -36,6 +37,37 @@ function IntegrityBanner({ pack }) {
 }
 
 const shortHash = (h) => (h ? `${h.slice(0, 12)}…` : "none");
+
+/* Phase 8 PR 2: packs are effective-dated; the quote's tax date picks the version. */
+const inForce = (p) => `${p.valid_from || "the start"} → ${p.valid_to ? `${p.valid_to} (exclusive)` : "open-ended"}`;
+
+function StartDateModal({ open, pack, onClose, onDone }) {
+  const id = useId();
+  const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  useEffect(() => { if (open) { setValue(pack?.valid_from || ""); setError(null); } }, [open, pack]);
+  const submit = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      onDone(await amendRulePack(pack.id, { valid_from: value || null }));
+    } catch (err) {
+      setError(err?.message || "Couldn't set the start date.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <FormModal open={open} onClose={onClose} onSubmit={submit} busy={busy} error={error} title="Start date (tax dates)"
+               submitLabel="Save"
+               description="The local legal date from which this version decides tax. Leave it empty to replace the current version from the same start.">
+      <Field label="In force from" htmlFor={`${id}-from`}>
+        <input id={`${id}-from`} type="date" className={FORM_CONTROL_CLASS} value={value} onChange={(e) => setValue(e.target.value)} />
+      </Field>
+    </FormModal>
+  );
+}
 
 function SourceDependencies({ deps }) {
   if (!deps?.length) return <p className={`text-sm ${MUTED}`}>No source dependencies declared.</p>;
@@ -117,6 +149,8 @@ function PackDetail({ pack, catalogueEntry, user, onChanged }) {
   const [error, setError] = useState(null);
   const [reasonFor, setReasonFor] = useState(null);
   const [reporting, setReporting] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [dating, setDating] = useState(false);
   const stepUp = useStepUp();
   const fallback = approveBlockedReason(user, pack);
   const verdict = useApprovalVerdict("rule_pack", pack, fallback);
@@ -149,9 +183,12 @@ function PackDetail({ pack, catalogueEntry, user, onChanged }) {
         ["Integrity", pack.integrity ? <TaxStatusBadge key="i" status={`INTEGRITY_${pack.integrity}`} /> : null],
         ["Markets", (pack.markets || []).map((m) => `${m.jurisdiction_code} ${m.tax_type}`).join(", ")],
         ["Rounding", `${humanize(pack.rounding_rule)} · ${humanize(pack.rounding_mode)}`],
+        ["In force for tax dates", inForce(pack)],
         ["Required facts", (pack.required_facts || []).join(", ")], ["Notes", pack.notes],
       ]} />
       <ValidationList title="Validation errors" items={pack.validation_errors} />
+      <ScheduleInfo version={pack} />
+      <CancelSchedule version={pack} kind="rule_pack" user={user} stepUp={stepUp} onChanged={onChanged} />
       <div>
         <h3 className={`mb-2 text-sm font-bold ${STRONG}`}>Source dependencies (live)</h3>
         <SourceDependencies deps={catalogueEntry?.source_dependencies || pack.source_dependencies} />
@@ -173,6 +210,8 @@ function PackDetail({ pack, catalogueEntry, user, onChanged }) {
       <ActionBar busyKey={busy} actions={[
         { key: "report", label: report ? "Replace golden-test report" : "Attach golden-test report",
           hidden: !canWrite || !EDITABLE.includes(s), onClick: () => setReporting(true) },
+        { key: "dates", label: pack.valid_from ? "Change start date" : "Set start date",
+          hidden: !canWrite || !EDITABLE.includes(s), onClick: () => setDating(true) },
         { key: "validate", label: "Validate", hidden: !canWrite || !EDITABLE.includes(s),
           onClick: () => act("validate", () => rulePackAction(pack.id, "validate")) },
         { key: "submit", label: "Submit for approval", variant: "primary", hidden: !canWrite || s !== "VALIDATED",
@@ -182,8 +221,14 @@ function PackDetail({ pack, catalogueEntry, user, onChanged }) {
           onClick: () => act("approve", () => stepUp.run((body) => rulePackAction(pack.id, "approve", body))) },
         { key: "reject", label: "Reject", hidden: !canApprove || s !== "IN_APPROVAL", onClick: () => setReasonFor("reject") },
         { key: "publish", label: "Publish", variant: "primary", hidden: !canApprove || s !== "APPROVED", reason: fallback,
-          onClick: () => act("publish", () => stepUp.run((body) => rulePackAction(pack.id, "publish", body))) },
+          onClick: () => setPublishing(true) },
       ]} />
+      <PublishModal open={publishing} version={pack} noun="rule pack" busy={false} error={null}
+                    onCancel={() => setPublishing(false)}
+                    onSubmit={(when) => { setPublishing(false);
+                      act("publish", () => stepUp.run((body) => rulePackAction(pack.id, "publish", { ...when, ...body }))); }} />
+      <StartDateModal open={dating} pack={pack} onClose={() => setDating(false)}
+                      onDone={(updated) => { setDating(false); onChanged(updated); }} />
       <ReasonModal open={Boolean(reasonFor)} busy={false} error={null}
                    title={reasonFor === "reject" ? "Reject this rule pack" : "Submit for approval"}
                    submitLabel={reasonFor === "reject" ? "Reject" : "Submit"} onCancel={() => setReasonFor(null)}
@@ -229,6 +274,7 @@ export default function RulePacksScreen({ user }) {
     { key: "id", label: "#" },
     { key: "code", label: "Pack", render: (r) => `${r.code} v${r.version}` },
     { key: "markets", label: "Markets", render: (r) => (r.markets || []).map((m) => `${m.jurisdiction_code} ${m.tax_type}`).join(", ") },
+    { key: "in_force", label: "In force", render: inForce },
     { key: "report", label: "Golden tests", render: (r) => (r.golden_test_report ? `${r.golden_test_report.passed} passed / ${r.golden_test_report.failed} failed` : "Not attached") },
     { key: "status", label: "Status", render: (r) => <TaxStatusBadge status={r.status} /> },
     { key: "integrity", label: "Code hash", render: (r) => (r.integrity

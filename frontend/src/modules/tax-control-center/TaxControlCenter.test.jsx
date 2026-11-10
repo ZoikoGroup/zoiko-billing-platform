@@ -14,6 +14,7 @@ const { svc, current } = vi.hoisted(() => ({
     "listMarketAvailability", "draftAvailability", "amendAvailability", "availabilityAction", "listJurisdictions",
     "listRulePacks", "getRulePackCatalogue", "registerRulePack", "amendRulePack", "rulePackAction", "getStagedRate",
     "listAuthorities", "listTaxTypes", "listComponents", "listTaxPeople", "getEvidenceBundle", "getRegression", "runRegression",
+    "cancelScheduledActivation", "decideActivationCancellation",
   ].map((k) => [k, vi.fn()])),
 }));
 vi.mock("../../api/client", async (importOriginal) => ({
@@ -28,6 +29,7 @@ vi.mock("./taxRegistryService", async (importOriginal) => ({
 
 import TaxControlCenterPage from "./TaxControlCenterPage";
 import { gateProblems, mandatoryGates } from "./gates";
+import { previewUtc } from "./ScheduleControls";
 import { resetPeopleCache } from "./shared";
 
 const STEP_UP = Object.assign(new Error("MFA step-up is required"), { code: "TAX_REGISTRY_STEP_UP_REQUIRED", status: 400 });
@@ -515,3 +517,123 @@ describe("historical regression", () => {
     expect(within(panel).queryByRole("button", { name: /Run regression/ })).not.toBeInTheDocument();
   });
 });
+
+
+// ── Phase 8 PR 2: scheduled activation ──────────────────────────────────
+
+describe("scheduled activation", () => {
+  const base = { id: 21, code: "GB-VAT-DOMESTIC-SERVICES", version: "2", markets: [{ jurisdiction_code: "GB", tax_type: "VAT" }],
+                 rounding_rule: "PER_LINE", rounding_mode: "HALF_UP", required_facts: [], source_dependencies: [],
+                 golden_test_report: { suite: "packs", commit: "abc1234", passed: 12, failed: 0 }, maker_user_id: 9,
+                 valid_from: "2031-01-01", valid_to: null, default_timezone: "Europe/London", pending_cancellation: null,
+                 created_at: "2026-11-05T09:00:00Z" };
+
+  it("previews local time as UTC across DST", () => {
+    expect(previewUtc("2030-06-01T09:00", "Europe/London")).toBe("2030-06-01 08:00 UTC");
+    expect(previewUtc("2030-01-01T00:00", "Australia/Sydney")).toBe("2029-12-31 13:00 UTC");
+    expect(previewUtc("", "Europe/London")).toBeNull();
+  });
+
+  it("schedules a rule pack at local time in the jurisdiction's zone", async () => {
+    svc.listRulePacks.mockImplementation(() => page([{ ...base, status: "APPROVED" }]));
+    svc.rulePackAction.mockResolvedValue({ ...base, status: "SCHEDULED", activate_at: "2030-06-01T08:00:00Z",
+      activate_at_local: "2030-06-01T09:00", activate_tz: "Europe/London" });
+    const { container } = renderAt("/super-admin/tax/rule-packs");
+    expect(await screen.findByText("2031-01-01 → open-ended")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Open #21" }));
+    const detail = await screen.findByRole("dialog", { name: "Rule pack #21" });
+    fireEvent.click(within(detail).getByRole("button", { name: "Publish" }));
+    const modal = await screen.findByRole("dialog", { name: "Publish this rule pack" });
+    fireEvent.click(within(modal).getByLabelText("Schedule at a local date and time"));
+    fireEvent.change(within(modal).getByLabelText(/Local date and time/), { target: { value: "2030-06-01T09:00" } });
+    expect(within(modal).getByLabelText(/Time zone/)).toHaveValue("Europe/London");
+    expect(within(modal).getByText("2030-06-01 08:00 UTC")).toBeInTheDocument();
+    expect(await axe(container)).toHaveNoViolations();
+    fireEvent.click(within(modal).getByRole("button", { name: "Schedule" }));
+    await waitFor(() => expect(svc.rulePackAction).toHaveBeenCalledWith(21, "publish",
+      { activate_at_local: "2030-06-01T09:00", timezone: "Europe/London" }));
+    expect(await within(detail).findByText(/Activates 2030-06-01T09:00 \(Europe\/London\)/)).toBeInTheDocument();
+  });
+
+  it("publishes now with an empty schedule", async () => {
+    svc.listRulePacks.mockImplementation(() => page([{ ...base, status: "APPROVED" }]));
+    svc.rulePackAction.mockResolvedValue({ ...base, status: "ACTIVE" });
+    renderAt("/super-admin/tax/rule-packs");
+    fireEvent.click(await screen.findByRole("button", { name: "Open #21" }));
+    const detail = await screen.findByRole("dialog", { name: "Rule pack #21" });
+    fireEvent.click(within(detail).getByRole("button", { name: "Publish" }));
+    const modal = await screen.findByRole("dialog", { name: "Publish this rule pack" });
+    fireEvent.click(within(modal).getByRole("button", { name: "Publish now" }));
+    await waitFor(() => expect(svc.rulePackAction).toHaveBeenCalledWith(21, "publish", {}));
+  });
+
+  it("shows a failed activation check and lets a publisher propose a cancellation", async () => {
+    const scheduled = { ...base, status: "SCHEDULED", activate_at: "2030-06-01T08:00:00Z", activate_at_local: "2030-06-01T09:00",
+                        activate_tz: "Europe/London", activation_error: "The pack's code changed since this version was registered" };
+    svc.listRulePacks.mockImplementation(() => page([scheduled]));
+    svc.cancelScheduledActivation.mockResolvedValue({ id: 4, status: "PROPOSED", proposed_by: 7, reason: "law postponed" });
+    renderAt("/super-admin/tax/rule-packs");
+    fireEvent.click(await screen.findByRole("button", { name: "Open #21" }));
+    const detail = await screen.findByRole("dialog", { name: "Rule pack #21" });
+    expect(within(detail).getByRole("alert")).toHaveTextContent(/activation checks failed.*code changed/);
+    fireEvent.click(within(detail).getByRole("button", { name: "Cancel scheduled activation" }));
+    const ask = await screen.findByRole("dialog", { name: "Propose cancelling this activation" });
+    fireEvent.change(within(ask).getByLabelText(/Reason/), { target: { value: "law postponed" } });
+    fireEvent.click(within(ask).getByRole("button", { name: "Propose" }));
+    await waitFor(() => expect(svc.cancelScheduledActivation).toHaveBeenCalledWith("rule_pack", 21, "law postponed"));
+    expect(await within(detail).findByText(/Cancellation proposed/)).toBeInTheDocument();
+    expect(within(detail).getByText(/A different TAX_PUBLISHER must decide it/)).toBeInTheDocument();   // not the proposer
+  });
+
+  it("a different publisher approves the cancellation with step-up", async () => {
+    svc.listRulePacks.mockImplementation(() => page([{ ...base, status: "SCHEDULED", activate_at: "2030-06-01T08:00:00Z",
+      activate_at_local: "2030-06-01T09:00", activate_tz: "Europe/London",
+      pending_cancellation: { id: 4, status: "PROPOSED", proposed_by: 9, reason: "law postponed" } }]));
+    svc.decideActivationCancellation.mockRejectedValueOnce(STEP_UP)
+      .mockResolvedValueOnce({ id: 4, status: "APPROVED", decided_by: 7 });
+    renderAt("/super-admin/tax/rule-packs");
+    fireEvent.click(await screen.findByRole("button", { name: "Open #21" }));
+    const detail = await screen.findByRole("dialog", { name: "Rule pack #21" });
+    expect(await within(detail).findByText(/by Mara Maker.*: law postponed/)).toBeInTheDocument();
+    fireEvent.click(within(detail).getByRole("button", { name: "Approve cancellation" }));
+    const stepUp = await screen.findByRole("dialog", { name: "Confirm with MFA" });
+    fireEvent.click(within(stepUp).getByRole("button", { name: "Use a recovery code instead" }));
+    fireEvent.change(within(stepUp).getByLabelText(/Recovery code/), { target: { value: "abcd-efgh" } });
+    fireEvent.click(within(stepUp).getByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(svc.decideActivationCancellation).toHaveBeenLastCalledWith(4, true, { recovery_code: "abcd-efgh" }));
+    expect(await within(detail).findByText("Approved")).toBeInTheDocument();
+  });
+
+  it("schedules a market availability version", async () => {
+    const version = { id: 5, jurisdiction_code: "GB", tax_type: "VAT", transaction_class: "B2C_SERVICES", mode: "SUSPENDED",
+                      status: "APPROVED", gates: {}, maker_user_id: 9, default_timezone: "Europe/London",
+                      pending_cancellation: null, created_at: "2026-11-05T09:00:00Z" };
+    svc.listMarketAvailability.mockImplementation(() => page([version]));
+    svc.availabilityAction.mockResolvedValue({ ...version, status: "SCHEDULED" });
+    renderAt("/super-admin/tax/availability");
+    fireEvent.click(await screen.findByRole("button", { name: "Open #5" }));
+    const detail = await screen.findByRole("dialog");
+    fireEvent.click(within(detail).getByRole("button", { name: "Publish" }));
+    const modal = await screen.findByRole("dialog", { name: "Publish this availability version" });
+    fireEvent.click(within(modal).getByLabelText("Schedule at a local date and time"));
+    fireEvent.change(within(modal).getByLabelText(/Local date and time/), { target: { value: "2030-10-27T01:30" } });
+    fireEvent.change(within(modal).getByLabelText(/UTC offset/), { target: { value: "+00:00" } });
+    fireEvent.click(within(modal).getByRole("button", { name: "Schedule" }));
+    await waitFor(() => expect(svc.availabilityAction).toHaveBeenCalledWith(5, "publish",
+      { activate_at_local: "2030-10-27T01:30", timezone: "Europe/London", utc_offset: "+00:00" }));
+  });
+
+  it("lists cancellation requests in the approvals inbox with their reason", async () => {
+    svc.listApprovalsInbox.mockImplementation(() => page([inboxItem({ kind: "activation_cancel", id: 4,
+      title: "Cancel the scheduled activation of rule pack GB-VAT-DOMESTIC-SERVICES v2 (2030-06-01T09:00 Europe/London)",
+      reason: "law postponed" })]));
+    svc.approveInboxItem.mockResolvedValue({ id: 4, status: "APPROVED" });
+    renderAt("/super-admin/tax/inbox");
+    expect(await screen.findByText("Reason: law postponed")).toBeInTheDocument();
+    expect(screen.getByText(/Activation cancellations #4/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(svc.approveInboxItem).toHaveBeenCalledWith("activation_cancel", 4, {}));
+    expect(await screen.findByText(/The version is back to Approved/)).toBeInTheDocument();
+  });
+});
+

@@ -46,9 +46,12 @@ from app.modules.tax.registry_schemas import (
     SubmitRateRequest,
 )
 from app.modules.tax.enums import PlatformVersionStatus
-from app.modules.tax.policy_models import TaxCodeSetVersion, TaxMarketAvailabilityVersion, TaxRulePackVersion
+from app.modules.tax.policy_models import (
+    TaxActivationCancellation, TaxCodeSetVersion, TaxMarketAvailabilityVersion, TaxRulePackVersion,
+)
 from app.modules.tax.policy_schemas import ShadowSelectionRequest  # Phase 7
 from app.modules.tax.policy_schemas import (
+    ActivationCancelRequest,
     AvailabilityAmendRequest,
     AvailabilityDraftRequest,
     CodeSetDraftRequest,
@@ -58,11 +61,13 @@ from app.modules.tax.policy_schemas import (
     TaxCodeUpsertRequest,
 )
 from app.modules.tax.policy_service import (
+    ActivationCancellationService,
     MarketAvailabilityService,
     RulePackService,
     TaxCodeSetService,
     source_dependency_status,
     view_availability,
+    view_cancellation,
     view_code_set,
     view_rule_pack,
 )
@@ -487,6 +492,9 @@ def _availability_action(action: str, capability: str, step_up: bool):
             if not (data.reason or "").strip():
                 raise BadRequestException("A reason is required.")
             kwargs["reason"] = data.reason
+        if action == "publish":                     # Phase 8 PR 2: now, or scheduled
+            kwargs.update(activate_at_local=data.activate_at_local, timezone=data.timezone,
+                          utc_offset=data.utc_offset)
         row = getattr(svc, action)(**kwargs)
         db.commit()
         return view_availability(row)
@@ -688,7 +696,8 @@ def list_tax_people(page: PageParams = Depends(), db: Session = Depends(get_db),
 @admin_router.post("/rule-packs", status_code=status.HTTP_201_CREATED, summary="Register a coded rule pack as a draft")
 def register_rule_pack(data: RulePackRegisterRequest, db: Session = Depends(get_db),
                        current_user=Depends(require_capability("tax_registry.write"))):
-    row = RulePackService(db).register(actor_id=current_user.id, code=data.code, notes=data.notes)
+    row = RulePackService(db).register(actor_id=current_user.id, code=data.code, notes=data.notes,
+                                       valid_from=data.valid_from, version=data.version)
     db.commit()
     return view_rule_pack(row)
 
@@ -718,6 +727,9 @@ def _rule_pack_action(action: str, capability: str, step_up: bool):
             if not (data.reason or "").strip():
                 raise BadRequestException("A reason is required.")
             kwargs["reason"] = data.reason
+        if action == "publish":                     # Phase 8 PR 2: now, or scheduled
+            kwargs.update(activate_at_local=data.activate_at_local, timezone=data.timezone,
+                          utc_offset=data.utc_offset)
         row = getattr(svc, action)(**kwargs)
         db.commit()
         return view_rule_pack(row)
@@ -731,6 +743,55 @@ for _action, _cap, _step_up in (("validate", "tax_registry.write", False), ("sub
         f"/rule-packs/{{version_id}}/{_action}", _rule_pack_action(_action, _cap, _step_up),
         methods=["POST"], summary=f"{_action.capitalize()} a rule-pack version",
     )
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# Phase 8 PR 2 — cancelling a scheduled activation: a TAX_PUBLISHER (or the
+# submitting TAX_REVIEWER) proposes with a reason; a different TAX_PUBLISHER
+# approves with MFA step-up. Approving returns the version to APPROVED.
+# ═════════════════════════════════════════════════════════════════════════
+
+def _cancel_schedule(kind: str):
+    def handler(version_id: int, data: ActivationCancelRequest, db: Session = Depends(get_db),
+                current_user=Depends(require_capability("tax_registry.read"))):
+        c = ActivationCancellationService(db).propose(actor=current_user, kind=kind, version_id=version_id,
+                                                      reason=data.reason)
+        db.commit()
+        return view_cancellation(c)
+    return handler
+
+
+for _kind, _path in (("rule_pack", "rule-packs"), ("market_availability", "market-availability")):
+    admin_router.add_api_route(f"/{_path}/{{version_id}}/cancel-schedule", _cancel_schedule(_kind), methods=["POST"],
+                               status_code=status.HTTP_201_CREATED,
+                               summary="Propose cancelling a scheduled activation (two-person)")
+
+
+@admin_router.get("/activation-cancellations", summary="Activation cancellation requests")
+def list_activation_cancellations(page: PageParams = Depends(), db: Session = Depends(get_db),
+                                  _user=Depends(require_capability("tax_registry.read"))):
+    rows = db.query(TaxActivationCancellation).order_by(TaxActivationCancellation.id.desc()).all()
+    items, next_cursor = paginate(rows, page)
+    return {"items": [view_cancellation(c) for c in items], "next_cursor": next_cursor}
+
+
+def _decide_cancellation(approve: bool):
+    def handler(cancellation_id: int, data: Optional[PolicyActionRequest] = None, db: Session = Depends(get_db),
+                current_user=Depends(require_capability("tax_registry.approve"))):
+        data = data or PolicyActionRequest()
+        if approve:
+            require_tax_step_up(db, current_user, StepUpRequest(code=data.code, recovery_code=data.recovery_code))
+        c = ActivationCancellationService(db).decide(actor_id=current_user.id, cancellation_id=cancellation_id,
+                                                     approve=approve, reason=data.reason)
+        db.commit()
+        return view_cancellation(c)
+    return handler
+
+
+admin_router.add_api_route("/activation-cancellations/{cancellation_id}/approve", _decide_cancellation(True),
+                           methods=["POST"], summary="Approve cancelling a scheduled activation (MFA step-up)")
+admin_router.add_api_route("/activation-cancellations/{cancellation_id}/reject", _decide_cancellation(False),
+                           methods=["POST"], summary="Reject cancelling a scheduled activation")
 
 
 # ═════════════════════════════════════════════════════════════════════════

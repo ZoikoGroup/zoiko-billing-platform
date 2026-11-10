@@ -184,8 +184,10 @@ def build_report(db: Session, subject_kind: str, subject_id: int, actor_id: Opti
         row = db.get(TaxRulePackVersion, subject_id)
         if row is None:
             raise NotFoundException("Rule pack version", subject_id)
-        cls = packs.get(row.code)
-        if cls is None or getattr(cls, "version", None) != row.version:
+        from app.modules.tax.engines import rule_pack_class
+
+        cls = rule_pack_class(row.code, row.version)
+        if cls is None:
             raise BadRequestException("This rule pack version is not the one in code; regression runs the code.")
         cases = [c for c in fixtures["cases"] if c["pack"] == row.code]
         baseline_ref, baseline = _pack_baseline(db, row)

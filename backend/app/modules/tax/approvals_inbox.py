@@ -22,7 +22,7 @@ from app.modules.tax.enums import PlatformVersionStatus, StagedRateStatus
 from app.modules.tax.policy_models import TaxCodeSetVersion, TaxMarketAvailabilityVersion, TaxRulePackVersion
 from app.modules.tax.registry_models import TaxChangeApproval, TaxRateStaging
 
-KINDS = ("staged_rate", "tax_code_set", "rule_pack", "market_availability")
+KINDS = ("staged_rate", "tax_code_set", "rule_pack", "market_availability", "activation_cancel")
 
 
 def _iso(value) -> Optional[str]:
@@ -75,6 +75,28 @@ def _availability_title(row) -> str:
     return f"{jurisdiction} {tax_type} {row.transaction_class.name} -> {row.mode.name}"
 
 
+def _cancellations(db: Session, user) -> list:
+    """Phase 8 PR 2: proposed cancellations of scheduled activations."""
+    from app.modules.tax.policy_models import TaxActivationCancellation
+
+    items = []
+    for c in db.query(TaxActivationCancellation).filter(TaxActivationCancellation.status == "PROPOSED").all():
+        model = TaxRulePackVersion if c.version_kind == "rule_pack" else TaxMarketAvailabilityVersion
+        row = db.get(model, c.version_id)
+        if row is None:
+            continue
+        subject = f"rule pack {row.code} v{row.version}" if c.version_kind == "rule_pack" else _availability_title(row)
+        can, why = _verdict(user, {c.proposed_by} - {None})
+        items.append({
+            "kind": "activation_cancel", "id": c.id,
+            "title": f"Cancel the scheduled activation of {subject} ({row.activate_at_local} {row.activate_tz})",
+            "submitted_by": c.proposed_by, "submitted_at": _iso(c.created_at),
+            "can_approve": can, "reason_if_not": why,
+            "version_kind": c.version_kind, "version_id": c.version_id, "reason": c.reason,
+        })
+    return items
+
+
 def approvals_inbox(db: Session, user, kind: Optional[str] = None) -> list:
     """All items awaiting approval, oldest submission first (ties: kind, id)."""
     sources = {
@@ -85,6 +107,7 @@ def approvals_inbox(db: Session, user, kind: Optional[str] = None) -> list:
                                        lambda r: f"Rule pack {r.code} v{r.version}"),
         "market_availability": lambda: _versions(db, user, TaxMarketAvailabilityVersion, "market_availability",
                                                  _availability_title),
+        "activation_cancel": lambda: _cancellations(db, user),
     }
     items = []
     for name in ([kind] if kind else KINDS):

@@ -12,12 +12,15 @@ previous ACTIVE version first, then activates the new one; nothing decided is
 ever edited in place. Nothing here commits.
 """
 import logging
+from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import event, func, inspect
-from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session, object_session
 
-from app.core.exceptions import BadRequestException, NotFoundException
+from app.core.capabilities import has_capability
+from app.core.exceptions import BadRequestException, ForbiddenException, NotFoundException
 from app.modules.super_admin.approval_service import ApprovalService, SelfApprovalError
 from app.modules.super_admin.audit_service import PlatformAuditService
 from app.modules.super_admin.models import PlatformAuditAction
@@ -36,6 +39,7 @@ from app.modules.tax.policy_models import (
     AVAILABILITY_CONTENT_FIELDS,
     CODE_SET_CONTENT_FIELDS,
     RULE_PACK_CONTENT_FIELDS,
+    TaxActivationCancellation,
     TaxCode,
     TaxCodeSetVersion,
     TaxMarketAvailabilityVersion,
@@ -46,6 +50,13 @@ from app.modules.tax.registry_service import MakerCheckerError, RegistryImmutabi
 from app.modules.tax.rule_pack_integrity import code_hash
 
 logger = logging.getLogger("zoiko_billing.tax.policy")
+
+
+def rule_pack_class(code: str, version: str):
+    """The exact pack version in the running code (lazy: engines imports this module's dependencies)."""
+    from app.modules.tax.engines import rule_pack_class as lookup
+
+    return lookup(code, version)
 
 #: Gates that can never be waived as NOT_APPLICABLE for a calculating mode.
 MANDATORY_GATES = frozenset({
@@ -91,10 +102,19 @@ def _guard_policy_versions(session, flush_context, instances):
                 raise RegistryImmutabilityError(f"{type(obj).__name__} {obj.id} content is frozen once submitted.")
             if old_status == PlatformVersionStatus.SUPERSEDED and changed:
                 raise RegistryImmutabilityError(f"{type(obj).__name__} {obj.id} is superseded and immutable.")
-            if old_status == PlatformVersionStatus.ACTIVE and changed - {"status", "superseded_at"}:
+            allowed = {"status", "superseded_at"}
+            if isinstance(obj, TaxRulePackVersion) and _committed(obj, "valid_to") is None:
+                allowed.add("valid_to")                    # Phase 8 PR 2: the end date, set once
+            if old_status == PlatformVersionStatus.ACTIVE and changed - allowed:
                 raise RegistryImmutabilityError(f"{type(obj).__name__} {obj.id} is active: it can only be superseded.")
         elif isinstance(obj, TaxCode) and obj.code_set_version.status not in EDITABLE_PLATFORM_STATUSES:
             raise RegistryImmutabilityError("Tax codes of a submitted code-set version are frozen.")
+    for obj in list(session.dirty) + list(session.deleted):
+        if isinstance(obj, TaxActivationCancellation):
+            if obj in session.deleted:
+                raise RegistryImmutabilityError(f"Activation cancellation {obj.id} cannot be deleted.")
+            if _committed(obj, "status") != "PROPOSED":
+                raise RegistryImmutabilityError(f"Activation cancellation {obj.id} is decided and final.")
     for obj in session.new:
         if isinstance(obj, TaxCode) and obj.code_set_version is not None \
                 and obj.code_set_version.status not in EDITABLE_PLATFORM_STATUSES:
@@ -220,7 +240,12 @@ class _VersionWorkflow:
         self._log(actor_id, PlatformAuditAction.UPDATE, row, reason=reason, metadata={"rejected": True})
         return row
 
-    def publish(self, *, actor_id: int, version_id: int):
+    def publish(self, *, actor_id: int, version_id: int, activate_at_local: Optional[str] = None,
+                timezone: Optional[str] = None, utc_offset: Optional[str] = None):
+        """Publish now, or (Phase 8 PR 2) schedule: a future local activation
+        time makes the version SCHEDULED until the activation job runs."""
+        from app.modules.tax.activation import local_to_utc
+
         row = self.get(version_id)
         if row.status != PlatformVersionStatus.APPROVED:
             raise RegistryStateError(f"{self.entity_type} {row.id} is {row.status.name}, not APPROVED.")
@@ -229,6 +254,28 @@ class _VersionWorkflow:
         if errors:
             raise RegistryStateError("Validation no longer passes: " + "; ".join(errors))
         now = utcnow()
+        tz = (timezone or "").strip() or self._timezone(row)
+        if activate_at_local:
+            if not hasattr(self.model, "activate_at"):
+                raise BadRequestException(f"A {self.entity_type} can't be scheduled; publish it now.")
+            if not tz:
+                raise BadRequestException("This jurisdiction spans several time zones: choose the time zone the "
+                                          "activation time is in.")
+            when = local_to_utc(activate_at_local, tz, utc_offset)
+            if when > now:
+                return self._schedule(row, actor_id, when, activate_at_local.strip(), tz)
+        self._before_activate(row, now, tz)
+        return self._activate(row, actor_id, now)
+
+    # ── Phase 8 PR 2 hooks and steps ──
+    def _timezone(self, row) -> Optional[str]:
+        """The legal time zone of the version's jurisdiction, if it has one."""
+        return None
+
+    def _before_activate(self, row, when: datetime, tz: Optional[str]) -> None:
+        """Checks that depend on the activation time (packs: date ranges)."""
+
+    def _close_predecessor(self, row, now: datetime) -> None:
         current = self.current_for(row)
         if current is not None:
             # Supersede first: the one-ACTIVE-per-key unique index is immediate.
@@ -236,13 +283,65 @@ class _VersionWorkflow:
             current.superseded_at = now
             self.db.flush()
             row.predecessor_id = current.id
+
+    def _schedule(self, row, actor_id: int, when: datetime, local: str, tz: str):
+        other = self.db.query(self.model).filter(self._key_filter(row), self.model.id != row.id,
+                                                 self.model.status == PlatformVersionStatus.SCHEDULED).first()
+        if other is not None:
+            raise RegistryStateError(f"{self.entity_type} {other.id} is already scheduled for this; cancel it first.")
+        self._before_activate(row, when, tz)
+        row.status = PlatformVersionStatus.SCHEDULED
+        row.activate_at, row.activate_at_local, row.activate_tz = when, local, tz
+        row.scheduled_by_user_id = actor_id
+        row.activation_error = None
+        self.db.flush()
+        self._log(actor_id, PlatformAuditAction.UPDATE, row, metadata={
+            "scheduled": True, "activate_at": when.isoformat(), "activate_at_local": local, "activate_tz": tz})
+        return row
+
+    def _activate(self, row, actor_id: Optional[int], now: datetime, scheduled: bool = False):
+        self._close_predecessor(row, now)
         row.status = PlatformVersionStatus.ACTIVE
         row.published_at = now
         row.publisher_user_id = actor_id
+        if hasattr(row, "activation_error"):
+            row.activation_error = None
         self.db.flush()
-        self._log(actor_id, PlatformAuditAction.UPDATE, row,
-                  metadata={"published": True, "predecessor_id": row.predecessor_id})
+        meta = {"published": True, "predecessor_id": row.predecessor_id}
+        if scheduled:
+            meta.update({"activated_by_schedule": True, "activate_at": row.activate_at.isoformat()})
+        self._log(actor_id, PlatformAuditAction.UPDATE, row, metadata=meta)
         return row
+
+    def activate_due(self, version_id: int, now: datetime):
+        """The activation job's step for one row: lock, re-check, activate.
+        A failed re-check leaves it SCHEDULED with activation_error set."""
+        from app.modules.tax.activation import aware
+
+        query = self.db.query(self.model).filter(self.model.id == version_id)
+        if self.db.get_bind().dialect.name == "postgresql":
+            query = query.with_for_update(skip_locked=True)
+        row = query.first()
+        if row is None or row.status != PlatformVersionStatus.SCHEDULED or aware(row.activate_at) > now:
+            return None
+        problems = list(self.errors(row))
+        if not problems:
+            try:
+                self._before_approve(row)                   # Phase 7 regression gate
+                self._before_activate(row, now, row.activate_tz)
+            except SQLAlchemyError:
+                raise
+            except Exception as exc:                        # noqa: BLE001  (recorded, never swallowed silently)
+                problems.append(getattr(exc, "message", None) or str(exc))
+        if problems:
+            message = "; ".join(problems)[:2000]
+            if row.activation_error != message:
+                row.activation_error = message
+                self.db.flush()
+                self._log(row.scheduled_by_user_id, PlatformAuditAction.UPDATE, row,
+                          metadata={"activation_failed": True, "errors": problems})
+            return None
+        return self._activate(row, row.scheduled_by_user_id, now, scheduled=True)
 
     def current_for(self, row):
         return self.db.query(self.model).filter(
@@ -271,6 +370,10 @@ class MarketAvailabilityService(_VersionWorkflow):
     model = TaxMarketAvailabilityVersion
     request_type = "tax_market_availability"
     entity_type = "TaxMarketAvailabilityVersion"
+
+    def _timezone(self, row) -> Optional[str]:
+        jurisdiction = self.db.get(TaxJurisdiction, row.jurisdiction_id)
+        return jurisdiction.timezone if jurisdiction else None
 
     def _key_filter(self, row):
         m = TaxMarketAvailabilityVersion
@@ -485,10 +588,15 @@ class RulePackService(_VersionWorkflow):
 
         return {code: cls for code, cls in registered_rule_packs().items() if hasattr(cls, "declaration")}
 
-    def register(self, *, actor_id: Optional[int], code: str, notes: Optional[str] = None) -> TaxRulePackVersion:
-        pack = self.catalogue().get((code or "").strip().upper())
-        if pack is None:
-            raise BadRequestException(f"No native rule pack {code!r} is registered in code.")
+    def register(self, *, actor_id: Optional[int], code: str, notes: Optional[str] = None,
+                 valid_from=None, version: Optional[str] = None) -> TaxRulePackVersion:
+        """Register the newest version of the pack in code, or (Phase 8 PR 2,
+        several versions ship side by side) the exact version given."""
+        code = (code or "").strip().upper()
+        pack = rule_pack_class(code, str(version).strip()) if version else self.catalogue().get(code)
+        if pack is None or not hasattr(pack, "declaration"):
+            raise BadRequestException(f"No native rule pack {code!r}{f' version {version}' if version else ''} "
+                                      "is registered in code.")
         declared = pack.declaration()
         existing = self.db.query(TaxRulePackVersion).filter(TaxRulePackVersion.code == pack.code,
                                                             TaxRulePackVersion.version == pack.version).first()
@@ -500,7 +608,7 @@ class RulePackService(_VersionWorkflow):
             required_facts=declared["required_facts"], coverage=declared["coverage"],
             source_dependencies=[source_dependency_status(self.db, ref) for ref in pack.source_refs],
             notes=notes, created_by_user_id=actor_id, created_at=utcnow(), status=PlatformVersionStatus.PENDING_REVIEW,
-            code_hash=code_hash(pack),
+            code_hash=code_hash(pack), valid_from=valid_from,
         )
         if row.code_hash is None:
             raise BadRequestException(f"The source of {pack.code} could not be read to compute its code hash.")
@@ -512,14 +620,14 @@ class RulePackService(_VersionWorkflow):
     def amend(self, *, actor_id: int, version_id: int, changes: dict) -> TaxRulePackVersion:
         row = self.get(version_id)
         self._require_editable(row)
-        unknown = set(changes) - {"golden_test_report", "notes"}
+        unknown = set(changes) - {"golden_test_report", "notes", "valid_from"}
         if unknown:
             raise BadRequestException(f"Not editable: {', '.join(sorted(unknown))}")
         before = self.describe(row)
         for key, value in changes.items():
             setattr(row, key, value)
         # Each edit re-records the current approval state of the sources.
-        pack = self.catalogue().get(row.code)
+        pack = rule_pack_class(row.code, row.version)
         if pack is not None:
             row.source_dependencies = [source_dependency_status(self.db, ref) for ref in pack.source_refs]
             self._fill_hash(row, pack)
@@ -537,15 +645,15 @@ class RulePackService(_VersionWorkflow):
 
     def validate(self, *, actor_id: Optional[int], version_id: int):
         row = self.get(version_id)
-        pack = self.catalogue().get(row.code)
-        if pack is not None and pack.version == row.version:
+        pack = rule_pack_class(row.code, row.version)
+        if pack is not None:
             self._fill_hash(row, pack)
         return super().validate(actor_id=actor_id, version_id=version_id)
 
     def errors(self, row: TaxRulePackVersion) -> list[str]:
         errors: list[str] = []
-        pack = self.catalogue().get(row.code)
-        if pack is None or pack.version != row.version:
+        pack = rule_pack_class(row.code, row.version)
+        if pack is None:
             return [f"{row.code} version {row.version} is not the pack registered in code."]
         running = code_hash(pack)
         if not row.code_hash:
@@ -578,7 +686,102 @@ class RulePackService(_VersionWorkflow):
                 "rounding_rule": row.rounding_rule, "rounding_mode": row.rounding_mode,
                 "required_facts": row.required_facts, "coverage": row.coverage,
                 "source_dependencies": row.source_dependencies, "golden_test_report": row.golden_test_report,
-                "code_hash": row.code_hash}
+                "code_hash": row.code_hash, "valid_from": row.valid_from.isoformat() if row.valid_from else None}
+
+    # ── Phase 8 PR 2: effective-dated versions ──
+    def current_for(self, row):
+        """The open-ended ACTIVE version of the same pack (the one a new
+        version follows); closed earlier versions stay in force for their
+        dates."""
+        return self.db.query(TaxRulePackVersion).filter(
+            TaxRulePackVersion.code == row.code, TaxRulePackVersion.status == PlatformVersionStatus.ACTIVE,
+            TaxRulePackVersion.valid_to.is_(None), TaxRulePackVersion.id != row.id,
+        ).first()
+
+    def _timezone(self, row) -> Optional[str]:
+        zones = set()
+        for market in row.markets or []:
+            jurisdiction = self.db.query(TaxJurisdiction).filter(
+                TaxJurisdiction.code == market.get("jurisdiction_code")).first()
+            zones.add(jurisdiction.timezone if jurisdiction else None)
+        return next(iter(zones)) if len(zones) == 1 and None not in zones else None
+
+    def _before_activate(self, row, when: datetime, tz: Optional[str]) -> None:
+        from app.modules.tax.activation import local_midnight_utc
+
+        pred = self.current_for(row)
+        replacing = pred is not None and pred.valid_from == row.valid_from
+        if pred is not None and not replacing and pred.valid_from is not None and (
+                row.valid_from is None or row.valid_from < pred.valid_from):
+            raise RegistryStateError(
+                f"{row.code} v{row.version} would start before v{pred.version} (in force from {pred.valid_from}); "
+                "a pack version must start on or after the version it follows.")
+        others = self.db.query(TaxRulePackVersion).filter(
+            TaxRulePackVersion.code == row.code, TaxRulePackVersion.status == PlatformVersionStatus.ACTIVE,
+            TaxRulePackVersion.id != row.id).all()
+        for other in others:
+            if other is pred:
+                continue                                    # closed (or superseded) by this activation
+            if _overlaps(row.valid_from, None, other.valid_from, other.valid_to):
+                raise RegistryStateError(
+                    f"{row.code} v{row.version} would overlap v{other.version} "
+                    f"({other.valid_from or 'the start'} to {other.valid_to or 'open-ended'}).")
+        if row.valid_from is not None and not replacing:
+            if not tz:
+                raise BadRequestException("This pack's jurisdiction spans several time zones: choose the time zone "
+                                          "that governs its start date.")
+            start = local_midnight_utc(row.valid_from, tz)
+            if when > start:
+                raise RegistryStateError(
+                    f"{row.code} v{row.version} is in force from {row.valid_from} ({tz}); activating it at "
+                    f"{when.isoformat(timespec='minutes')} is after that start, so it would be retroactive. "
+                    "Retroactive pack versions wait for retroactive change analysis (Phase 8 PR 4); "
+                    "activate before the start date or choose a later one.")
+
+    def _close_predecessor(self, row, now: datetime) -> None:
+        pred = self.current_for(row)
+        if pred is None:
+            return
+        if pred.valid_from == row.valid_from:
+            pred.status = PlatformVersionStatus.SUPERSEDED     # same start: a full replacement
+            pred.superseded_at = now
+        else:
+            pred.valid_to = row.valid_from                     # the predecessor stays in force before it
+        self.db.flush()
+        row.predecessor_id = pred.id
+
+
+def _overlaps(a_from, a_to, b_from, b_to) -> bool:
+    """[a_from, a_to) and [b_from, b_to) share a day (None = unbounded)."""
+    return (a_from is None or b_to is None or a_from < b_to) and (b_from is None or a_to is None or b_from < a_to)
+
+
+def _schedule_view(row) -> dict:
+    """Phase 8 PR 2 fields shared by the pack and availability views."""
+    db = object_session(row)
+    pending = None
+    if db is not None and row.id is not None:
+        kind = "rule_pack" if isinstance(row, TaxRulePackVersion) else "market_availability"
+        c = db.query(TaxActivationCancellation).filter(
+            TaxActivationCancellation.version_kind == kind, TaxActivationCancellation.version_id == row.id,
+            TaxActivationCancellation.status == "PROPOSED").first()
+        if c is not None:
+            pending = view_cancellation(c)
+    if db is None:
+        default_tz = None
+    elif isinstance(row, TaxRulePackVersion):
+        default_tz = RulePackService(db)._timezone(row)
+    else:
+        default_tz = MarketAvailabilityService(db)._timezone(row)
+    return {"activate_at": row.activate_at, "activate_at_local": row.activate_at_local, "activate_tz": row.activate_tz,
+            "scheduled_by_user_id": row.scheduled_by_user_id, "activation_error": row.activation_error,
+            "pending_cancellation": pending, "default_timezone": default_tz}
+
+
+def view_cancellation(c: TaxActivationCancellation) -> dict:
+    return {"id": c.id, "version_kind": c.version_kind, "version_id": c.version_id, "reason": c.reason,
+            "status": c.status, "proposed_by": c.proposed_by, "decided_by": c.decided_by, "decided_at": c.decided_at,
+            "decision_reason": c.decision_reason, "created_at": c.created_at}
 
 
 def view_rule_pack(row: TaxRulePackVersion) -> dict:
@@ -586,6 +789,8 @@ def view_rule_pack(row: TaxRulePackVersion) -> dict:
 
     return {
         **integrity_of(row),
+        **_schedule_view(row),
+        "valid_from": row.valid_from, "valid_to": row.valid_to,
         "id": row.id, "code": row.code, "version": row.version, "markets": row.markets,
         "rounding_rule": row.rounding_rule, "rounding_mode": row.rounding_mode,
         "required_facts": row.required_facts, "coverage": row.coverage,
@@ -642,6 +847,7 @@ def coverage(db: Session) -> list:
 
 def view_availability(row: TaxMarketAvailabilityVersion) -> dict:
     return {
+        **_schedule_view(row),
         "id": row.id,
         "jurisdiction_id": row.jurisdiction_id,
         "jurisdiction_code": row.jurisdiction.code if row.jurisdiction else None,
@@ -685,3 +891,89 @@ def view_tax_code(c: TaxCode) -> dict:
     return {"id": c.id, "code": c.code, "name": c.name, "description": c.description,
             "parent_code": c.parent_code, "supply_category": c.supply_category.name,
             "registry_product_scope": c.registry_product_scope}
+
+
+# ── Phase 8 PR 2: cancelling a scheduled activation (two people, MFA) ───
+
+CANCEL_KINDS = {"rule_pack": RulePackService, "market_availability": MarketAvailabilityService}
+
+
+class ActivationCancellationService:
+    """A TAX_PUBLISHER (or the TAX_REVIEWER who submitted the version)
+    proposes with a reason; a different TAX_PUBLISHER approves with MFA
+    step-up (enforced at the route). Approving returns the version to
+    APPROVED, so it can be published or scheduled again. Once a version is
+    ACTIVE, only emergency rollback (PR 3) reverts it."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def _version_service(self, kind: str):
+        svc_cls = CANCEL_KINDS.get(kind)
+        if svc_cls is None:
+            raise BadRequestException(f"Unknown version kind {kind!r}.")
+        return svc_cls(self.db)
+
+    def get(self, cancellation_id: int) -> TaxActivationCancellation:
+        row = self.db.get(TaxActivationCancellation, cancellation_id)
+        if row is None:
+            raise NotFoundException("Activation cancellation", cancellation_id)
+        return row
+
+    def pending_for(self, kind: str, version_id: int) -> Optional[TaxActivationCancellation]:
+        return self.db.query(TaxActivationCancellation).filter(
+            TaxActivationCancellation.version_kind == kind, TaxActivationCancellation.version_id == version_id,
+            TaxActivationCancellation.status == "PROPOSED").first()
+
+    def propose(self, *, actor, kind: str, version_id: int, reason: str) -> TaxActivationCancellation:
+        if not (reason or "").strip():
+            raise BadRequestException("A reason is required.")
+        svc = self._version_service(kind)
+        row = svc.get(version_id)
+        if row.status != PlatformVersionStatus.SCHEDULED:
+            raise RegistryStateError(f"{svc.entity_type} {row.id} is {row.status.name}; only a scheduled activation "
+                                     "can be cancelled.")
+        publisher = has_capability(actor, "tax_registry.approve")
+        submitter = has_capability(actor, "tax_registry.write") and actor.id == row.maker_user_id
+        if not (publisher or submitter):
+            raise ForbiddenException("A TAX_PUBLISHER, or the reviewer who submitted this version, can propose "
+                                     "cancelling its activation.")
+        if self.pending_for(kind, row.id) is not None:
+            raise RegistryStateError("A cancellation of this activation is already waiting for a decision.")
+        c = TaxActivationCancellation(version_kind=kind, version_id=row.id, reason=reason.strip(), status="PROPOSED",
+                                      proposed_by=actor.id, created_at=utcnow())
+        self.db.add(c)
+        self.db.flush()
+        svc._log(actor.id, PlatformAuditAction.UPDATE, row, reason=reason.strip(),
+                 metadata={"activation_cancel": "proposed", "cancellation_id": c.id})
+        return c
+
+    def decide(self, *, actor_id: int, cancellation_id: int, approve: bool,
+               reason: Optional[str] = None) -> TaxActivationCancellation:
+        c = self.get(cancellation_id)
+        if c.status != "PROPOSED":
+            raise RegistryStateError(f"Activation cancellation {c.id} is already {c.status}.")
+        if actor_id == c.proposed_by:
+            raise MakerCheckerError("You proposed this cancellation; a different TAX_PUBLISHER must decide it.")
+        svc = self._version_service(c.version_kind)
+        row = svc.get(c.version_id)
+        reason = (reason or "").strip() or None
+        if not approve:
+            if not reason:
+                raise BadRequestException("A reason is required to reject a cancellation.")
+            c.status = "REJECTED"
+        else:
+            if row.status != PlatformVersionStatus.SCHEDULED:
+                raise RegistryStateError(f"{svc.entity_type} {row.id} is already {row.status.name}, so its activation "
+                                         "can't be cancelled; an active version is reverted by emergency rollback.")
+            row.status = PlatformVersionStatus.APPROVED
+            row.activate_at = row.activate_at_local = row.activate_tz = None
+            row.scheduled_by_user_id = None
+            row.activation_error = None
+            c.status = "APPROVED"
+        c.decided_by, c.decided_at, c.decision_reason = actor_id, utcnow(), reason
+        self.db.flush()
+        svc._log(actor_id, PlatformAuditAction.UPDATE, row, reason=reason,
+                 metadata={"activation_cancel": c.status.lower(), "cancellation_id": c.id})
+        return c
+
