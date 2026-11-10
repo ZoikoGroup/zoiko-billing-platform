@@ -588,7 +588,9 @@ def _start(db: Session, analysis_id: int) -> None:
         db.rollback()
         return
     t = trigger_for(db, a)
-    orgs = sorted({oid for (oid,) in scope_query(db, t).with_entities(TaxQuote.organization_id).distinct()})
+    # No ORDER BY with DISTINCT: Postgres requires ordered columns in the select list.
+    orgs = sorted({oid for (oid,) in scope_query(db, t).order_by(None).with_entities(
+        TaxQuote.organization_id).distinct()})
     now = _now()
     for org_id in orgs:
         db.add(TaxRetroOrgRun(analysis_id=a.id, organization_id=org_id, status="PENDING", cursor=0, documents=0,

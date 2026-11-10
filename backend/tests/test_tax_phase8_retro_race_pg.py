@@ -108,6 +108,8 @@ def test_two_workers_analyse_each_document_once(engine):
 
     check = Session(bind=engine)
     try:
+        failed = check.get(TaxRetroAnalysis, ids["analysis"])
+        assert failed.error is None, failed.error                                # the job records failures
         results = check.query(TaxRetroResult).filter(TaxRetroResult.analysis_id == ids["analysis"]).all()
         assert sorted(r.quote_id for r in results) == sorted(quote_ids)          # each document exactly once
         assert all(r.status == "MANUAL_REVIEW_REQUIRED" for r in results)
