@@ -46,9 +46,11 @@ logger = logging.getLogger(__name__)
 # entries as later template families are added — this module never needs
 # to change shape to add one.
 from app.modules.notifications.templates.zb_sec import RENDERERS as _ZB_SEC_RENDERERS
+from app.modules.notifications.templates.zb_tax import RENDERERS as _ZB_TAX_RENDERERS
 
 _RENDERERS = {}
 _RENDERERS.update(_ZB_SEC_RENDERERS)
+_RENDERERS.update(_ZB_TAX_RENDERERS)
 
 
 @dataclass

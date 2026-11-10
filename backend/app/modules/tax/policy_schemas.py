@@ -105,6 +105,18 @@ class ActivationCancelRequest(_Strict):
     reason: str = Field(..., min_length=3, max_length=2000)
 
 
+class RollbackProposeRequest(_Strict):
+    """Phase 8 PR 3. restore_to_id None = quarantine only (rule packs whose
+    version a later one already follows)."""
+    kind: Literal["rule_pack", "market_availability"]
+    version_id: int
+    restore_to_id: Optional[int] = None
+    reason: str = Field(..., min_length=3, max_length=2000)
+    severity: Literal["SEV1", "SEV2", "SEV3"]
+    cancel_schedule: bool = False
+    timezone: Optional[str] = Field(None, max_length=64)
+
+
 class RegistrationCreate(_Strict):
     seller_entity_id: int
     jurisdiction_id: int

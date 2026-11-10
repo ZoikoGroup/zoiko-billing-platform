@@ -299,6 +299,7 @@ class PlatformVersionStatus(str, enum.Enum):
     SCHEDULED         = "scheduled"        # Phase 8 PR 2: approved, activates at activate_at
     ACTIVE            = "active"
     SUPERSEDED        = "superseded"
+    ROLLED_BACK       = "rolled_back"      # Phase 8 PR 3: emergency rollback; its range fails closed
     REJECTED          = "rejected"
 
 
@@ -366,6 +367,8 @@ class ReviewItemKind(str, enum.Enum):
     # Phase 7 PR 3: daily anomaly checks on issued invoices (never change one).
     TAX_SNAPSHOT_MISMATCH   = "tax_snapshot_mismatch"     # governed invoice differs from its committed quote
     CREDIT_EXCEEDS_ORIGINAL = "credit_exceeds_original"   # credit notes exceed the invoice total or its tax
+    # Phase 8 PR 3: an emergency rollback affected this organization's quotes or market.
+    TAX_ROLLBACK_APPLIED    = "tax_rollback_applied"
 
 
 class ReviewItemStatus(str, enum.Enum):

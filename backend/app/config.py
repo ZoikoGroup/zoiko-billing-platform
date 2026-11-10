@@ -168,6 +168,8 @@ class Settings(BaseSettings):
     # Phase 7 PR 2: approving a rule pack or a staged rate needs a current
     # regression report (app/modules/tax/regression/runner.py).
     TAX_REGRESSION_REQUIRED: bool = True
+    # ZB-TAX-ARCH-001 Phase 8 PR 3: publishing needs the version in rule_packs/retention.json.
+    TAX_RULE_PACK_RETENTION_REQUIRED: bool = True
     TAX_REGRESSION_MAX_AGE_HOURS: int = 72
     # Phase 7 PR 3: daily anomaly checks (app/modules/tax/anomaly_service.py).
     TAX_ANOMALY_ENABLED: bool = True

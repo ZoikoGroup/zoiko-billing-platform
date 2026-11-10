@@ -139,3 +139,28 @@ def test_a_decided_cancellation_is_final(uk):
     cid = pg.execute(text("SELECT max(id) FROM tax_activation_cancellations")).scalar()
     _rejects(pg, "UPDATE tax_activation_cancellations SET reason = 'edited' WHERE id = :i", {"i": cid})
     _rejects(pg, "DELETE FROM tax_activation_cancellations WHERE id = :i", {"i": cid})
+
+
+# ── PR 3: emergency rollback ────────────────────────────────────────────
+
+def test_rolled_back_is_the_only_change_besides_valid_to_and_then_final(uk):
+    pg, pack = uk["db"], uk["pack"]
+    _rejects(pg, "UPDATE tax_rule_pack_versions SET status = 'ROLLED_BACK' WHERE id = :i", {"i": pack.id})  # no stop time
+    _rejects(pg, "UPDATE tax_rule_pack_versions SET status = 'ROLLED_BACK', superseded_at = now(), "
+                 "approved_at = now() WHERE id = :i", {"i": pack.id})                                     # anything else
+    _accepts(pg, "UPDATE tax_rule_pack_versions SET status = 'ROLLED_BACK', superseded_at = now(), "
+                 "valid_to = DATE '2031-01-01' WHERE id = :i", {"i": pack.id})
+    _rejects(pg, "UPDATE tax_rule_pack_versions SET status = 'ACTIVE' WHERE id = :i", {"i": pack.id})
+    _rejects(pg, "UPDATE tax_rule_pack_versions SET notes = 'edited' WHERE id = :i", {"i": pack.id})
+    _rejects(pg, "DELETE FROM tax_rule_pack_versions WHERE id = :i", {"i": pack.id})
+
+
+def test_a_decided_rollback_request_is_final(uk):
+    pg = uk["db"]
+    rid = pg.execute(text(
+        "INSERT INTO tax_rollback_requests (kind, version_id, reason, severity, cancel_schedule, status, created_at) "
+        "VALUES ('rule_pack', :i, 'fixture', 'SEV2', false, 'REJECTED', now()) RETURNING id"),
+        {"i": uk["pack"].id}).scalar()
+    _rejects(pg, "UPDATE tax_rollback_requests SET reason = 'edited' WHERE id = :i", {"i": rid})
+    _rejects(pg, "UPDATE tax_rollback_requests SET status = 'APPROVED' WHERE id = :i", {"i": rid})
+    _rejects(pg, "DELETE FROM tax_rollback_requests WHERE id = :i", {"i": rid})

@@ -15,6 +15,7 @@ const { svc, current } = vi.hoisted(() => ({
     "listRulePacks", "getRulePackCatalogue", "registerRulePack", "amendRulePack", "rulePackAction", "getStagedRate",
     "listAuthorities", "listTaxTypes", "listComponents", "listTaxPeople", "getEvidenceBundle", "getRegression", "runRegression",
     "cancelScheduledActivation", "decideActivationCancellation",
+    "listRollbackCandidates", "proposeRollback", "decideRollback",
   ].map((k) => [k, vi.fn()])),
 }));
 vi.mock("../../api/client", async (importOriginal) => ({
@@ -634,6 +635,101 @@ describe("scheduled activation", () => {
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
     await waitFor(() => expect(svc.approveInboxItem).toHaveBeenCalledWith("activation_cancel", 4, {}));
     expect(await screen.findByText(/The version is back to Approved/)).toBeInTheDocument();
+  });
+});
+
+
+// ── Phase 8 PR 3: emergency rollback ────────────────────────────────────
+
+describe("emergency rollback", () => {
+  const v = { id: 21, code: "GB-VAT-DOMESTIC-SERVICES", version: "2", status: "ACTIVE", markets: [{ jurisdiction_code: "GB", tax_type: "VAT" }],
+              rounding_rule: "PER_LINE", rounding_mode: "HALF_UP", required_facts: [], source_dependencies: [],
+              golden_test_report: { suite: "packs", commit: "abc1234", passed: 12, failed: 0 }, maker_user_id: 9,
+              valid_from: "2031-01-01", valid_to: null, default_timezone: "Europe/London", pending_cancellation: null,
+              rollback: null, integrity: "MATCH", created_at: "2026-11-05T09:00:00Z" };
+  const proposed = { id: 4, kind: "rule_pack", version_id: 21, restore_to_id: 20, quarantine_only: false, severity: "SEV1",
+                     reason: "charges 25% instead of 20%", status: "PROPOSED", proposed_by: 9, cancel_schedule: false,
+                     regression: { cases: 6, changed: [{ case: "gb-1" }], errors: [] } };
+
+  async function openPack(pack) {
+    svc.listRulePacks.mockImplementation(() => page([pack]));
+    const view = renderAt("/super-admin/tax/rule-packs");
+    fireEvent.click(await screen.findByRole("button", { name: "Open #21" }));
+    return { ...view, detail: await screen.findByRole("dialog", { name: "Rule pack #21" }) };
+  }
+
+  it("a publisher proposes a rollback to an earlier version whose code ships", async () => {
+    svc.listRollbackCandidates.mockResolvedValue({ items: [
+      { id: 20, version: "1", valid_from: null, valid_to: "2031-01-01", integrity: "MATCH", status: "ACTIVE" },
+      { id: 19, version: "0", valid_from: null, valid_to: null, integrity: "CODE_MISSING", status: "SUPERSEDED" },
+    ] });
+    svc.proposeRollback.mockResolvedValue({ ...proposed, proposed_by: 7 });
+    const { container, detail } = await openPack(v);
+    fireEvent.click(within(detail).getByRole("button", { name: "Propose rollback" }));
+    const modal = await screen.findByRole("dialog", { name: "Propose an emergency rollback" });
+    await waitFor(() => expect(within(modal).getByRole("option", { name: /v1 \(#20/ })).toBeInTheDocument());
+    expect(within(modal).queryByRole("option", { name: /v0/ })).not.toBeInTheDocument();
+    expect(within(modal).getByText(/Can't be restored.*v0 \(CODE_MISSING\)/)).toBeInTheDocument();
+    fireEvent.change(within(modal).getByLabelText("Restore to"), { target: { value: "20" } });
+    fireEvent.change(within(modal).getByLabelText("Severity"), { target: { value: "SEV1" } });
+    fireEvent.change(within(modal).getByLabelText(/^Reason/), { target: { value: "charges 25% instead of 20%" } });
+    expect(await axe(container)).toHaveNoViolations();
+    fireEvent.click(within(modal).getByRole("button", { name: "Propose rollback" }));
+    await waitFor(() => expect(svc.proposeRollback).toHaveBeenCalledWith({ kind: "rule_pack", version_id: 21,
+      restore_to_id: 20, reason: "charges 25% instead of 20%", severity: "SEV1", cancel_schedule: false,
+      timezone: "Europe/London" }));
+    expect(await within(detail).findByText(/SEV1 rollback proposed/)).toBeInTheDocument();
+    expect(within(detail).getByText("A different TAX_PUBLISHER must approve it.")).toBeInTheDocument();
+  });
+
+  it("a version a later one follows can only be quarantined", async () => {
+    svc.listRollbackCandidates.mockResolvedValue({ items: [] });
+    svc.proposeRollback.mockResolvedValue({ ...proposed, restore_to_id: null, quarantine_only: true, proposed_by: 7 });
+    const { detail } = await openPack({ ...v, valid_to: "2032-01-01" });
+    fireEvent.click(within(detail).getByRole("button", { name: "Propose rollback" }));
+    const modal = await screen.findByRole("dialog", { name: "Propose an emergency rollback" });
+    expect(within(modal).getByLabelText("Restore to")).toHaveValue("quarantine");
+    expect(within(modal).queryByLabelText(/Time zone/)).not.toBeInTheDocument();
+    fireEvent.change(within(modal).getByLabelText(/^Reason/), { target: { value: "bad rules in 2031" } });
+    fireEvent.click(within(modal).getByRole("button", { name: "Propose rollback" }));
+    await waitFor(() => expect(svc.proposeRollback).toHaveBeenCalledWith(expect.objectContaining({ restore_to_id: null })));
+  });
+
+  it("a different publisher approves with step-up and the version shows as rolled back", async () => {
+    svc.decideRollback.mockRejectedValueOnce(STEP_UP).mockResolvedValueOnce({ ...proposed, status: "APPROVED",
+      result: { range_from: "2031-01-01", range_to: "2031-03-01", rollback_version_id: 23, organizations_affected: 2 } });
+    const { container, detail } = await openPack({ ...v, rollback: proposed });
+    expect(await within(detail).findByText(/by Mara Maker.*: charges 25% instead of 20%/)).toBeInTheDocument();
+    expect(within(detail).getByText(/Regression: 6 case\(s\), 1 changed/)).toBeInTheDocument();
+    fireEvent.click(within(detail).getByRole("button", { name: "Approve rollback" }));
+    const stepUp = await screen.findByRole("dialog", { name: "Confirm with MFA" });
+    fireEvent.click(within(stepUp).getByRole("button", { name: "Use a recovery code instead" }));
+    fireEvent.change(within(stepUp).getByLabelText(/Recovery code/), { target: { value: "abcd-efgh" } });
+    fireEvent.click(within(stepUp).getByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(svc.decideRollback).toHaveBeenLastCalledWith(4, "approve", { recovery_code: "abcd-efgh" }));
+    expect(await within(detail).findByText(/Tax dates 2031-01-01 to 2031-03-01 fail/)).toBeInTheDocument();
+    expect(within(detail).getByText(/Restored as version #23. 2 organization\(s\) affected/)).toBeInTheDocument();
+    expect(within(detail).getAllByText("Rolled back").length).toBeGreaterThan(0);
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it("a reviewer can't propose; the rollback version says what it restores", async () => {
+    current.user = { id: 9, role: "super_admin", platform_role: "tax_reviewer" };
+    const { detail } = await openPack({ ...v, version: "1-rb4", restores_id: 20, rollback_of_id: 19 });
+    expect(within(detail).queryByRole("button", { name: "Propose rollback" })).not.toBeInTheDocument();
+    expect(within(detail).getByText(/proposed and approved by two TAX_PUBLISHERs/)).toBeInTheDocument();
+    expect(within(detail).getByText("Restores #20 (emergency rollback of #19).")).toBeInTheDocument();
+  });
+
+  it("lists rollbacks in the approvals inbox", async () => {
+    svc.listApprovalsInbox.mockImplementation(() => page([inboxItem({ kind: "rollback", id: 4,
+      title: "SEV1 rollback of rule pack GB-VAT-DOMESTIC-SERVICES v2 (restore version 20)", reason: "wrong rate" })]));
+    svc.approveInboxItem.mockResolvedValue({ id: 4, status: "APPROVED" });
+    renderAt("/super-admin/tax/inbox");
+    expect(await screen.findByText(/Emergency rollbacks #4/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(svc.approveInboxItem).toHaveBeenCalledWith("rollback", 4, {}));
+    expect(await screen.findByText(/Applied: SEV1 rollback/)).toBeInTheDocument();
   });
 });
 

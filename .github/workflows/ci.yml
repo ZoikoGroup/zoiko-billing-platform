@@ -177,13 +177,22 @@ jobs:
             python scripts/ci_annotate_failures.py junit tax-pg-results.xml
             exit 1
           }
-          # Two live reconciliation workers (Phase 4d-0). It COMMITS to this
-          # throwaway database, so it runs last and alone.
-          TAX_PG_RACE_COMMITS=1 python -m pytest tests/test_tax_phase4d0_worker_pg.py -v -rs \
-            --junitxml=tax-pg-race-results.xml || {
+          # Two live reconciliation workers (Phase 4d-0), and a rollback
+          # approval racing the activation job (Phase 8 PR 3). They COMMIT to
+          # this throwaway database, so they run last and alone.
+          TAX_PG_RACE_COMMITS=1 python -m pytest tests/test_tax_phase4d0_worker_pg.py tests/test_tax_phase8_race_pg.py \
+            -v -rs --junitxml=tax-pg-race-results.xml || {
             python scripts/ci_annotate_failures.py junit tax-pg-race-results.xml
             exit 1
           }
+      - name: Rule-pack code retention (ZB-TAX-ARCH-001 Phase 8 PR 3)
+        # Every published pack version in rule_packs/retention.json must still
+        # ship with its hash, and no entry on main may be removed.
+        env:
+          TAX_RETENTION_BASE_REQUIRED: "1"
+        run: |
+          git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+          python -m pytest tests/test_tax_rule_pack_retention.py -v
       - name: Plane 2 / shared-infra release gate (must be 0 failures, 0 errors)
         run: python -m pytest tests/ --ignore=tests/ai_assistant -q
       - name: AI-assistant suite (informational — known cross-file state issue when combined with the line above; tracked separately, does not block the Plane 2 gate)

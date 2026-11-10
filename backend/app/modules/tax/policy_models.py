@@ -102,6 +102,11 @@ class TaxMarketAvailabilityVersion(_ScheduleMixin, _PolicyApprovalMixin, Base):
                                      default=PlatformVersionStatus.PENDING_REVIEW,
                                      server_default=PlatformVersionStatus.PENDING_REVIEW.name)
     predecessor_id          = Column(Integer, ForeignKey("tax_market_availability_versions.id", ondelete="RESTRICT"), nullable=True)
+    # Phase 8 PR 3: a rollback version restores an earlier version's content.
+    restores_id             = Column(Integer, ForeignKey("tax_market_availability_versions.id", ondelete="RESTRICT"),
+                                     nullable=True)
+    rollback_of_id          = Column(Integer, ForeignKey("tax_market_availability_versions.id", ondelete="RESTRICT"),
+                                     nullable=True)
 
     jurisdiction            = relationship("TaxJurisdiction")
     tax_type                = relationship("TaxTypeDefinition")
@@ -183,6 +188,11 @@ class TaxRulePackVersion(_ScheduleMixin, _PolicyApprovalMixin, Base):
     # the predecessor, when its successor activates.
     valid_from         = Column(Date, nullable=True)
     valid_to           = Column(Date, nullable=True)
+    # Phase 8 PR 3: a rollback version R runs the code of the version it
+    # restores (code_version = P.version; NULL = this row's own version).
+    code_version       = Column(String(30), nullable=True)
+    restores_id        = Column(Integer, ForeignKey("tax_rule_pack_versions.id", ondelete="RESTRICT"), nullable=True)
+    rollback_of_id     = Column(Integer, ForeignKey("tax_rule_pack_versions.id", ondelete="RESTRICT"), nullable=True)
     status             = Column(CaseInsensitiveEnum(PlatformVersionStatus), nullable=False, index=True,
                                 default=PlatformVersionStatus.PENDING_REVIEW,
                                 server_default=PlatformVersionStatus.PENDING_REVIEW.name)
@@ -193,6 +203,41 @@ class TaxRulePackVersion(_ScheduleMixin, _PolicyApprovalMixin, Base):
     # ex_tax_rule_pack_active_ranges.
     __table_args__ = (
         UniqueConstraint("code", "version", name="uq_tax_rule_pack_versions_code_version"),
+    )
+
+
+def code_version_of(row) -> str:
+    """The pack version whose code a registry row runs (Phase 8 PR 3)."""
+    return getattr(row, "code_version", None) or row.version
+
+
+class TaxRollbackRequest(Base):
+    """Emergency rollback (Phase 8 PR 3): a TAX_PUBLISHER proposes, a
+    different TAX_PUBLISHER approves with MFA and it applies at once.
+    restore_to_id NULL = quarantine only (a version a later one already
+    follows). Platform data only; frozen once decided."""
+    __tablename__ = "tax_rollback_requests"
+
+    id              = Column(Integer, primary_key=True, index=True)
+    kind            = Column(String(30), nullable=False)          # rule_pack | market_availability
+    version_id      = Column(Integer, nullable=False, index=True)  # V, the bad version
+    restore_to_id   = Column(Integer, nullable=True)               # P; NULL = quarantine only
+    reason          = Column(Text, nullable=False)
+    severity        = Column(String(10), nullable=False)          # SEV1 | SEV2 | SEV3
+    cancel_schedule = Column(Boolean, nullable=False, default=False)
+    timezone        = Column(String(64), nullable=True)
+    regression      = Column(JSON, nullable=True)                 # P against V (informational)
+    status          = Column(String(20), nullable=False, default="PROPOSED", index=True)
+    proposed_by     = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    decided_by      = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    decided_at      = Column(DateTime(timezone=True), nullable=True)
+    decision_reason = Column(Text, nullable=True)
+    result          = Column(JSON, nullable=True)                 # R, range, counts: the input for PR 4
+    created_at      = Column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        Index("uq_tax_rollback_one_open", "kind", "version_id", unique=True,
+              sqlite_where=text("status = 'PROPOSED'"), postgresql_where=text("status = 'PROPOSED'")),
     )
 
 
@@ -215,15 +260,16 @@ class TaxActivationCancellation(Base):
 
 #: Platform policy tables (§12.1): never tenant data, never purged with a tenant.
 POLICY_TABLES = ("tax_market_availability_versions", "tax_code_set_versions", "tax_codes", "tax_rule_pack_versions",
-                 "tax_activation_cancellations")
+                 "tax_activation_cancellations", "tax_rollback_requests")
 
 # Content columns frozen once a version leaves the editable states.
 AVAILABILITY_CONTENT_FIELDS = ("jurisdiction_id", "tax_type_id", "transaction_class", "mode",
-                               "tenant_config_permitted", "gates", "notes", "created_by_user_id", "created_at")
+                               "tenant_config_permitted", "gates", "notes", "created_by_user_id", "created_at",
+                               "restores_id", "rollback_of_id")
 CODE_SET_CONTENT_FIELDS = ("code", "version", "notes", "created_by_user_id", "created_at")
 RULE_PACK_CONTENT_FIELDS = ("code", "version", "markets", "rounding_rule", "rounding_mode", "required_facts",
                             "coverage", "source_dependencies", "golden_test_report", "notes", "created_by_user_id",
-                            "created_at", "code_hash", "valid_from")
+                            "created_at", "code_hash", "valid_from", "code_version", "restores_id", "rollback_of_id")
 #: Set exactly once on an ACTIVE row (the predecessor's end date).
 RULE_PACK_SET_ONCE_FIELDS = ("valid_to",)
 
@@ -252,14 +298,14 @@ def _version_guard_sql(table: str, content_fields: tuple, set_once: tuple = ()) 
             RAISE EXCEPTION '{table} % content is frozen once submitted; create a new version', OLD.id
               USING ERRCODE = 'integrity_constraint_violation';
           END IF;
-          IF OLD.status = 'SUPERSEDED' AND to_jsonb(NEW) IS DISTINCT FROM to_jsonb(OLD) THEN
-            RAISE EXCEPTION '{table} % is superseded and immutable', OLD.id
+          IF OLD.status IN ('SUPERSEDED', 'ROLLED_BACK') AND to_jsonb(NEW) IS DISTINCT FROM to_jsonb(OLD) THEN
+            RAISE EXCEPTION '{table} % is % and immutable', OLD.id, lower(OLD.status)
               USING ERRCODE = 'integrity_constraint_violation';
           END IF;
           IF OLD.status = 'ACTIVE' AND (
                (to_jsonb(NEW){minus}) IS DISTINCT FROM (to_jsonb(OLD){minus}){once}
-               OR NEW.status NOT IN ('ACTIVE', 'SUPERSEDED')
-               OR (NEW.status = 'SUPERSEDED' AND NEW.superseded_at IS NULL)) THEN
+               OR NEW.status NOT IN ('ACTIVE', 'SUPERSEDED', 'ROLLED_BACK')
+               OR (NEW.status IN ('SUPERSEDED', 'ROLLED_BACK') AND NEW.superseded_at IS NULL)) THEN
             RAISE EXCEPTION '{table} % is active: it can only be superseded', OLD.id
               USING ERRCODE = 'integrity_constraint_violation';
           END IF;
@@ -284,6 +330,34 @@ PG_RULE_PACK_GUARDS = _version_guard_sql("tax_rule_pack_versions", RULE_PACK_CON
       ADD CONSTRAINT ex_tax_rule_pack_active_ranges
       EXCLUDE USING gist (code WITH =, daterange(valid_from, valid_to, '[)') WITH &&)
       WHERE (status = 'ACTIVE') DEFERRABLE INITIALLY DEFERRED
+    """,
+]
+PG_ROLLBACK_REQUEST_GUARDS = [
+    """
+    CREATE OR REPLACE FUNCTION tax_rollback_requests_guard() RETURNS trigger AS $$
+    BEGIN
+      IF TG_OP = 'DELETE' THEN
+        RAISE EXCEPTION 'tax_rollback_requests % cannot be deleted', OLD.id
+          USING ERRCODE = 'integrity_constraint_violation';
+      END IF;
+      IF OLD.status <> 'PROPOSED' AND to_jsonb(NEW) IS DISTINCT FROM to_jsonb(OLD) THEN
+        RAISE EXCEPTION 'tax_rollback_requests % is decided and final', OLD.id
+          USING ERRCODE = 'integrity_constraint_violation';
+      END IF;
+      IF (to_jsonb(NEW) - 'status' - 'decided_by' - 'decided_at' - 'decision_reason' - 'result' - 'regression')
+         IS DISTINCT FROM (to_jsonb(OLD) - 'status' - 'decided_by' - 'decided_at' - 'decision_reason' - 'result'
+                           - 'regression') THEN
+        RAISE EXCEPTION 'tax_rollback_requests % request content is frozen', OLD.id
+          USING ERRCODE = 'integrity_constraint_violation';
+      END IF;
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql
+    """,
+    """
+    CREATE TRIGGER trg_tax_rollback_requests_guard
+      BEFORE UPDATE OR DELETE ON tax_rollback_requests
+      FOR EACH ROW EXECUTE FUNCTION tax_rollback_requests_guard()
     """,
 ]
 PG_ACTIVATION_CANCELLATION_GUARDS = [
@@ -359,3 +433,4 @@ _attach(TaxCodeSetVersion.__table__, PG_CODE_SET_GUARDS)
 _attach(TaxCode.__table__, PG_TAX_CODE_GUARDS)
 _attach(TaxRulePackVersion.__table__, PG_RULE_PACK_GUARDS)
 _attach(TaxActivationCancellation.__table__, PG_ACTIVATION_CANCELLATION_GUARDS)
+_attach(TaxRollbackRequest.__table__, PG_ROLLBACK_REQUEST_GUARDS)

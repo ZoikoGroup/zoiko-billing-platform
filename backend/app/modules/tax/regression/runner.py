@@ -170,6 +170,22 @@ def _pack_baseline(db: Session, row):
     return f"rule_pack:{active.id}", (report.report or {}).get("results") if report else None
 
 
+def compare_packs(db: Session, code: str, baseline_cls, candidate_cls) -> dict:
+    """Phase 8 PR 3: a rollback's restore target (candidate) against the bad
+    version (baseline) on the anonymised fixtures. Stored on the rollback
+    request; changed cases are informational, run errors block."""
+    fixtures = load_fixtures()
+    cases = [c for c in fixtures["cases"] if c["pack"] == code]
+    candidate = run(db, cases, {code: candidate_cls})
+    baseline = run(db, cases, {code: baseline_cls}) if baseline_cls is not None else None
+    changed, new = _changes(baseline, candidate)
+    errors = [case for case, r in candidate.items() if "error" in r]
+    return {"fixture_sets": fixtures["names"], "fixture_hash": fixtures["hash"], "cases": len(candidate),
+            "changed": changed, "unchanged": len(candidate) - len(changed) - len(new), "new_cases": new,
+            "errors": errors, "baseline": "the version being rolled back" if baseline is not None else "not runnable",
+            "generated_at": _now().isoformat()}
+
+
 def build_report(db: Session, subject_kind: str, subject_id: int, actor_id: Optional[int]):
     """Run the regression for a rule pack version or a staged rate and attach it."""
     from app.core.exceptions import BadRequestException, NotFoundException

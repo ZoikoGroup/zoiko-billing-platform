@@ -104,9 +104,16 @@ export const cancelScheduledActivation = (kind, id, reason) =>
 export const decideActivationCancellation = (id, approve, body = {}) =>
   api.post(`${BASE}/activation-cancellations/${id}/${approve ? "approve" : "reject"}`, body);
 
+// ── Phase 8 PR 3: emergency rollback ──
+export const listRollbackCandidates = (kind, versionId) =>
+  api.get(`${BASE}/rollbacks/candidates`, { params: { kind, version_id: versionId } });
+export const proposeRollback = (body) => api.post(`${BASE}/rollbacks`, body);
+export const decideRollback = (id, action, body = {}) => api.post(`${BASE}/rollbacks/${id}/${action}`, body);
+
 /** The approve route for an inbox item of the given kind. */
 export function approveInboxItem(kind, id, body) {
   if (kind === "activation_cancel") return decideActivationCancellation(id, true, body);
+  if (kind === "rollback") return decideRollback(id, "approve", body);
   if (kind === "staged_rate") return stagedRateAction(id, "approve", body);
   if (kind === "market_availability") return availabilityAction(id, "approve", body);
   if (kind === "rule_pack") return rulePackAction(id, "approve", body);

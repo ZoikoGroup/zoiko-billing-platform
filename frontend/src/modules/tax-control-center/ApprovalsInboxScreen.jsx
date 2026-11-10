@@ -17,6 +17,7 @@ const KINDS = [
   { value: "rule_pack", label: "Rule packs", section: "rule-packs" },
   { value: "tax_code_set", label: "Tax-code sets", section: null },
   { value: "activation_cancel", label: "Activation cancellations", section: null },
+  { value: "rollback", label: "Emergency rollbacks", section: null },
 ];
 
 export default function ApprovalsInboxScreen() {
@@ -36,7 +37,8 @@ export default function ApprovalsInboxScreen() {
       const result = await stepUp.run((body) => approveInboxItem(item.kind, item.id, body));
       if (result) {
         setNotice(item.kind === "activation_cancel" ? `Approved: ${item.title}. The version is back to Approved.`
-          : `Approved: ${item.title}. Publish it from its screen.`);
+          : item.kind === "rollback" ? `Applied: ${item.title}.`
+            : `Approved: ${item.title}. Publish it from its screen.`);
         list.reload();
       }
     } catch (err) {

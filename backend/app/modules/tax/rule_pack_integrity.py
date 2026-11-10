@@ -40,7 +40,8 @@ HASH_SCHEME = 1
 INTEGRITY_FAILED = "RULE_PACK_INTEGRITY_FAILED"
 ALERT_KEY = "tax.rule_pack_integrity"
 
-MATCH, MISMATCH, CODE_MISSING = "MATCH", "MISMATCH", "CODE_MISSING"
+MATCH, MISMATCH, CODE_MISSING, RETIRED = "MATCH", "MISMATCH", "CODE_MISSING", "RETIRED"
+ROLLED_BACK_CODE = "RULE_PACK_ROLLED_BACK"
 
 _cache: dict = {}
 
@@ -52,6 +53,15 @@ class RulePackIntegrityError(Exception):
     def __init__(self, code: str, version: str, integrity: str):
         super().__init__(f"{code} v{version}: {integrity}")
         self.code, self.version, self.integrity = code, version, integrity
+
+
+class RulePackRolledBack(Exception):
+    """The tax date falls in a rolled-back version's range (Phase 8 PR 3):
+    fail closed, never a fallback."""
+
+    def __init__(self, code: str, version: str):
+        super().__init__(f"{code} v{version} was rolled back")
+        self.code, self.version = code, version
 
 
 def clear_cache() -> None:
@@ -110,8 +120,11 @@ def running_hash(code: str, version: str) -> Optional[str]:
 
 
 def integrity_of(row) -> dict:
-    """{code_hash, running_code_hash, integrity} for a rule-pack version row."""
-    running = running_hash(row.code, row.version)
+    """{code_hash, running_code_hash, integrity} for a rule-pack version row
+    (a rollback version runs the code of the version it restores)."""
+    from app.modules.tax.policy_models import code_version_of
+
+    running = running_hash(row.code, code_version_of(row))
     if running is None:
         state = CODE_MISSING
     elif row.code_hash and row.code_hash == running:
@@ -122,16 +135,24 @@ def integrity_of(row) -> dict:
 
 
 def check_active(db) -> list:
-    """ACTIVE versions whose running code is not the approved code."""
-    from app.modules.tax.enums import PlatformVersionStatus
-    from app.modules.tax.policy_models import TaxRulePackVersion
+    """Versions whose code must ship (rule_pack_retention.must_ship: ACTIVE,
+    ROLLED_BACK, the most recent SUPERSEDED, and the code a rollback version
+    runs) but is missing, differs from the approved hash, or is marked
+    retired in the retention manifest."""
+    from app.modules.tax.rule_pack_retention import load_manifest, must_ship
 
+    try:
+        manifest = load_manifest()
+    except (OSError, ValueError):
+        manifest = {}
     out = []
-    rows = db.query(TaxRulePackVersion).filter(TaxRulePackVersion.status == PlatformVersionStatus.ACTIVE)
-    for row in rows.order_by(TaxRulePackVersion.code):
-        state = integrity_of(row)
-        if state["integrity"] != MATCH:
-            out.append({"code": row.code, "version": row.version, "integrity": state["integrity"]})
+    for row, code_version in sorted(must_ship(db), key=lambda item: (item[0].code, item[0].id)):
+        state = integrity_of(row)["integrity"]
+        item = manifest.get((row.code, str(code_version)))
+        if state == MATCH and item is not None and item.get("retired"):
+            state = RETIRED
+        if state != MATCH:
+            out.append({"code": row.code, "version": row.version, "integrity": state})
     return out
 
 
@@ -140,6 +161,7 @@ def alert_for(failures: list) -> dict:
     from app.modules.super_admin.models import AttentionSeverity
 
     listed = "; ".join(f"{f['code']} v{f['version']} ({f['integrity']})" for f in failures)
+    # Phase 8 PR 3: this also covers the code-retention rule (rule_pack_retention.py).
     return {"key": ALERT_KEY, "firing": bool(failures), "severity": AttentionSeverity.P1,
             "title": "Tax: rule pack code differs from the approved version",
             "description": (f"Running rule-pack code is not the approved code: {listed}. Quotes for these markets "

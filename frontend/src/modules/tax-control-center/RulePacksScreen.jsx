@@ -13,6 +13,7 @@ import {
 } from "./shared";
 import { RegressionPanel } from "./RegressionPanel";
 import { CancelSchedule, PublishModal, ScheduleInfo } from "./ScheduleControls";
+import { RollbackControls } from "./RollbackControls";
 
 /* P7 Rule packs: the native packs available in code (their declarations,
  * live source-dependency status), their registry versions, the golden-test
@@ -189,6 +190,7 @@ function PackDetail({ pack, catalogueEntry, user, onChanged }) {
       <ValidationList title="Validation errors" items={pack.validation_errors} />
       <ScheduleInfo version={pack} />
       <CancelSchedule version={pack} kind="rule_pack" user={user} stepUp={stepUp} onChanged={onChanged} />
+      <RollbackControls kind="rule_pack" version={pack} user={user} stepUp={stepUp} onChanged={onChanged} />
       <div>
         <h3 className={`mb-2 text-sm font-bold ${STRONG}`}>Source dependencies (live)</h3>
         <SourceDependencies deps={catalogueEntry?.source_dependencies || pack.source_dependencies} />
