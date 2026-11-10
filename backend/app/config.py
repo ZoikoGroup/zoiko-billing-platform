@@ -175,6 +175,12 @@ class Settings(BaseSettings):
     TAX_ANOMALY_MIN_INVOICES: int = 10
     TAX_ANOMALY_ZERO_TAX_SHIFT: float = 0.2
     TAX_ANOMALY_RATE_MIX_SHIFT: float = 0.3
+    # Phase 7 PR 4: remediation execution is OFF per organization until the
+    # product owner decides; list the organization ids allowed to execute.
+    # Previews are always available.
+    TAX_REMEDIATION_OVERCOLLECTION_ORGS: str = ""
+    TAX_REMEDIATION_DUPLICATES_ORGS: str = ""
+    TAX_REMEDIATION_MAX_BATCH: int = 25
     # Phase 5d-F: where platform-account MFA changes are reported (a
     # mailbox the security team watches). Empty: only the user is emailed.
     SECURITY_CONTACT_EMAIL: str = ""

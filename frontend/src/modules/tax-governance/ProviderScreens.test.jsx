@@ -4,6 +4,10 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import { axe } from "../../test/a11y";
 
+// Multi-dialog flows (reason, then MFA prompt, then retry) can pass 5 s on a
+// loaded runner; give each test more room than vitest's default.
+vi.setConfig({ testTimeout: 20000 });
+
 // ZB-TAX-ARCH-001 Phase 5c PR 2: tenant T10 reports, Provider Connections
 // and stuck provider transactions.
 
@@ -17,7 +21,8 @@ const { svc, current } = vi.hoisted(() => ({
     "listJurisdictions", "getTenantEvidenceBundle", "getMfaStatus", "startMfa", "verifyMfa", "disableMfa", "listMfaUsers",
     "requestMfaReset", "approveMfaReset", "cancelMfaReset", "listShadowEnrolments", "proposeShadow", "decideShadow",
     "withdrawShadow", "endShadow", "getShadowSummary", "listShadowComparisons", "exportShadowComparisons",
-    "getShadowComparison",
+    "getShadowComparison", "getOvercollectionRemediation", "getDuplicateRemediation", "listRemediationBatches",
+    "proposeRemediation", "decideRemediation", "withdrawRemediation", "reverseRemediation",
   ].map((k) => [k, vi.fn()])),
 }));
 vi.mock("../../api/client", async (importOriginal) => ({ ...(await importOriginal()), getStoredUser: () => current.user }));
@@ -554,5 +559,81 @@ describe("shadow compare (tenant)", () => {
     expect(await screen.findByText("75%")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "End shadowing" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Propose shadowing/ })).not.toBeInTheDocument();
+  });
+});
+
+// ── Phase 7 PR 4: remediation ───────────────────────────────────────────
+
+describe("remediation", () => {
+  const over = (enabled) => ({ enabled, max_batch: 25, method: "m", note: "Preview only.",
+    invoices: [{ invoice_id: 7, invoice_number: "R-7", currency: "GBP", tax_amount: "20.00", credit_note_amount: "2.00",
+      already_remediated_in_batch: null }, { invoice_id: 8, invoice_number: "R-8", currency: "GBP", tax_amount: "20.00",
+      credit_note_amount: "2.00", already_remediated_in_batch: 3 }] });
+  const dups = (enabled) => ({ enabled, max_batch: 25, note: "Preview only.", invoices: [{ invoice_id: 9,
+    invoice_number: "R-9", rows_to_remove: [{ id: 91 }], rows_flagged_not_identical: [{ id: 92 }],
+    tax_rows_total_before: "40.00", tax_rows_total_after: "20.00", already_remediated_in_batch: null }] });
+  beforeEach(() => {
+    svc.getOvercollectionRemediation.mockResolvedValue(over(false));
+    svc.getDuplicateRemediation.mockResolvedValue(dups(false));
+    svc.listRemediationBatches.mockImplementation(() => page([]));
+  });
+
+  it("is a preview that says it is turned off until the product owner decides", async () => {
+    current.user = ADMIN;
+    const { container } = renderAt("remediation");
+    expect((await screen.findAllByText(/credit 2.00 GBP/)).length).toBe(2);
+    expect(screen.getAllByText(/turned off for your organization until our product owner decides/)).toHaveLength(2);
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(screen.getByText(/1 to remove · 1 not identical \(kept\) · rows total 40.00 → 20.00; invoice unchanged/)).toBeInTheDocument();
+    expect(screen.getByText(/waits on a product decision/)).toBeInTheDocument();
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it("when enabled, an org admin selects invoices and proposes; remediated ones can't be selected", async () => {
+    svc.getOvercollectionRemediation.mockResolvedValue(over(true));
+    svc.proposeRemediation.mockResolvedValue({ id: 4 });
+    current.user = ADMIN;
+    renderAt("remediation");
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select R-7" }));
+    expect(screen.queryByRole("checkbox", { name: "Select R-8" })).not.toBeInTheDocument();
+    expect(screen.getByText("Already remediated")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Propose batch \(1 of at most 25\)/ }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText(/Reason/), { target: { value: "Refund over-collected tax" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Propose" }));
+    await waitFor(() => expect(svc.proposeRemediation).toHaveBeenCalledWith("OVERCOLLECTION_CREDIT", [7], "Refund over-collected tax"));
+  });
+
+  it("a different finance approver approves; executed duplicate batches can be reversed", async () => {
+    svc.listRemediationBatches.mockImplementation(() => page([
+      { id: 4, kind: "OVERCOLLECTION_CREDIT", state: "PROPOSED", status: "PROPOSED", invoice_ids: [7], reason: "refund",
+        proposed_by: 1 },
+      { id: 5, kind: "DUPLICATE_ROWS", state: "EXECUTED", status: "APPROVED", invoice_ids: [9], reason: "dups", proposed_by: 1,
+        approved_by: 3, approved_at: "2026-11-10T09:00:00Z", evidence_sha256: "ab".repeat(32),
+        result: { rows_removed: [91], rows_flagged_not_identical: [92] } },
+    ]));
+    svc.decideRemediation.mockResolvedValue({ id: 4 });
+    current.user = APPROVER;
+    renderAt("remediation");
+    fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(svc.decideRemediation).toHaveBeenCalledWith(4, true, {}));
+    expect(screen.getByText(/1 row\(s\) removed and archived · 1 not identical, left alone/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Reverse from archive" })).not.toBeInTheDocument();   // finance can't
+    cleanup();
+    svc.reverseRemediation.mockResolvedValue({ id: 5 });
+    current.user = ADMIN;
+    renderAt("remediation");
+    fireEvent.click(await screen.findByRole("button", { name: "Reverse from archive" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText(/Reason/), { target: { value: "Auditor request" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Reverse" }));
+    await waitFor(() => expect(svc.reverseRemediation).toHaveBeenCalledWith(5, "Auditor request"));
+  });
+
+  it("is closed to other tenant roles", async () => {
+    current.user = BILLING;
+    renderAt("remediation");
+    expect(await screen.findByText(/for organization admins and finance approvers/)).toBeInTheDocument();
+    expect(svc.getOvercollectionRemediation).not.toHaveBeenCalled();
   });
 });

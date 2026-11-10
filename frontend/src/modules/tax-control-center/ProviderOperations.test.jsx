@@ -4,6 +4,10 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import { axe } from "../../test/a11y";
 
+// Multi-dialog flows (reason, then MFA prompt, then retry) can pass 5 s on a
+// loaded runner; give each test more room than vitest's default.
+vi.setConfig({ testTimeout: 20000 });
+
 // ZB-TAX-ARCH-001 Phase 5c PR 2: P9 provider operations and P10 findings
 // (platform, aggregate only).
 

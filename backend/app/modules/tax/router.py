@@ -51,6 +51,7 @@ from app.modules.tax.policy_schemas import (
     ProviderConnectionCreate,
     ProviderCredentialsSet,
     ProviderModeChangeDecision,
+    RemediationBatchRequest,
     ShadowEnrolRequest,
     ProviderModeChangeRequest,
     ReasonRequest,
@@ -930,6 +931,75 @@ def require_tax_report_role(current_user=Depends(get_current_user)):
     if role not in ("org_admin", "finance_approver"):
         raise ForbiddenException("Tax findings reports are available to organization admins and finance approvers.")
     return current_user
+
+
+# ── Phase 7 PR 4: targeted remediation (preview by default; two people) ──
+
+@router.get("/remediation/overcollection/preview",
+            summary="Corrective credit notes that would refund legacy over-collected tax (changes nothing)")
+def remediation_overcollection_preview(db: Session = Depends(get_db),
+                                       organization_id: int = Depends(get_organization_id),
+                                       _user=Depends(require_tax_report_role)):
+    from app.modules.tax.remediation_service import overcollection_preview
+
+    return overcollection_preview(db, organization_id)
+
+
+@router.get("/remediation/duplicates/preview",
+            summary="Duplicate legacy tax rows that would be removed, and the effect on totals (changes nothing)")
+def remediation_duplicates_preview(db: Session = Depends(get_db), organization_id: int = Depends(get_organization_id),
+                                   _user=Depends(require_tax_report_role)):
+    from app.modules.tax.remediation_service import duplicates_preview
+
+    return duplicates_preview(db, organization_id)
+
+
+@router.get("/remediation/batches", summary="Remediation batches")
+def list_remediation_batches(page: PageParams = Depends(), db: Session = Depends(get_db),
+                             organization_id: int = Depends(get_organization_id),
+                             _user=Depends(require_tax_report_role)):
+    from app.modules.tax.remediation_service import RemediationService, view_batch
+
+    rows, next_cursor = paginate(RemediationService(db).list(organization_id), page)
+    return {"items": [view_batch(r) for r in rows], "next_cursor": next_cursor}
+
+
+@router.post("/remediation/batches", status_code=status.HTTP_201_CREATED,
+             summary="Propose a capped remediation batch (org admin; a different finance approver executes it)",
+             dependencies=[Depends(get_current_org_admin)])
+def propose_remediation_batch(data: RemediationBatchRequest, db: Session = Depends(get_db),
+                              organization_id: int = Depends(get_organization_id),
+                              current_user=Depends(get_current_user)):
+    from app.modules.tax.remediation_service import RemediationService, view_batch
+
+    return view_batch(RemediationService(db).propose(organization_id, current_user.id, data.kind, data.invoice_ids,
+                                                     data.reason))
+
+
+def _remediation_action(action: str):
+    def handler(batch_id: int, data: Optional[DecisionRequest] = None, db: Session = Depends(get_db),
+                organization_id: int = Depends(get_organization_id), current_user=Depends(get_current_user)):
+        from app.modules.tax.remediation_service import RemediationService, view_batch
+
+        svc, reason = RemediationService(db), (data.reason if data else None)
+        if action in ("approve", "reject"):
+            row = svc.decide(organization_id, current_user.id, batch_id, approve=action == "approve", reason=reason)
+        elif action == "withdraw":
+            row = svc.withdraw(organization_id, current_user.id, batch_id)
+        else:
+            row = svc.reverse(organization_id, current_user.id, batch_id, reason or "")
+        return view_batch(row)
+    return handler
+
+
+for _action, _dep, _summary in (
+    ("approve", get_current_finance_approver, "Approve and execute a remediation batch (a different user)"),
+    ("reject", get_current_finance_approver, "Reject a remediation batch"),
+    ("withdraw", get_current_org_admin, "Withdraw a proposed remediation batch"),
+    ("reverse", get_current_org_admin, "Reverse a duplicate-row batch from its archive"),
+):
+    router.add_api_route(f"/remediation/batches/{{batch_id}}/{_action}", _remediation_action(_action),
+                         methods=["POST"], dependencies=[Depends(_dep)], summary=_summary)
 
 
 @router.post("/quotes", status_code=status.HTTP_201_CREATED, summary="Request a governed tax quote for a draft",

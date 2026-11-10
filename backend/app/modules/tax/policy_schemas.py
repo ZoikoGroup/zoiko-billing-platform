@@ -169,6 +169,13 @@ class ProviderConnectionCreate(_Strict):
     mode: Literal["ESTIMATE_ONLY", "COMMIT"]
 
 
+class RemediationBatchRequest(_Strict):
+    """Phase 7 PR 4: a capped batch of invoices to remediate."""
+    kind: Literal["OVERCOLLECTION_CREDIT", "DUPLICATE_ROWS"]
+    invoice_ids: List[int] = Field(..., min_length=1, max_length=500)
+    reason: str = Field(..., min_length=1, max_length=2000)
+
+
 class ShadowEnrolRequest(_Strict):
     """Phase 7: opt an entity in to shadow compare."""
     seller_entity_id: int

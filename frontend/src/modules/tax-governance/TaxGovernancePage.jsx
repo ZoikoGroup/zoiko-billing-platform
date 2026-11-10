@@ -2,7 +2,7 @@ import { Lock } from "lucide-react";
 import { NavLink, Navigate, useParams } from "react-router-dom";
 import {
   AlertOctagon, BadgeCheck, BarChart3, Building2, ClipboardList, Copy, FileCheck2, KeyRound, LayoutDashboard, Package,
-  Percent, PlugZap, ShieldCheck, UserSquare2,
+  Percent, PlugZap, ShieldCheck, UserSquare2, Wrench,
 } from "lucide-react";
 
 import { getStoredUser } from "../../api/client";
@@ -17,6 +17,7 @@ import { ReportsScreen } from "./ReportsScreen";
 import { ReferenceRatesScreen } from "./ReferenceRatesScreen";
 import { MfaScreen } from "./MfaScreen";
 import { ShadowScreen } from "./ShadowScreen";
+import { RemediationScreen } from "./RemediationScreen";
 
 /* Tenant Settings → Taxes (ZB-TAX-ARCH-001 Phase 5b): T1–T8. Tenant data
  * only, through the tenant tax API. The existing Tax Rates and Tax
@@ -37,6 +38,7 @@ export const GOVERNANCE_SECTIONS = [
   { key: "rates", label: "Reference rates", icon: Percent, element: ReferenceRatesScreen },
   { key: "reports", label: "Reports", icon: BarChart3, element: ReportsScreen },
   { key: "shadow", label: "Shadow compare", icon: Copy, element: ShadowScreen },
+  { key: "remediation", label: "Remediation", icon: Wrench, element: RemediationScreen },
   { key: "mfa", label: "MFA", icon: KeyRound, element: MfaScreen },
 ];
 
