@@ -41,6 +41,9 @@ def enrol(db, user):
 
 
 def code(secret, shift=0):
+    """A code for the current 30-second window. The server accepts one window
+    either side, so a current code survives a slow run crossing a boundary
+    (a code for the previous window would not)."""
     return pyotp.TOTP(secret).at(time.time() + shift)
 
 
@@ -104,7 +107,7 @@ def _three_ways(db, client, url, w, approver_key="checker"):
     secret, _codes = enrol(db, w[approver_key])
     second = client.post(url, json={})
     assert second.status_code == 400 and second.json()["error"] == STEP
-    third = client.post(url, json={"code": code(secret, -30)})
+    third = client.post(url, json={"code": code(secret)})
     assert third.status_code == 200, third.text
     return third.json()
 

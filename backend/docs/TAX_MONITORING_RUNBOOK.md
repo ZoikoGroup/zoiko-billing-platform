@@ -145,3 +145,54 @@ read. Provider quoting and issuing fail closed.
 3. Look in the backend log for `SecretStoreUnavailable`. Values are never
    logged.
 4. See `TAX_PHASE4D0.md`.
+
+---
+
+## Daily anomaly checks (Phase 7 PR 3)
+
+These come from the daily `tax_anomaly_job`. No invoice is ever changed by
+the check or by these steps. Corrections go through credit notes, or the
+Phase 7 remediation tooling, with two people.
+
+### tax.anomaly.snapshot (P1)
+
+**Means:** a governed invoice's tax or totals no longer equal its committed
+quote. Something wrote to an issued invoice outside the governed path.
+
+**Do:**
+1. Treat it as an incident: find what changed the row (deploy, script or
+   direct SQL).
+2. The tenant's review item lists each difference.
+3. Restore from the audit trail only through an approved, documented
+   change, never silently.
+
+### tax.anomaly.provider_drift (P1)
+
+**Means:** the provider's committed total differs from ours.
+
+**Do:**
+1. On **Provider transactions**, the tenant runs **Check provider state**.
+2. If the provider is wrong, raise it with the provider.
+3. If we are wrong, correct with a credit note and re-issue, with two
+   people.
+
+### tax.anomaly.credits (P2)
+
+**Means:** credit notes total more than the invoice, or credit more tax
+than it charged.
+
+**Do:**
+1. The tenant's finance approver reviews the credit notes on the review
+   item.
+2. Void the extra one through the normal credit-note flow.
+
+### tax.anomaly.zero_tax:\<market\> (P2) and tax.anomaly.rate_mix:\<market\> (P3)
+
+**Means:** the share of zero-tax invoices, or the mix of rates, in that
+market changed sharply against the last 30 days.
+
+**Do:**
+1. Check for a just-published rate, pack or availability change
+   (`/super-admin/tax/overview`, the explorer, rule packs).
+2. Check for a large tenant onboarding.
+3. If it's unexplained, involve the tax lead before more invoices go out.

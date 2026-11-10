@@ -134,3 +134,6 @@ export const getShadowAggregate = () => api.get(`${BASE}/shadow/aggregate`);
 /** kind: rule_pack | rate */
 export const getRegression = (kind, id) => api.get(`${BASE}/regression/${kind}/${id}`);
 export const runRegression = (kind, id) => api.post(`${BASE}/regression/${kind}/${id}`);
+
+// ── Phase 7 PR 3: daily anomaly checks (aggregate only) ─────────────────
+export const listAnomalyRuns = () => api.get(`${BASE}/anomalies`, { params: { limit: 7 } });

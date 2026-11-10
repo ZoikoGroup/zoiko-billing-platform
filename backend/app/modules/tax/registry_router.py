@@ -813,6 +813,18 @@ def shadow_aggregate(db: Session = Depends(get_db), _user=Depends(require_capabi
     return {"enrolments_by_state": states, **summary(db, None)}
 
 
+@admin_router.get("/anomalies", summary="Recent anomaly-check runs: aggregate counts and market shares only (T13)")
+def tax_anomaly_runs(limit: int = Query(14, ge=1, le=90), db: Session = Depends(get_db),
+                     _user=Depends(require_any_capability("tax_registry.read", "reliability.read"))):
+    from app.modules.tax.anomaly_models import TaxAnomalyRun
+    from app.modules.tax.anomaly_service import thresholds
+
+    rows = db.query(TaxAnomalyRun).order_by(TaxAnomalyRun.id.desc()).limit(limit).all()
+    return {"thresholds": thresholds(),
+            "items": [{"id": r.id, "started_at": r.started_at, "finished_at": r.finished_at, "counts": r.counts,
+                       "markets": r.markets, "alerts_fired": r.alerts_fired or []} for r in rows]}
+
+
 @admin_router.get("/monitoring", summary="Tax monitoring: aggregate metrics, thresholds and alert states")
 def tax_monitoring(db: Session = Depends(get_db),
                    _user=Depends(require_any_capability("tax_registry.read", "reliability.read"))):

@@ -238,6 +238,13 @@ def get_job_definitions() -> list[tuple[str, int, str, str]]:
             "Financial Integrity Check",
         ),
         (
+            # ZB-TAX-ARCH-001 Phase 7 PR 3: daily anomaly checks on issued invoices.
+            "app.modules.tax.anomaly_service:run_tax_anomaly_job",
+            getattr(settings, "TAX_ANOMALY_INTERVAL_MINUTES", 1440),
+            "tax_anomaly_job",
+            "Tax Anomaly Checks",
+        ),
+        (
             # ZB-TAX-ARCH-001 Phase 7 PR 1: shadow compare of issued legacy invoices.
             "app.modules.tax.shadow_service:run_tax_shadow_job",
             getattr(settings, "TAX_SHADOW_INTERVAL_MINUTES", 15),

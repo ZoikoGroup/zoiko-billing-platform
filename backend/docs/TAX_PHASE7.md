@@ -213,3 +213,59 @@ pack's detail:
 | `frontend/.../TaxControlCenter.test.jsx` (+2) | The regression panel: refusal reason, run, changes listed; a publisher can't run |
 
 **CI result:** _see PR_.
+
+## PR 3: live anomaly monitoring
+
+`app/modules/tax/anomaly_service.py` runs as the tracked scheduled job "Tax
+Anomaly Checks" (`tax_anomaly_job`, daily: `TAX_ANOMALY_INTERVAL_MINUTES`,
+default 1440). It reads invoices issued in the last
+`TAX_ANOMALY_LOOKBACK_DAYS` (2). **It never changes an invoice.**
+
+### Per-invoice checks: tenant review items
+
+Findings appear on **Tax governance → Review items**, one open item per
+invoice and kind.
+
+| Check | Review item | Owner |
+|---|---|---|
+| A governed invoice's tax, subtotal, total or any line's tax still equals its **committed snapshot, to the cent** | `TAX_SNAPSHOT_MISMATCH`, listing each difference | Org admin |
+| The provider's **committed total tax** (the verified remote snapshot) equals ours | `PROVIDER_DRIFT` (the existing kind, same subject, so no duplicates) | Billing admin |
+| **Credit notes** (not voided) don't total more than the invoice, and don't credit more tax than it charged | `CREDIT_EXCEEDS_ORIGINAL` | Finance approver |
+
+### Per-market checks: platform only, aggregate
+
+- **Market:** the quote's supply country.
+- **Comparison:** the last `TAX_ANOMALY_WINDOW_DAYS` (1) of issued governed
+  invoices against the previous `TAX_ANOMALY_BASELINE_DAYS` (30).
+- **Zero-tax share:** an alert when the share of invoices with zero tax rose
+  by at least `TAX_ANOMALY_ZERO_TAX_SHIFT` (0.2).
+- **Rate mix:** an alert when the share of any effective rate moved by at
+  least `TAX_ANOMALY_RATE_MIX_SHIFT` (0.3).
+- **Minimum volume:** both need `TAX_ANOMALY_MIN_INVOICES` (10) in the
+  window; the rate-mix check also needs that many in the baseline.
+
+### Platform alerts and records
+
+- **Alerts.** Each run publishes these through the Phase 6 alerting (the
+  Attention Engine, source `tax_monitoring`), and they auto-resolve when
+  clear:
+  - `tax.anomaly.snapshot`, `tax.anomaly.provider_drift` and
+    `tax.anomaly.credits`, with counts only;
+  - `tax.anomaly.zero_tax:<market>` and `tax.anomaly.rate_mix:<market>`.
+- **Run records.** Each run is kept in `tax_anomaly_runs`: counts per check
+  and shares per market. No organization, invoice or customer appears in
+  alerts or runs.
+- **Endpoint.** `GET /api/v1/super-admin/tax-registry/anomalies` returns the
+  recent runs and thresholds (tax or reliability roles).
+- **Screen.** The latest run is shown on **Tax Control Center → Findings**.
+- **Settings.** `TAX_ANOMALY_ENABLED` (on); the thresholds above.
+- **Runbook entries:** `TAX_MONITORING_RUNBOOK.md`.
+
+### PR 3 tests
+
+| Test file | Covers |
+|---|---|
+| `backend/tests/privacy/test_tax_phase7_anomalies.py` (8) | A tampered governed invoice is flagged once (deduplicated) with each difference, **and is not changed**; provider drift found from the committed snapshot; credit notes exceeding the original; market shares from real governed invoices; zero-tax and rate-mix alerts with enough volume, not below the minimum, with configurable thresholds; findings become aggregate alerts and a run record with **no identifiers**, and clear when fixed; the runs endpoint is aggregate and platform-only (tenant 403); the job is daily and can be switched off. |
+| `frontend/.../ProviderOperations.test.jsx` (+1) | Findings shows the last run's counts and flagged markets, without invoice numbers (axe) |
+
+**CI result:** _see PR_.

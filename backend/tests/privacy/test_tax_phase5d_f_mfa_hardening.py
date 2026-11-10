@@ -65,6 +65,9 @@ def age(db, user, hours):
 
 
 def code(secret, shift=0):
+    """A code for the current 30-second window. The server accepts one window
+    either side, so a current code survives a slow run crossing a boundary
+    (a code for the previous window would not)."""
     return pyotp.TOTP(secret).at(time.time() + shift)
 
 
@@ -78,7 +81,7 @@ def test_disable_needs_a_current_code_as_well_as_the_password(db_session, w, ema
     with pytest.raises(Exception, match="Incorrect verification code"):
         mfa_service.disable_mfa_self(db_session, user, PASSWORD, code="000000")
     with pytest.raises(BadRequestException, match="password is incorrect"):
-        mfa_service.disable_mfa_self(db_session, user, "wrong", code=code(secret, -30))
+        mfa_service.disable_mfa_self(db_session, user, "wrong", code=code(secret))
     assert mfa_service.is_mfa_enabled(db_session, user.id)
     mfa_service.disable_mfa_self(db_session, user, PASSWORD, recovery_code=codes[0], ip="198.51.100.20")
     assert not mfa_service.is_mfa_enabled(db_session, user.id)
@@ -90,7 +93,7 @@ def test_disable_over_http_needs_the_factor_too(db_session, client_for, w, email
     client = client_for(user)
     refused = client.post("/api/auth/mfa/disable", json={"current_password": PASSWORD})
     assert refused.status_code == 400 and mfa_service.is_mfa_enabled(db_session, user.id)
-    ok = client.post("/api/auth/mfa/disable", json={"current_password": PASSWORD, "code": code(secret, -30)})
+    ok = client.post("/api/auth/mfa/disable", json={"current_password": PASSWORD, "code": code(secret)})
     assert ok.status_code == 200, ok.text
     assert not mfa_service.is_mfa_enabled(db_session, user.id)
 
@@ -103,7 +106,7 @@ def test_platform_accounts_use_the_same_rule(db_session, emails):
     secret, _codes = enrol(db_session, admin)
     with pytest.raises(BadRequestException, match="current code"):
         mfa_service.disable_mfa_self(db_session, admin, PASSWORD)
-    mfa_service.disable_mfa_self(db_session, admin, PASSWORD, code=code(secret, -30))
+    mfa_service.disable_mfa_self(db_session, admin, PASSWORD, code=code(secret))
     assert not mfa_service.is_mfa_enabled(db_session, admin.id)
 
 
@@ -121,7 +124,7 @@ def test_enrol_disable_re_enrol_and_reset_notify_the_user_and_the_org_admins(db_
     assert "203.0.113.7" not in str(emails)                                       # never a complete IP
 
     emails.clear()
-    mfa_service.disable_mfa_self(db_session, user, PASSWORD, code=code(secret, -30), ip="198.51.100.20")
+    mfa_service.disable_mfa_self(db_session, user, PASSWORD, code=code(secret), ip="198.51.100.20")
     assert {e["template_id"] for e in emails} == {"ZB-SEC-006", "ZB-SEC-019"}
     assert all(e["context"]["ip_hint"] == "198.51.100.x" for e in emails)
 
@@ -180,7 +183,7 @@ def test_a_new_factor_cannot_approve_tenant_tax_changes_until_the_delay(db_sessi
                if (a.new_values or {}).get("mfa_event") == "mfa_step_up_refused_new_factor"]
     assert audited and audited[0]["control"] == "tax_tenant"
     age(db_session, user, 25)
-    ok = client_for(user).post(f"{T}/regime-changes/{change.id}/approve", json={"code": code(secret, -30)})
+    ok = client_for(user).post(f"{T}/regime-changes/{change.id}/approve", json={"code": code(secret)})
     assert ok.status_code == 200, ok.text
     assert client_for(user).get("/api/auth/mfa/status").json()["tax_step_up_usable_at"] is None
 
@@ -211,7 +214,7 @@ def test_platform_tax_step_up_has_the_same_cooling_off(db_session, emails):
         PlatformAuditLog.action == PlatformAuditAction.MFA_STEP_UP_REFUSED_NEW_FACTOR,
         PlatformAuditLog.actor_id == admin.id).count() == 1
     age(db_session, admin, 25)
-    require_tax_step_up(db_session, admin, StepUpRequest(code=code(secret, -30)))      # passes now
+    require_tax_step_up(db_session, admin, StepUpRequest(code=code(secret)))      # passes now
 
 
 def test_the_delay_is_configurable_and_old_factors_are_not_affected(db_session, w, emails, monkeypatch):
@@ -221,7 +224,7 @@ def test_the_delay_is_configurable_and_old_factors_are_not_affected(db_session, 
     with pytest.raises(TaxMfaFactorCoolingOff):
         require_tenant_tax_step_up(db_session, user, code(secret))
     age(db_session, user, 2)
-    assert require_tenant_tax_step_up(db_session, user, code(secret, -30)) == "verified"
+    assert require_tenant_tax_step_up(db_session, user, code(secret)) == "verified"
     row = db_session.query(SuperAdminMFA).filter(SuperAdminMFA.user_id == user.id).one()
     row.enabled_at = None                                                          # enabled before 5d-F
     db_session.commit()

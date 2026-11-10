@@ -362,6 +362,9 @@ class ReviewItemKind(str, enum.Enum):
     PROVIDER_DRIFT        = "provider_drift"      # Phase 4a-1: provider record differs from our snapshot
     ADDRESS_RESOLUTION_STALE = "address_resolution_stale"   # Phase 4c: expired or superseded dataset
     CREDENTIAL_VERSIONS_NOT_DESTROYED = "credential_versions_not_destroyed"   # Phase 4d-0: revoke retry pending
+    # Phase 7 PR 3: daily anomaly checks on issued invoices (never change one).
+    TAX_SNAPSHOT_MISMATCH   = "tax_snapshot_mismatch"     # governed invoice differs from its committed quote
+    CREDIT_EXCEEDS_ORIGINAL = "credit_exceeds_original"   # credit notes exceed the invoice total or its tax
 
 
 class ReviewItemStatus(str, enum.Enum):

@@ -324,6 +324,11 @@ NOT_APPLICABLE (G1, fixed).
       before a rate or rule pack is approved;
     - boundary tests cover local-midnight rate changes, tax dates either
       side, a credit note across a change, and multi-entity organizations.
+  - **Phase 7 PR 3, daily anomaly checks:**
+    - checks: snapshot reconciliation to the cent, provider drift, credits
+      over the original, and per-market zero-tax and rate-mix shifts;
+    - outputs: tenant review items and aggregate platform alerts;
+    - no invoice is ever changed.
   - Still open: QA and a manual WCAG pass.
 
 ### Gate 07: availability registry and visibility

@@ -13,7 +13,7 @@ const { svc, current } = vi.hoisted(() => ({
     "getProviderHealth", "providerHealthAction", "getPlatformOvercollection", "getPlatformDuplicates",
     "listTaxPeople", "listApprovalsInbox", "getReadiness", "listCoverage", "listTaxCodeSets", "lookupReferenceRates",
     "listJurisdictions", "getEvidenceBundle", "listShadowSelections", "chooseShadowSelection", "endShadowSelection",
-    "getShadowAggregate", "listRulePacks",
+    "getShadowAggregate", "listRulePacks", "listAnomalyRuns",
   ].map((k) => [k, vi.fn()])),
 }));
 vi.mock("../../api/client", async (importOriginal) => ({ ...(await importOriginal()), getStoredUser: () => current.user }));
@@ -51,6 +51,7 @@ beforeEach(() => {
     method: "Estimate = tax x discount share.", organizations_affected: 3, invoice_count: 12,
     totals_by_currency: [{ currency: "GBP", invoice_count: 12, tax_amount: "240.00", estimated_overcollected_tax: "24.00" }],
   });
+  svc.listAnomalyRuns.mockResolvedValue({ items: [] });
   svc.getPlatformDuplicates.mockResolvedValue({ organizations_affected: 2, invoices_affected: 5, duplicate_rows: 7,
     note: "Aggregate only." });
   resetPeopleCache();
@@ -213,5 +214,21 @@ describe("shadow compare (platform)", () => {
     current.user = REVIEWER;
     renderAt("/super-admin/tax/shadow");
     expect(await screen.findByRole("button", { name: "Choose pack" })).toBeDisabled();
+  });
+});
+
+// ── Phase 7 PR 3: daily anomaly checks ──────────────────────────────────
+
+describe("anomaly checks on Findings", () => {
+  it("shows the last run's counts and flagged markets, without identifiers", async () => {
+    svc.listAnomalyRuns.mockResolvedValue({ items: [{ id: 1, started_at: "2026-11-10T03:00:00Z",
+      counts: { snapshot: { checked: 40, found: 1 }, provider_drift: { checked: 5, found: 0 }, credits: { checked: 3, found: 0 } },
+      markets: { GB: { invoices: 40, zero_tax_share: 0.5, baseline_zero_tax_share: 0.0, zero_tax_alert: true, rate_mix_alert: false } } }] });
+    const { container } = renderAt("/super-admin/tax/findings");
+    expect(await screen.findByText("Invoices that differ from their tax snapshot: 1 of 40 checked")).toBeInTheDocument();
+    expect(screen.getByText(/GB: 40 invoice\(s\), zero tax 50% \(baseline 0%\)/)).toBeInTheDocument();
+    expect(within(screen.getByRole("list", { name: "Markets" })).getByText("Needs review")).toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/INV-/);                          // counts only, no invoice numbers
+    expect(await axe(container)).toHaveNoViolations();
   });
 });
