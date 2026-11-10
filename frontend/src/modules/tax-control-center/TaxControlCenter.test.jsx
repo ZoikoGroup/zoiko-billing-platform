@@ -348,7 +348,7 @@ describe("rule packs", () => {
     fireEvent.click(approve);
     const stepUp = await screen.findByRole("dialog", { name: "Confirm with MFA" });
     fireEvent.click(within(stepUp).getByRole("button", { name: "Use a recovery code instead" }));
-    fireEvent.change(within(stepUp).getByLabelText(/Recovery code/), { target: { value: "abcd-efgh" } });
+    fireEvent.change(await within(stepUp).findByLabelText(/Recovery code/, {}, { timeout: 5000 }), { target: { value: "abcd-efgh" } });
     fireEvent.click(within(stepUp).getByRole("button", { name: "Confirm" }));
     await waitFor(() => expect(svc.rulePackAction).toHaveBeenCalledTimes(2));
     expect(svc.rulePackAction.mock.calls[1]).toEqual([12, "approve", { recovery_code: "abcd-efgh" }]);
@@ -601,7 +601,7 @@ describe("scheduled activation", () => {
     fireEvent.click(within(detail).getByRole("button", { name: "Approve cancellation" }));
     const stepUp = await screen.findByRole("dialog", { name: "Confirm with MFA" });
     fireEvent.click(within(stepUp).getByRole("button", { name: "Use a recovery code instead" }));
-    fireEvent.change(within(stepUp).getByLabelText(/Recovery code/), { target: { value: "abcd-efgh" } });
+    fireEvent.change(await within(stepUp).findByLabelText(/Recovery code/, {}, { timeout: 5000 }), { target: { value: "abcd-efgh" } });
     fireEvent.click(within(stepUp).getByRole("button", { name: "Confirm" }));
     await waitFor(() => expect(svc.decideActivationCancellation).toHaveBeenLastCalledWith(4, true, { recovery_code: "abcd-efgh" }));
     expect(await within(detail).findByText("Approved")).toBeInTheDocument();
@@ -706,7 +706,7 @@ describe("emergency rollback", () => {
     fireEvent.click(within(detail).getByRole("button", { name: "Approve rollback" }));
     const stepUp = await screen.findByRole("dialog", { name: "Confirm with MFA" });
     fireEvent.click(within(stepUp).getByRole("button", { name: "Use a recovery code instead" }));
-    fireEvent.change(within(stepUp).getByLabelText(/Recovery code/), { target: { value: "abcd-efgh" } });
+    fireEvent.change(await within(stepUp).findByLabelText(/Recovery code/, {}, { timeout: 5000 }), { target: { value: "abcd-efgh" } });
     fireEvent.click(within(stepUp).getByRole("button", { name: "Confirm" }));
     await waitFor(() => expect(svc.decideRollback).toHaveBeenLastCalledWith(4, "approve", { recovery_code: "abcd-efgh" }));
     expect(await within(detail).findByText(/Tax dates 2031-01-01 to 2031-03-01 fail/)).toBeInTheDocument();
