@@ -82,6 +82,19 @@ class GovernedIssuanceGate:
             self.db.commit()                      # the quote's new state survives the refused issuance
         raise TaxIssuanceBlocked(reason)
 
+    def _rule_pack_current(self, quote: TaxQuote) -> bool:
+        """Phase 8 PR 1: checked alongside the context fingerprint. The
+        quote's pack version must still be the ACTIVE one, with the same
+        approved hash, and that hash must be the code running now."""
+        from app.modules.tax.enums import PlatformVersionStatus
+        from app.modules.tax.policy_models import TaxRulePackVersion
+        from app.modules.tax.rule_pack_integrity import running_hash
+
+        row = self.db.get(TaxRulePackVersion, quote.rule_pack_version_id)
+        if row is None or row.status != PlatformVersionStatus.ACTIVE:
+            return False
+        return bool(quote.rule_pack_code_hash) and quote.rule_pack_code_hash == row.code_hash             == running_hash(row.code, row.version)
+
     def prepare(self, invoice: Invoice) -> TaxQuote:
         quote = self._latest_quote(invoice)
         if quote is None:
@@ -99,6 +112,8 @@ class GovernedIssuanceGate:
         if doc_hash != quote.document_hash:
             self._refuse(quote, TaxQuoteStatus.STALE, "The invoice lines, prices, discounts, currency or tax date "
                                                       "changed since the quote; re-quote.")
+        if quote.rule_pack_version_id is not None and not self._rule_pack_current(quote):
+            self._refuse(quote, TaxQuoteStatus.STALE, "The tax rule pack changed since the quote; re-quote.")
         if not self.is_remote(quote):
             quote.status = TaxQuoteStatus.VALIDATED
             quote.validated_at = self.now()

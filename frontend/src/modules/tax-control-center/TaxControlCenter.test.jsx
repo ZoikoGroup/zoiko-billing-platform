@@ -349,6 +349,38 @@ describe("rule packs", () => {
     expect(svc.rulePackAction.mock.calls[1]).toEqual([12, "approve", { recovery_code: "abcd-efgh" }]);
     expect(await within(dialog).findByText("Approved")).toBeInTheDocument();
   });
+
+  // Phase 8 PR 1: code hash and integrity
+  const active = { ...pack, status: "ACTIVE", code_hash: "a".repeat(64) };
+
+  it("shows a matching code hash without a warning", async () => {
+    svc.listRulePacks.mockImplementation(() => page([{ ...active, running_code_hash: "a".repeat(64), integrity: "MATCH" }]));
+    const { container } = renderAt("/super-admin/tax/rule-packs");
+    expect(await screen.findByText("Code matches approved hash")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Open #12" }));
+    const dialog = await screen.findByRole("dialog", { name: "Rule pack #12" });
+    expect(within(dialog).getAllByText("a".repeat(64))).toHaveLength(2);
+    expect(within(dialog).queryByRole("alert")).not.toBeInTheDocument();
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it("warns that quotes are refused when the running code differs", async () => {
+    svc.listRulePacks.mockImplementation(() => page([{ ...active, running_code_hash: "b".repeat(64), integrity: "MISMATCH" }]));
+    renderAt("/super-admin/tax/rule-packs");
+    expect(await screen.findByText("Code differs from approved hash")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Open #12" }));
+    const dialog = await screen.findByRole("dialog", { name: "Rule pack #12" });
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(/RULE_PACK_INTEGRITY_FAILED.*differs from the approved code hash/);
+  });
+
+  it("warns when the approved version's code is not running", async () => {
+    svc.listRulePacks.mockImplementation(() => page([{ ...active, running_code_hash: null, integrity: "CODE_MISSING" }]));
+    renderAt("/super-admin/tax/rule-packs");
+    fireEvent.click(await screen.findByRole("button", { name: "Open #12" }));
+    const dialog = await screen.findByRole("dialog", { name: "Rule pack #12" });
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(/approved version's code is not running/);
+    expect(within(dialog).getByText("Not running")).toBeInTheDocument();
+  });
 });
 
 

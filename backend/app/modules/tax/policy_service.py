@@ -43,6 +43,7 @@ from app.modules.tax.policy_models import (
 )
 from app.modules.tax.registry_models import TaxJurisdiction, TaxLegalSourceRevision, TaxTypeDefinition
 from app.modules.tax.registry_service import MakerCheckerError, RegistryImmutabilityError, RegistryStateError, utcnow
+from app.modules.tax.rule_pack_integrity import code_hash
 
 logger = logging.getLogger("zoiko_billing.tax.policy")
 
@@ -499,7 +500,10 @@ class RulePackService(_VersionWorkflow):
             required_facts=declared["required_facts"], coverage=declared["coverage"],
             source_dependencies=[source_dependency_status(self.db, ref) for ref in pack.source_refs],
             notes=notes, created_by_user_id=actor_id, created_at=utcnow(), status=PlatformVersionStatus.PENDING_REVIEW,
+            code_hash=code_hash(pack),
         )
+        if row.code_hash is None:
+            raise BadRequestException(f"The source of {pack.code} could not be read to compute its code hash.")
         self.db.add(row)
         self.db.flush()
         self._log(actor_id, PlatformAuditAction.CREATE, row, new_values=self.describe(row))
@@ -518,16 +522,37 @@ class RulePackService(_VersionWorkflow):
         pack = self.catalogue().get(row.code)
         if pack is not None:
             row.source_dependencies = [source_dependency_status(self.db, ref) for ref in pack.source_refs]
+            self._fill_hash(row, pack)
         self._reset(row)
         self.db.flush()
         self._log(actor_id, PlatformAuditAction.UPDATE, row, old_values=before, new_values=self.describe(row))
         return row
+
+    @staticmethod
+    def _fill_hash(row: TaxRulePackVersion, pack) -> None:
+        """A draft registered before Phase 8 gets its code hash on its next
+        edit or validation; a recorded hash is never replaced."""
+        if row.code_hash is None and row.status in EDITABLE_PLATFORM_STATUSES:
+            row.code_hash = code_hash(pack)
+
+    def validate(self, *, actor_id: Optional[int], version_id: int):
+        row = self.get(version_id)
+        pack = self.catalogue().get(row.code)
+        if pack is not None and pack.version == row.version:
+            self._fill_hash(row, pack)
+        return super().validate(actor_id=actor_id, version_id=version_id)
 
     def errors(self, row: TaxRulePackVersion) -> list[str]:
         errors: list[str] = []
         pack = self.catalogue().get(row.code)
         if pack is None or pack.version != row.version:
             return [f"{row.code} version {row.version} is not the pack registered in code."]
+        running = code_hash(pack)
+        if not row.code_hash:
+            errors.append("This version has no code hash; validate it again or register a new version.")
+        elif running != row.code_hash:
+            errors.append("The pack's code changed since this version was registered (code hash differs); "
+                          "register a new pack version.")
         declared = pack.declaration()
         for key in ("markets", "rounding_rule", "rounding_mode", "required_facts", "coverage"):
             if getattr(row, key) != declared[key]:
@@ -552,11 +577,15 @@ class RulePackService(_VersionWorkflow):
         return {"id": row.id, "code": row.code, "version": row.version, "markets": row.markets,
                 "rounding_rule": row.rounding_rule, "rounding_mode": row.rounding_mode,
                 "required_facts": row.required_facts, "coverage": row.coverage,
-                "source_dependencies": row.source_dependencies, "golden_test_report": row.golden_test_report}
+                "source_dependencies": row.source_dependencies, "golden_test_report": row.golden_test_report,
+                "code_hash": row.code_hash}
 
 
 def view_rule_pack(row: TaxRulePackVersion) -> dict:
+    from app.modules.tax.rule_pack_integrity import integrity_of
+
     return {
+        **integrity_of(row),
         "id": row.id, "code": row.code, "version": row.version, "markets": row.markets,
         "rounding_rule": row.rounding_rule, "rounding_mode": row.rounding_mode,
         "required_facts": row.required_facts, "coverage": row.coverage,

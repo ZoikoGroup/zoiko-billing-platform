@@ -554,6 +554,16 @@ CRITICAL_COLUMNS: list[tuple[str, str, str, str]] = [
         "ZB-TAX-ARCH-001 Phase 4d: two-person manual address resolutions",
     ),
     (
+        "tax_quotes", "rule_pack_version_id",
+        "alembic/versions/d2a6c8e4f1b7_tax_phase8_rule_pack_integrity.py",
+        "ZB-TAX-ARCH-001 Phase 8: quote rule-pack provenance",
+    ),
+    (
+        "tax_rule_pack_versions", "code_hash",
+        "alembic/versions/d2a6c8e4f1b7_tax_phase8_rule_pack_integrity.py",
+        "ZB-TAX-ARCH-001 Phase 8: rule-pack code hash",
+    ),
+    (
         "tax_remediation_batches", "evidence_sha256",
         "alembic/versions/c1f5d7b9e2a4_tax_phase7_remediation.py",
         "ZB-TAX-ARCH-001 Phase 7: remediation batches",

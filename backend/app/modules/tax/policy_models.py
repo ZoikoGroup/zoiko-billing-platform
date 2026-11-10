@@ -159,6 +159,9 @@ class TaxRulePackVersion(_PolicyApprovalMixin, Base):
     source_dependencies = Column(JSON, nullable=True)      # [{"source_id", "source_code", "approved"}]
     golden_test_report = Column(JSON, nullable=True)
     notes              = Column(Text, nullable=True)
+    # Phase 8 PR 1: SHA-256 of the pack's code and declarations
+    # (rule_pack_integrity.py), recorded at registration and frozen.
+    code_hash          = Column(String(64), nullable=True)
     status             = Column(CaseInsensitiveEnum(PlatformVersionStatus), nullable=False, index=True,
                                 default=PlatformVersionStatus.PENDING_REVIEW,
                                 server_default=PlatformVersionStatus.PENDING_REVIEW.name)
@@ -180,7 +183,7 @@ AVAILABILITY_CONTENT_FIELDS = ("jurisdiction_id", "tax_type_id", "transaction_cl
 CODE_SET_CONTENT_FIELDS = ("code", "version", "notes", "created_by_user_id", "created_at")
 RULE_PACK_CONTENT_FIELDS = ("code", "version", "markets", "rounding_rule", "rounding_mode", "required_facts",
                             "coverage", "source_dependencies", "golden_test_report", "notes", "created_by_user_id",
-                            "created_at")
+                            "created_at", "code_hash")
 
 
 # ── Postgres-only DDL (frozen copy in migration c5e2d8a4b7f1) ────────────

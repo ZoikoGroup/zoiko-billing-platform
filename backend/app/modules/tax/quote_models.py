@@ -113,6 +113,12 @@ class TaxQuote(Base):
     refusal_code            = Column(String(60), nullable=True)
     refusal_reason          = Column(Text, nullable=True)
 
+    # Phase 8 PR 1: which approved native pack version (and code) produced
+    # the quote. Null for tenant-config and provider quotes.
+    rule_pack_version_id    = Column(Integer, ForeignKey("tax_rule_pack_versions.id", ondelete="RESTRICT"),
+                                     nullable=True, index=True)
+    rule_pack_code_hash     = Column(String(64), nullable=True)
+
     provider_name           = Column(String(100), nullable=True)
     provider_response_hash  = Column(String(64), nullable=True)
     provider_correlation_id = Column(String(255), nullable=True)
