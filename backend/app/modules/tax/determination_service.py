@@ -67,12 +67,17 @@ from app.modules.tax.enums import (
 from app.modules.tax.currencies import governed_currency_decimals
 from app.modules.tax.models import EntityTaxActivation, SellerLegalEntity
 from app.modules.tax.quote_models import TaxQuote, TaxQuoteComponent, TaxQuoteLine
-from app.modules.tax.rule_pack_integrity import INTEGRITY_FAILED, RulePackIntegrityError
+from app.modules.tax.rule_pack_integrity import (
+    INTEGRITY_FAILED, ROLLED_BACK_CODE, RulePackIntegrityError, RulePackRolledBack,
+)
 from app.modules.tax.secret_store import SecretStoreUnavailable
 from app.modules.tax.tenant_tax_service import TenantTaxService
 
 logger = logging.getLogger("zoiko_billing.tax.determination")
 
+#: Tenant-facing (Phase 8 PR 3): no pack internals.
+ROLLED_BACK_MESSAGE = ("Tax for this tax date can't be calculated: the tax rules that applied to it were rolled "
+                       "back, and the period is being reviewed. Issued invoices are not changed.")
 #: Tenant-facing: no hashes or pack internals (T13).
 INTEGRITY_MESSAGE = ("Zoiko can't calculate tax for this market right now. This isn't something you can fix; "
                      "our team has been alerted. Try again later.")
@@ -359,6 +364,9 @@ class TaxDeterminationService:
                     # code. NOT_DETERMINED, never a fallback; P1 alert.
                     raise _Refusal(TaxQuoteStatus.UNSUPPORTED, INTEGRITY_FAILED, INTEGRITY_MESSAGE,
                                    warnings=issues, integrity=exc)
+                except RulePackRolledBack:
+                    # Phase 8 PR 3: this tax date is in a rolled-back range.
+                    raise _Refusal(TaxQuoteStatus.UNSUPPORTED, ROLLED_BACK_CODE, ROLLED_BACK_MESSAGE, warnings=issues)
                 if engine is None:
                     routing_problems.append(f"line {item.line_number}: {reason}")
                     continue

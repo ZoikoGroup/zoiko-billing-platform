@@ -25,6 +25,7 @@ const STATUS_STYLES = {
   CAPTURED: { icon: CheckCircle2, label: "Evidence captured", tone: "green" },
   APPROVED: { icon: BadgeCheck, label: "Approved", tone: "blue" },
   SCHEDULED: { icon: Clock, label: "Scheduled", tone: "blue" },
+  ROLLED_BACK: { icon: XCircle, label: "Rolled back", tone: "red" },
   VALIDATED: { icon: ShieldCheck, label: "Validated", tone: "blue" },
   IN_APPROVAL: { icon: Clock, label: "In approval", tone: "amber" },
   PENDING_REVIEW: { icon: FileEdit, label: "Draft", tone: "slate" },

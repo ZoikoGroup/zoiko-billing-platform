@@ -322,11 +322,26 @@ class EngineResolver:
         from app.modules.tax.enums import PlatformVersionStatus
         from app.modules.tax.policy_models import TaxRulePackVersion
 
+        from app.modules.tax.policy_models import code_version_of
         from app.modules.tax.policy_service import source_dependency_status
-        from app.modules.tax.rule_pack_integrity import CODE_MISSING, MATCH, RulePackIntegrityError, integrity_of
+        from app.modules.tax.rule_pack_integrity import (
+            CODE_MISSING, MATCH, RulePackIntegrityError, RulePackRolledBack, integrity_of,
+        )
 
         jurisdiction = activation.jurisdiction.code if activation.jurisdiction else None
         tax_type = activation.tax_type.code if activation.tax_type else None
+
+        def covers(row) -> bool:
+            return any(m.get("jurisdiction_code") == jurisdiction and m.get("tax_type") == tax_type
+                       for m in row.markets or [])
+
+        # Phase 8 PR 3: a tax date in a rolled-back version's range fails
+        # closed (RULE_PACK_ROLLED_BACK); it never falls back to another version.
+        if tax_date is not None:
+            for row in self.db.query(TaxRulePackVersion).filter(
+                    TaxRulePackVersion.status == PlatformVersionStatus.ROLLED_BACK):
+                if covers(row) and pack_in_range(row, tax_date):
+                    raise RulePackRolledBack(row.code, row.version)
         failure = None
         for row in self.db.query(TaxRulePackVersion).filter(TaxRulePackVersion.status == PlatformVersionStatus.ACTIVE):
             if not any(m.get("jurisdiction_code") == jurisdiction and m.get("tax_type") == tax_type
@@ -339,7 +354,7 @@ class EngineResolver:
             # Phase 8 PR 1: the running code must be the approved code. A
             # missing pack, another version, or a different hash fails closed.
             state = integrity_of(row)
-            pack_cls = rule_pack_class(row.code, row.version)
+            pack_cls = rule_pack_class(row.code, code_version_of(row))
             if state["integrity"] != MATCH or pack_cls is None:
                 failure = failure or RulePackIntegrityError(row.code, row.version,
                                                             state["integrity"] if pack_cls else CODE_MISSING)

@@ -7,6 +7,7 @@ import {
   GATES, GATE_STATUSES, MODES, TRANSACTION_CLASSES, emptyGates, gateProblems, mandatoryGates,
 } from "./gates";
 import { CancelSchedule, PublishModal, ScheduleInfo } from "./ScheduleControls";
+import { RollbackControls } from "./RollbackControls";
 import {
   getEvidenceBundle, amendAvailability, availabilityAction, draftAvailability, listJurisdictions, listMarketAvailability, listTaxTypes,
 } from "./taxRegistryService";
@@ -213,6 +214,7 @@ function AvailabilityDetail({ version, user, onChanged, onEdit }) {
       <ValidationList title="Validation errors" items={version.validation_errors} />
       <ScheduleInfo version={version} />
       <CancelSchedule version={version} kind="market_availability" user={user} stepUp={stepUp} onChanged={onChanged} />
+      <RollbackControls kind="market_availability" version={version} user={user} stepUp={stepUp} onChanged={onChanged} />
       <div>
         <h3 className={`mb-2 text-sm font-bold ${STRONG}`}>Launch gates</h3>
         {version.mode === "PROVIDER_APPROVED" && (

@@ -10,8 +10,8 @@ e-invoicing, or change legacy invoicing.
 | PR | Scope | Status |
 |---|---|---|
 | 1 | Rule-pack integrity (step 07) | Merged (#157) |
-| 2 | Scheduled activation (step 07) | This PR |
-| 3 | Emergency rollback (§10.3) | Planned |
+| 2 | Scheduled activation (step 07) | Merged (#158) |
+| 3 | Emergency rollback (§10.3) | This PR |
 | 4 | Retroactive change analysis (§10.3, T04) | Planned |
 | 5 | Source change detection and review cadence (steps 01–03, §10.2) | Planned |
 | 6 | Tenant reference rates and reports screens (G-5b-1) | Planned |
@@ -23,6 +23,14 @@ e-invoicing, or change legacy invoicing.
 - **Remediation enablement:** the Phase 7 remediation allow-lists
   (`TAX_REMEDIATION_*_ORGS`) stay empty until the product owner decides per
   organization.
+- **Single-person break-glass market stop** (PR 3, for the tax lead and the
+  security owner): there is no market-scoped stop that one person can apply
+  to a native market. Today a native market stops through a two-person
+  SUSPENDED publish or rollback; the only single-person switch is the
+  platform-wide invoice-finalization breaker, which stops all issuing for
+  every tenant and market. Should a single TAX_PUBLISHER, with MFA, be able
+  to stop one native market at once (time-bound, reviewed afterwards)? Not
+  built.
 
 ---
 
@@ -295,6 +303,155 @@ of a pack are ACTIVE (supersede them first).
 | `tests/privacy/test_tax_phase8_scheduled_activation.py` (16) | Local time to UTC: BST, AEDT, the spring-forward gap refused, the autumn overlap needs an offset, leap day, unknown zone. **T03:** the tax date picks v1 or v2; a 31 Dec quote after v2 activates uses v1 and issues; a 1 Jan quote made under v1 goes STALE. **T17:** a version starting on 29 Feb. A version can't start before the one it follows; same start replaces; retroactive versions refused; activation after the start date refused; one schedule per pack. The job activates at the time, not before, exactly once, audited. A failed re-check stays SCHEDULED with an error; the P1 alert fires after 10 minutes and clears once activated. Availability switches at its time for old tax dates too; a suspension published now is immediate. Cancellation: not for tenant users; one pending; the proposer can't decide; approval returns the version to APPROVED and the job skips it; a decided request is final; rejection needs a reason; the submitting reviewer may propose; an activation that already ran can't be cancelled. HTTP: scheduling needs MFA; schedule, cancel, inbox entry, approve, list. |
 | `tests/test_tax_phase8_pg.py` (+2, CI Postgres step) | `valid_to` set once on an ACTIVE pack; overlapping ACTIVE ranges rejected by the exclusion, a following range accepted; a decided cancellation can't be edited or deleted. |
 | `frontend/.../TaxControlCenter.test.jsx` (+7) | UTC preview across DST; schedule a pack in the jurisdiction's zone (axe); publish now; a failed activation check and proposing a cancellation; a different publisher approves with step-up; schedule availability with an offset; the inbox lists a cancellation with its reason. |
+
+**CI result:** _see PR_.
+
+---
+
+## PR 3: emergency rollback
+
+`app/modules/tax/rollback_service.py`. Approved with the plan; answers and
+additions as recorded below.
+
+### Rule packs
+
+- **V** is the bad ACTIVE version; **P** an earlier published version of
+  the same pack to restore.
+- **Open-ended V:** a new version **R** is created, ACTIVE at once:
+  - R runs P's code: `code_version = P.version`, P's code hash and P's
+    content; `restores_id = P`, `rollback_of_id = V`; version label
+    `"{P.version}-rb{request}"`;
+  - R starts on **today's local legal date** in the pack's zone, or on V's
+    start if that is later (a version published early for a future date);
+  - V's `valid_to` is set to R's start (the set-once rule) and V becomes
+    **ROLLED_BACK**.
+- **V already followed by a successor W: quarantine only.** No P and no R:
+  V becomes ROLLED_BACK, W is untouched and keeps serving its range. Roll
+  back W first only when W itself is bad.
+- **V's range fails closed.** For a tax date in a ROLLED_BACK version's
+  [`valid_from`, `valid_to`), the engine refuses: status UNSUPPORTED,
+  refusal code **`RULE_PACK_ROLLED_BACK`**, outcome NOT_DETERMINED, never a
+  fallback. Dates before V use the version before V; dates from R's start
+  use R.
+- **The one sanctioned retroactive path.** PR 2 still refuses retroactive
+  versions; a rollback never creates a calculating version for a past date.
+- **Never touched:** P and V are not edited, reactivated or deleted;
+  committed quotes and issued invoices are not reopened (T04).
+- **Open quotes made with V** are marked STALE at once: dates in V's range
+  with "can't be calculated" (a re-quote returns `RULE_PACK_ROLLED_BACK`),
+  later dates with "re-quote" (a re-quote uses R).
+
+### P's fitness and the regression report
+
+At proposal and again at approval:
+
+- P's module must ship with P's recorded hash (and be in the retention
+  manifest when the publish gate is on);
+- P's validation must pass today (`errors()`, including that its source
+  dependencies are still approved);
+- the Phase 7 regression runs P against V on the anonymised fixtures and is
+  attached to the request for the approver. Changed cases are
+  informational; **run errors block**.
+
+### Pending schedules
+
+If the key has a SCHEDULED version, the proposal must set
+`cancel_schedule`, or it is refused naming the schedule. Approval then
+returns that version to APPROVED inside the same two-person decision,
+audited with the rollback request id.
+
+### Two people, MFA, concurrency
+
+- A TAX_PUBLISHER proposes with a reason and a severity; a **different**
+  TAX_PUBLISHER approves with MFA step-up, and it applies at once (no
+  scheduling). Rejecting needs a reason; the proposer can withdraw.
+- One open request per version (a partial unique index plus the service).
+  Requests are frozen once decided (ORM guard and Postgres trigger).
+- **Concurrency:** approval locks the scheduled version (if any) and then
+  V with `FOR UPDATE` on Postgres, and re-reads both. The activation job
+  locks with `SKIP LOCKED`. So either the rollback applies (and the job
+  activates nothing) or the job activates the schedule first (and the
+  approval is refused because V is now followed). The Postgres race test
+  proves exactly one outcome.
+
+### Severity
+
+| Severity | Meaning | What it changes |
+|---|---|---|
+| SEV1 | Wrong tax is being charged now | Tenant review items due the same day; the email says "Action needed today." |
+| SEV2 | Wrong tax in limited cases | Review items due in 3 days; "Please review soon." |
+| SEV3 | Precautionary | Review items due in 14 days; "Please review soon." |
+
+The platform alert is P1 whatever the severity: every rollback needs eyes.
+The severity is also recorded in the request, the alert text and the
+audit.
+
+### Outputs
+
+- **Platform:** the audit log (request, V, R and any cancelled schedule)
+  and a **P1 Attention item `tax.rollback_applied:<request>`**, acknowledged
+  by staff (not auto-resolved). Aggregate only: pack or market, the
+  rolled-back date range, counts of open quotes made STALE and
+  NOT_DETERMINED, committed quotes for analysis, and the number of
+  organizations affected. No tenant identifiers.
+- **Each affected organization** (an open quote marked STALE or a committed
+  quote made with V; for availability, an approved activation in that
+  market): its own review item (`TAX_ROLLBACK_APPLIED`, with its own counts)
+  and an email to its admins (template **ZB-TAX-001**), with no amounts,
+  invoice numbers or customer names.
+
+### Market availability
+
+Rollback copies P's content into a new version that is ACTIVE at once (it
+follows the clock); V becomes ROLLED_BACK. **SUSPENDED** stays the stop for
+when no known-good earlier state exists; see the runbook's decision tree.
+
+### Code retention
+
+- **Manifest:** `app/modules/tax/rule_packs/retention.json` lists every
+  published version with its code hash. Entries are never deleted; a
+  version that may stop shipping is marked `"retired": "<reason, date>"`.
+  It starts empty: no pack has been published anywhere.
+- **CI** (`tests/test_tax_rule_pack_retention.py`, its own step): every
+  non-retired entry's module ships with that hash, and no entry on
+  `origin/main` was removed. Removing an old module fails CI.
+- **Publish gate:** publishing (and approving a rollback) refuses a
+  version not in the manifest with a matching hash
+  (`TAX_RULE_PACK_RETENTION_REQUIRED`, on; off in the test suite, where
+  the gate's own tests turn it on).
+- **Runtime enforcement** (CI can't see production): the startup and
+  monitoring check (P1 `tax.rule_pack_integrity`) fails for any version
+  that must ship but is missing, differs, or is marked retired: every
+  ACTIVE and ROLLED_BACK version, the most recent SUPERSEDED version of
+  each pack, and P whenever an ACTIVE (or most recent SUPERSEDED) R runs
+  P's code. So "retired only when SUPERSEDED and not the most recent" is
+  enforced there.
+
+### For PR 4
+
+Retroactive analysis must take **applied rollback requests** as an input,
+alongside retroactive rate and pack versions. Each request's `result`
+holds the pack code, V, P and R, the rolled-back range and when it was
+applied. The scope is every committed quote with
+`rule_pack_version_id = V`, whatever its date (this includes quotes dated
+on R's start day that were committed before the rollback).
+
+### Migration
+
+`f4c8e2a6b9d1`: `code_version`, `restores_id`, `rollback_of_id` on packs;
+`restores_id`, `rollback_of_id` on availability; `tax_rollback_requests`;
+on Postgres, the pack and availability guards (ROLLED_BACK final; ACTIVE
+may become it) and the request guard.
+
+### PR 3 tests
+
+| Test file | Covers |
+|---|---|
+| `tests/privacy/test_tax_phase8_rollback.py` (16) | **T03/T04:** R from today runs P's code with P's hash; dates before V use P, V's range returns `RULE_PACK_ROLLED_BACK` with no lines, R's start uses R; open quotes go STALE with the two reasons and counts; the committed quote and its invoice keep their snapshot. **Local midnight:** approval at 23:30 UTC (00:30 BST) starts R the next day. A quote made with V can't be issued after. **Quarantine:** refused for an open-ended V; a restore refused for a closed V; W keeps serving, V's range refuses, P's dates unchanged. **P:** tampered code refused at proposal, a removed module refused at approval; unapproved sources refused; the regression report attached; run errors block. **Two people:** one open request; proposer can't approve; rejection needs a reason; decided requests final; withdraw by the proposer only; a ROLLED_BACK version is immutable. **HTTP:** reviewers can't propose; candidates with integrity; the inbox entry; MFA required; the proposer is refused. **Schedules:** refused without acknowledgement; cancelled inside the approval and audited. **Availability:** immediate. **Outputs:** P1 alert with no tenant identifiers; the tenant's review item due per severity; an email to its admin only, without amounts. **Retention:** manifest checks (missing, hash, retired, removed); the publish gate; the runtime check flags RETIRED and CODE_MISSING, including P's module behind an active R. |
+| `tests/test_tax_rule_pack_retention.py` (3, own CI step) | Listed versions ship with their hashes; entries are well formed; nothing on `origin/main` was removed. |
+| `tests/test_tax_phase8_pg.py` (+2) | ACTIVE to ROLLED_BACK (with `valid_to` once) is the only change allowed and then final; a decided request is final. |
+| `tests/test_tax_phase8_race_pg.py` (1, commits, CI race step) | A rollback approval and the activation job racing on one pack end in exactly one consistent outcome, with one open-ended ACTIVE version. |
+| `frontend/.../TaxControlCenter.test.jsx` (+5) | Propose (axe; unusable versions listed, not offered); quarantine only for a followed version; a different publisher approves with step-up and the rolled-back state shows (axe); reviewers can't propose and R shows what it restores; the inbox. |
 
 **CI result:** _see PR_.
 

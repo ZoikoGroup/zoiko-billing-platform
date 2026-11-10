@@ -22,7 +22,7 @@ from app.modules.tax.enums import PlatformVersionStatus, StagedRateStatus
 from app.modules.tax.policy_models import TaxCodeSetVersion, TaxMarketAvailabilityVersion, TaxRulePackVersion
 from app.modules.tax.registry_models import TaxChangeApproval, TaxRateStaging
 
-KINDS = ("staged_rate", "tax_code_set", "rule_pack", "market_availability", "activation_cancel")
+KINDS = ("staged_rate", "tax_code_set", "rule_pack", "market_availability", "activation_cancel", "rollback")
 
 
 def _iso(value) -> Optional[str]:
@@ -97,6 +97,28 @@ def _cancellations(db: Session, user) -> list:
     return items
 
 
+def _rollbacks(db: Session, user) -> list:
+    """Phase 8 PR 3: proposed emergency rollbacks."""
+    from app.modules.tax.policy_models import TaxRollbackRequest
+
+    items = []
+    for r in db.query(TaxRollbackRequest).filter(TaxRollbackRequest.status == "PROPOSED").all():
+        model = TaxRulePackVersion if r.kind == "rule_pack" else TaxMarketAvailabilityVersion
+        v = db.get(model, r.version_id)
+        if v is None:
+            continue
+        subject = f"rule pack {v.code} v{v.version}" if r.kind == "rule_pack" else _availability_title(v)
+        target = "quarantine only" if r.restore_to_id is None else f"restore version {r.restore_to_id}"
+        can, why = _verdict(user, {r.proposed_by} - {None})
+        items.append({
+            "kind": "rollback", "id": r.id, "title": f"{r.severity} rollback of {subject} ({target})",
+            "submitted_by": r.proposed_by, "submitted_at": _iso(r.created_at), "can_approve": can,
+            "reason_if_not": why, "version_kind": r.kind, "version_id": r.version_id, "reason": r.reason,
+            "severity": r.severity, "cancel_schedule": r.cancel_schedule,
+        })
+    return items
+
+
 def approvals_inbox(db: Session, user, kind: Optional[str] = None) -> list:
     """All items awaiting approval, oldest submission first (ties: kind, id)."""
     sources = {
@@ -108,6 +130,7 @@ def approvals_inbox(db: Session, user, kind: Optional[str] = None) -> list:
         "market_availability": lambda: _versions(db, user, TaxMarketAvailabilityVersion, "market_availability",
                                                  _availability_title),
         "activation_cancel": lambda: _cancellations(db, user),
+        "rollback": lambda: _rollbacks(db, user),
     }
     items = []
     for name in ([kind] if kind else KINDS):

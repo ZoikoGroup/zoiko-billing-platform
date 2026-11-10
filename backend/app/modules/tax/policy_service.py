@@ -100,8 +100,9 @@ def _guard_policy_versions(session, flush_context, instances):
             old_status = _committed(obj, "status")
             if old_status not in EDITABLE_PLATFORM_STATUSES and changed & set(_CONTENT[type(obj)]):
                 raise RegistryImmutabilityError(f"{type(obj).__name__} {obj.id} content is frozen once submitted.")
-            if old_status == PlatformVersionStatus.SUPERSEDED and changed:
-                raise RegistryImmutabilityError(f"{type(obj).__name__} {obj.id} is superseded and immutable.")
+            if old_status in (PlatformVersionStatus.SUPERSEDED, PlatformVersionStatus.ROLLED_BACK) and changed:
+                raise RegistryImmutabilityError(
+                    f"{type(obj).__name__} {obj.id} is {old_status.name.lower()} and immutable.")
             allowed = {"status", "superseded_at"}
             if isinstance(obj, TaxRulePackVersion) and _committed(obj, "valid_to") is None:
                 allowed.add("valid_to")                    # Phase 8 PR 2: the end date, set once
@@ -115,6 +116,13 @@ def _guard_policy_versions(session, flush_context, instances):
                 raise RegistryImmutabilityError(f"Activation cancellation {obj.id} cannot be deleted.")
             if _committed(obj, "status") != "PROPOSED":
                 raise RegistryImmutabilityError(f"Activation cancellation {obj.id} is decided and final.")
+        from app.modules.tax.policy_models import TaxRollbackRequest
+
+        if isinstance(obj, TaxRollbackRequest):                       # Phase 8 PR 3
+            if obj in session.deleted:
+                raise RegistryImmutabilityError(f"Rollback request {obj.id} cannot be deleted.")
+            if _committed(obj, "status") != "PROPOSED":
+                raise RegistryImmutabilityError(f"Rollback request {obj.id} is decided and final.")
     for obj in session.new:
         if isinstance(obj, TaxCode) and obj.code_set_version is not None \
                 and obj.code_set_version.status not in EDITABLE_PLATFORM_STATUSES:
@@ -318,7 +326,7 @@ class _VersionWorkflow:
         A failed re-check leaves it SCHEDULED with activation_error set."""
         from app.modules.tax.activation import aware
 
-        query = self.db.query(self.model).filter(self.model.id == version_id)
+        query = self.db.query(self.model).filter(self.model.id == version_id).populate_existing()
         if self.db.get_bind().dialect.name == "postgresql":
             query = query.with_for_update(skip_locked=True)
         row = query.first()
@@ -652,9 +660,11 @@ class RulePackService(_VersionWorkflow):
 
     def errors(self, row: TaxRulePackVersion) -> list[str]:
         errors: list[str] = []
-        pack = rule_pack_class(row.code, row.version)
+        from app.modules.tax.policy_models import code_version_of
+
+        pack = rule_pack_class(row.code, code_version_of(row))
         if pack is None:
-            return [f"{row.code} version {row.version} is not the pack registered in code."]
+            return [f"{row.code} version {code_version_of(row)} is not the pack registered in code."]
         running = code_hash(pack)
         if not row.code_hash:
             errors.append("This version has no code hash; validate it again or register a new version.")
@@ -709,6 +719,7 @@ class RulePackService(_VersionWorkflow):
     def _before_activate(self, row, when: datetime, tz: Optional[str]) -> None:
         from app.modules.tax.activation import local_midnight_utc
 
+        self._retention_check(row)
         pred = self.current_for(row)
         replacing = pred is not None and pred.valid_from == row.valid_from
         if pred is not None and not replacing and pred.valid_from is not None and (
@@ -737,6 +748,16 @@ class RulePackService(_VersionWorkflow):
                     f"{when.isoformat(timespec='minutes')} is after that start, so it would be retroactive. "
                     "Retroactive pack versions wait for retroactive change analysis (Phase 8 PR 4); "
                     "activate before the start date or choose a later one.")
+
+    def _retention_check(self, row) -> None:
+        """Phase 8 PR 3: only a version listed in the retention manifest with
+        its hash may be published (so its code keeps shipping)."""
+        from app.modules.tax.policy_models import code_version_of
+        from app.modules.tax.rule_pack_retention import publish_problem
+
+        problem = publish_problem(row.code, code_version_of(row), row.code_hash)
+        if problem:
+            raise RegistryStateError(problem)
 
     def _close_predecessor(self, row, now: datetime) -> None:
         pred = self.current_for(row)
@@ -773,9 +794,22 @@ def _schedule_view(row) -> dict:
         default_tz = RulePackService(db)._timezone(row)
     else:
         default_tz = MarketAvailabilityService(db)._timezone(row)
+    rollback = None
+    if db is not None and row.id is not None:
+        from app.modules.tax.policy_models import TaxRollbackRequest
+        from app.modules.tax.rollback_service import view_rollback
+
+        kind = "rule_pack" if isinstance(row, TaxRulePackVersion) else "market_availability"
+        req = db.query(TaxRollbackRequest).filter(
+            TaxRollbackRequest.kind == kind, TaxRollbackRequest.version_id == row.id,
+            TaxRollbackRequest.status.in_(["PROPOSED", "APPROVED"])).order_by(TaxRollbackRequest.id.desc()).first()
+        rollback = view_rollback(req) if req is not None else None
     return {"activate_at": row.activate_at, "activate_at_local": row.activate_at_local, "activate_tz": row.activate_tz,
             "scheduled_by_user_id": row.scheduled_by_user_id, "activation_error": row.activation_error,
-            "pending_cancellation": pending, "default_timezone": default_tz}
+            "pending_cancellation": pending, "default_timezone": default_tz,
+            # Phase 8 PR 3: the open or applied rollback of this version, and
+            # what a rollback version restores.
+            "rollback": rollback, "restores_id": row.restores_id, "rollback_of_id": row.rollback_of_id}
 
 
 def view_cancellation(c: TaxActivationCancellation) -> dict:
@@ -790,7 +824,7 @@ def view_rule_pack(row: TaxRulePackVersion) -> dict:
     return {
         **integrity_of(row),
         **_schedule_view(row),
-        "valid_from": row.valid_from, "valid_to": row.valid_to,
+        "valid_from": row.valid_from, "valid_to": row.valid_to, "code_version": row.code_version,
         "id": row.id, "code": row.code, "version": row.version, "markets": row.markets,
         "rounding_rule": row.rounding_rule, "rounding_mode": row.rounding_mode,
         "required_facts": row.required_facts, "coverage": row.coverage,

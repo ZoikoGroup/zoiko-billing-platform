@@ -3840,6 +3840,24 @@ TEMPLATE_REGISTRY: Dict[str, TemplateMeta] = {
         active=True,
         owner_hook="auth/mfa_service.py:notify_mfa_change",
     ),
+    # Phase 8 PR 3 (ZB-TAX-ARCH-001): an emergency tax rollback affected the organization.
+    "ZB-TAX-001": TemplateMeta(
+        template_id="ZB-TAX-001",
+        tier=NotificationTier.T0,
+        trigger_event_name="tax.rollback_applied",
+        title="Tax rules rolled back",
+        subject="Tax rules were rolled back for one of your markets",
+        preheader="Tax rules were rolled back for one of your markets.",
+        body_template="Hello {{recipient_first_name}},\nZoiko rolled back the tax rules for {{market_label}} ({{date_range}}).\n{{urgency}} Issued invoices are not changed.",
+        primary_action_label="Open review items",
+        sender_identity="Zoiko Billing Tax",
+        control_rule="T0 operational notice; no amounts, invoice numbers or customer names",
+        required_variables=("recipient_first_name", "market_label", "date_range", "urgency"),
+        sender_identity_kind="platform",
+        control_rule_flags=_T0_MANDATORY_FLAGS,
+        active=True,
+        owner_hook="tax/rollback_service.py:RollbackService._email",
+    ),
 }
 
 #: event_name -> [template_id, ...]. Built from TEMPLATE_REGISTRY.

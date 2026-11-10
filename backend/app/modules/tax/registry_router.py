@@ -53,6 +53,7 @@ from app.modules.tax.policy_schemas import ShadowSelectionRequest  # Phase 7
 from app.modules.tax.policy_schemas import (
     ActivationCancelRequest,
     AvailabilityAmendRequest,
+    RollbackProposeRequest,
     AvailabilityDraftRequest,
     CodeSetDraftRequest,
     PolicyActionRequest,
@@ -792,6 +793,65 @@ admin_router.add_api_route("/activation-cancellations/{cancellation_id}/approve"
                            methods=["POST"], summary="Approve cancelling a scheduled activation (MFA step-up)")
 admin_router.add_api_route("/activation-cancellations/{cancellation_id}/reject", _decide_cancellation(False),
                            methods=["POST"], summary="Reject cancelling a scheduled activation")
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# Phase 8 PR 3 — emergency rollback: a TAX_PUBLISHER proposes with a reason
+# and a severity; a different TAX_PUBLISHER approves with MFA step-up and it
+# applies at once. Platform output is aggregate (T13).
+# ═════════════════════════════════════════════════════════════════════════
+
+@admin_router.get("/rollbacks", summary="Emergency rollback requests")
+def list_rollbacks(page: PageParams = Depends(), db: Session = Depends(get_db),
+                   _user=Depends(require_capability("tax_registry.read"))):
+    from app.modules.tax.policy_models import TaxRollbackRequest
+    from app.modules.tax.rollback_service import view_rollback
+
+    rows = db.query(TaxRollbackRequest).order_by(TaxRollbackRequest.id.desc()).all()
+    items, next_cursor = paginate(rows, page)
+    return {"items": [view_rollback(r) for r in items], "next_cursor": next_cursor}
+
+
+@admin_router.get("/rollbacks/candidates", summary="Earlier versions a version can be rolled back to")
+def rollback_candidates(kind: str, version_id: int, db: Session = Depends(get_db),
+                        _user=Depends(require_capability("tax_registry.read"))):
+    from app.modules.tax.rollback_service import RollbackService
+
+    return {"items": RollbackService(db).candidates(kind, version_id)}
+
+
+@admin_router.post("/rollbacks", status_code=status.HTTP_201_CREATED, summary="Propose an emergency rollback")
+def propose_rollback(data: RollbackProposeRequest, db: Session = Depends(get_db),
+                     current_user=Depends(require_capability("tax_registry.approve"))):
+    from app.modules.tax.rollback_service import RollbackService, view_rollback
+
+    row = RollbackService(db).propose(actor_id=current_user.id, **data.model_dump())
+    db.commit()
+    return view_rollback(row)
+
+
+def _decide_rollback(action: str):
+    def handler(request_id: int, data: Optional[PolicyActionRequest] = None, db: Session = Depends(get_db),
+                current_user=Depends(require_capability("tax_registry.approve"))):
+        from app.modules.tax.rollback_service import RollbackService, view_rollback
+
+        data = data or PolicyActionRequest()
+        svc = RollbackService(db)
+        if action == "approve":
+            require_tax_step_up(db, current_user, StepUpRequest(code=data.code, recovery_code=data.recovery_code))
+            row = svc.decide(actor_id=current_user.id, request_id=request_id, approve=True, reason=data.reason)
+        elif action == "reject":
+            row = svc.decide(actor_id=current_user.id, request_id=request_id, approve=False, reason=data.reason)
+        else:
+            row = svc.withdraw(actor_id=current_user.id, request_id=request_id)
+        db.commit()
+        return view_rollback(row)
+    return handler
+
+
+for _action in ("approve", "reject", "withdraw"):
+    admin_router.add_api_route(f"/rollbacks/{{request_id}}/{_action}", _decide_rollback(_action), methods=["POST"],
+                               summary=f"{_action.capitalize()} an emergency rollback request")
 
 
 # ═════════════════════════════════════════════════════════════════════════

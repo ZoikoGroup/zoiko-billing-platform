@@ -118,6 +118,20 @@ def _regression_gate_off_by_default():
 
 
 @pytest.fixture(autouse=True)
+def _retention_gate_off_by_default():
+    """ZB-TAX-ARCH-001 Phase 8 PR 3: publishing a rule pack needs it in
+    rule_packs/retention.json (TAX_RULE_PACK_RETENTION_REQUIRED, on in every
+    deployment). Test packs aren't listed, so it is off here;
+    tests/privacy/test_tax_phase8_rollback.py turns it on and proves the gate."""
+    from app.config import settings
+
+    original = settings.TAX_RULE_PACK_RETENTION_REQUIRED
+    settings.TAX_RULE_PACK_RETENTION_REQUIRED = False
+    yield
+    settings.TAX_RULE_PACK_RETENTION_REQUIRED = original
+
+
+@pytest.fixture(autouse=True)
 def _force_step_up_enforced():
     """MFA_STEP_UP_BYPASS is a developer convenience read from .env, so a
     developer who turns it on locally would otherwise silently stop running

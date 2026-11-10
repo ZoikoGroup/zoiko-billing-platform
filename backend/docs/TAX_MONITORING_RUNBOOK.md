@@ -199,6 +199,85 @@ failed").
 
 ---
 
+## Stopping or reverting a tax change (Phase 8 PR 3)
+
+### Decision tree
+
+1. **Is the problem a version that hasn't activated yet (SCHEDULED)?**
+   Cancel the schedule: a TAX_PUBLISHER (or the submitting reviewer)
+   proposes, a different TAX_PUBLISHER approves with MFA. Nothing live
+   changes.
+2. **Is there a known-good earlier version?** Roll back:
+   - a TAX_PUBLISHER proposes on the bad version (Propose rollback): choose
+     the version to restore, a severity and a reason; acknowledge any
+     pending schedule;
+   - a different TAX_PUBLISHER approves with MFA; it applies at once.
+   - For a pack version that a later version already follows, choose
+     quarantine only.
+3. **No known-good state, or unsure what is right?** Publish the market as
+   **SUSPENDED**: every quote in it is NOT_DETERMINED until a new version is
+   published.
+
+### Realistic time to stop
+
+| Action | Steps | People | Expected time (both available) |
+|---|---|---|---|
+| Rollback | propose, approve with MFA | 2 TAX_PUBLISHERs | 5 to 15 minutes |
+| Cancel a schedule | propose, approve with MFA | publisher (or the submitting reviewer) + another publisher | 5 to 15 minutes |
+| SUSPENDED | draft, validate, submit (TAX_REVIEWER); approve and publish with MFA (TAX_PUBLISHER) | 2 | 15 to 30 minutes |
+
+**Existing switches:**
+- **Provider markets:** P9 provider suspend (one TAX_PUBLISHER with MFA)
+  stops a provider at once.
+- **Native markets:** no market-scoped single-person stop exists. The
+  platform-wide invoice-finalization breaker (a super admin, time-bound)
+  stops all invoice issuing for every tenant and market, legacy included;
+  it is a last resort, and it stops issuing, not quoting.
+- A single-person break-glass market stop is an open policy question in
+  `TAX_PHASE8.md`; it is not built.
+
+### Who does what
+
+- **Proposer (TAX_PUBLISHER):** chooses the target, the severity and the
+  reason; confirms any pending schedule is cancelled.
+- **Approver (a different TAX_PUBLISHER):** reads the reason, the
+  regression report (P against V) and the schedule note; approves with
+  MFA.
+- **On call:** acknowledges the P1 `tax.rollback_applied:<id>` item.
+- **Tax lead:** starts the retroactive analysis (PR 4).
+
+### Verify
+
+- The bad version shows **Rolled back** with its date range; the new
+  version shows "Restores #P (rollback of #V)" (packs and availability).
+- A quote for a date in the range returns `RULE_PACK_ROLLED_BACK`; a quote
+  for today uses the restored logic.
+- The P1 item states the range and the counts; affected tenants have a
+  review item and their admins an email.
+- `tax.rule_pack_integrity` stays clear (P's module ships).
+
+### Hand over to retroactive analysis (PR 4)
+
+The applied request's `result` (`GET /api/v1/super-admin/tax-registry/rollbacks`)
+holds the pack, V, P and R, the rolled-back range and the counts. PR 4's
+analysis takes it as input: every committed quote made with V.
+
+---
+
+## tax.rollback_applied:\<request\> (P1)
+
+**Fires when:** an emergency rollback is applied. It stays open until
+acknowledged (it is an event, not a condition).
+
+**Means:** a tax version was rolled back or quarantined. The text gives the
+pack or market, the rolled-back date range, the counts of open quotes made
+STALE and NOT_DETERMINED, committed quotes for analysis and the number of
+organizations affected.
+
+**Do:** follow "Verify" and "Hand over" above, then acknowledge.
+
+---
+
 ## Daily anomaly checks (Phase 7 PR 3)
 
 These come from the daily `tax_anomaly_job`. No invoice is ever changed by

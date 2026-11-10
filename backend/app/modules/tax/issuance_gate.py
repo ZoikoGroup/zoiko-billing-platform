@@ -86,16 +86,16 @@ class GovernedIssuanceGate:
         """Phase 8 PR 1: checked alongside the context fingerprint. The
         quote's pack version must still be the ACTIVE one, with the same
         approved hash, and that hash must be the code running now."""
-        from app.modules.tax.enums import PlatformVersionStatus
-        from app.modules.tax.policy_models import TaxRulePackVersion
-        from app.modules.tax.rule_pack_integrity import running_hash
-
         from app.modules.tax.engines import pack_in_range
+        from app.modules.tax.enums import PlatformVersionStatus
+        from app.modules.tax.policy_models import TaxRulePackVersion, code_version_of
+        from app.modules.tax.rule_pack_integrity import running_hash
 
         row = self.db.get(TaxRulePackVersion, quote.rule_pack_version_id)
         if row is None or row.status != PlatformVersionStatus.ACTIVE or not pack_in_range(row, quote.tax_date):
             return False
-        return bool(quote.rule_pack_code_hash) and quote.rule_pack_code_hash == row.code_hash             == running_hash(row.code, row.version)
+        running = running_hash(row.code, code_version_of(row))
+        return bool(quote.rule_pack_code_hash) and quote.rule_pack_code_hash == row.code_hash == running
 
     def prepare(self, invoice: Invoice) -> TaxQuote:
         quote = self._latest_quote(invoice)

@@ -41,6 +41,11 @@ the product owner.
   the pack version in force, like rates (gate 02's effective-dated
   history now covers packs). Packs and availability can be scheduled at
   jurisdiction-local time; cancelling a schedule takes two people and MFA.
+- **Emergency rollback (Phase 8 PR 3).** Two TAX_PUBLISHERs (MFA) can roll
+  a pack or availability version back at once; a rolled-back pack range
+  fails closed (`RULE_PACK_ROLLED_BACK`) and issued invoices never change.
+  The code of every published version must keep shipping (retention
+  manifest, CI and the runtime check).
 - **A published market isn't live for a tenant yet.** The tenant still
   needs two-person approval of the seller entity's registration or legal
   basis, the activation, and (for provider markets) the provider connection.
@@ -282,6 +287,7 @@ NOT_APPLICABLE (G1, fixed).
 | **GCP Secret Manager** | 4d-0 PR 1 (merged). The GCP admin provisions it per `TAX_PHASE4D0.md`: API, region, service account with no keys, the `tax-provider-` IAM condition, Data Access audit logs, `ENVIRONMENT=production`. Then `TAX_PROVIDER_SECRET_STORE=gcp`. | Startup succeeds with gcp; creating `tax-provider-sandbox-org0-conn0` works and other names are denied; audit logs show access | ◐ Code merged; **provisioning pending (VM/GCP admin)** |
 | Production credentials | `TAX_PROVIDER_PRODUCTION_CREDENTIALS_ALLOWED=true`, only with gcp | Startup refuses it otherwise | ☐ Stays false until this gate |
 | **Reconciliation worker** | 4d-0 PR 2: the `zoiko-billing-tax-worker` unit running; `TAX_PROVIDER_RECONCILIATION_MODE=worker`; heartbeat fresh; the two-worker race test green in CI | `systemctl status`; heartbeat age under 15 min; CI tax step | ◐ Code on the branch; **VM sudoers/unit pending (VM admin)** |
+| Emergency rollback rehearsal (Phase 8 PR 3) | In staging: publish a pack v2, quote and issue under it; propose and approve a rollback to v1 (two publishers, MFA); confirm v2 Rolled back, R active from today, a date in v2's range returns RULE_PACK_ROLLED_BACK, today's quote uses v1's logic, the issued invoice unchanged, the P1 item and the tenant review item and email; repeat a quarantine-only rollback and an availability rollback; time each against the runbook | Rehearsal record with timings | ☐ Open (gates 05/06) |
 | Failure and rollback | Fail-closed defaults agreed by ops/SRE (circuit breaker, heartbeat, grace, quote expiry; `TAX_PHASE4A1.md`); the kill switch and runbook rehearsed; a stuck-transaction drill (check-state, retry, two-person void) | Drill record | ☐ Open |
 | Reconciliation | Drift checks in place; a Finance systems owner signs a sandbox reconciliation: our totals, components and tax dates against the provider's records for a test batch (T10, T15, T18, T20) | Signed reconciliation report | ☐ Open |
 
