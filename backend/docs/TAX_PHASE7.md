@@ -269,3 +269,77 @@ invoice and kind.
 | `frontend/.../ProviderOperations.test.jsx` (+1) | Findings shows the last run's counts and flagged markets, without invoice numbers (axe) |
 
 **CI result:** _see PR_.
+
+## PR 4: targeted remediation tooling (no silent historical mutation)
+
+`app/modules/tax/remediation_service.py`, under **Tax governance →
+Remediation** (`/billing/tax/governance/remediation`).
+
+### Shared rules
+
+| Rule | How |
+|---|---|
+| **Preview by default** | Both previews are always available to org admins and finance approvers, and change nothing |
+| **Off per organization until the product owner decides** | `TAX_REMEDIATION_OVERCOLLECTION_ORGS` and `TAX_REMEDIATION_DUPLICATES_ORGS` list the organization ids allowed to **execute**. Empty by default, so execution is off everywhere. The screen says so. |
+| **Two people** | An org admin proposes a batch with a reason; a **different** finance approver approves, which executes it. Rejecting needs a reason. |
+| **Capped** | `TAX_REMEDIATION_MAX_BATCH` (25) invoices per batch |
+| **Idempotent** | `tax_remediation_items` is unique per (kind, invoice), so an invoice is never remediated twice. Proposing one already remediated, or already in a proposed batch, is refused. |
+| **Only current findings** | A batch may only name invoices in this organization's current findings |
+| **Audited** | The tenant audit log records proposed, executed, rejected, withdrawn and reversed |
+| **Evidence** | Every executed or reversed batch produces a sealed evidence bundle (the Phase 5c format, kind `remediation_batch`), with the batch, the items (credit notes, removed and restored rows), approvals and history. Its SHA-256 is stored on the batch. |
+
+### Legacy discount over-collection
+
+- **Preview:** each affected invoice (from the T10 report, so percentage
+  and fixed document discounts are included), with the proposed
+  corrective credit amount (the estimated over-collected tax).
+- **Execute:** creates one corrective credit note per invoice: type
+  ADJUSTMENT, tax-only, as a **DRAFT** linked to the invoice.
+- **No silent mutation:**
+  - the invoice itself is never changed;
+  - the credit note is approved and issued through the normal Credit Notes
+    flow, so nothing reaches a customer automatically.
+
+### Duplicate legacy tax rows
+
+- **Preview:** per invoice:
+  - the rows that would be removed;
+  - the rows **flagged as not identical** (same invoice and rate but
+    different values; these are never removed);
+  - the tax-rows total before and after.
+- **True duplicates don't change the invoice.** The invoice's tax isn't
+  derived from these rows (`invoice_totals_change: false`).
+- **Execute:** archives every removed row whole in
+  `tax_duplicate_row_archive`, then removes it. Flagged rows are left
+  alone.
+- **Reverse:** an org admin, with a reason, re-inserts every archived row
+  with its original id, and it's audited.
+- **A reversed invoice stays recorded as remediated**, so it can't be put
+  in another batch.
+
+### Waiting on product decisions
+
+- **Legacy quote → invoice repricing (product question 1): no tooling.** It
+  waits on the product decision, and the screen says so.
+- **Turning execution on** for an organization: the product owner decides
+  per organization. Ops then adds the id to the setting.
+
+### Tables
+
+`tax_remediation_batches`, `tax_remediation_items` and
+`tax_duplicate_row_archive` (migration `c1f5d7b9e2a4`) are under the tenant
+record guard: key fields are frozen, and rows are deleted only by the
+erasure purge.
+
+### PR 4 tests
+
+| Test file | Covers |
+|---|---|
+| `backend/tests/privacy/test_tax_phase7_remediation.py` (6) | Previews change nothing and execution is off by default. **Corrective credit notes:** two people, DRAFT, tax-only 2.00, the invoice untouched, sealed, **never twice**, audited. Capped; only current findings; one proposed batch per invoice; rejecting needs a reason. **Duplicates:** only identical rows removed; archived; totals unchanged; reversal restores the same ids; can't reverse twice; not-identical rows can't be batched. **Evidence bundle** verifies, with items and approvals. HTTP roles (billing admin 403 on previews; finance can't propose; org admin can't approve), platform 403 (T13), other org 404. |
+| `frontend/.../ProviderScreens.test.jsx` (+4) | The "turned off" preview (axe); when enabled, select and propose, with remediated ones not selectable; a different finance approver approves; an org admin reverses an executed duplicate batch; other roles closed |
+
+Also in this PR: the console and tenant screen tests with multi-dialog MFA
+flows get a 20 s per-test limit instead of vitest's 5 s, because one hit 5 s
+on a loaded machine.
+
+**CI result:** _see PR_.

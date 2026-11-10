@@ -81,6 +81,10 @@ const STATUS_STYLES = {
   EXIT_NOT_YET: { icon: Clock, label: "Exit threshold not met yet", tone: "slate" },
   REGRESSION_CURRENT: { icon: CheckCircle2, label: "Regression report current", tone: "green" },
   REGRESSION_MISSING: { icon: AlertTriangle, label: "Regression report needed", tone: "amber" },
+  // Remediation (Phase 7 PR 4)
+  EXECUTED: { icon: CheckCircle2, label: "Executed", tone: "green" },
+  REVERSED: { icon: Archive, label: "Reversed", tone: "slate" },
+  REMEDIATED: { icon: BadgeCheck, label: "Already remediated", tone: "slate" },
 };
 
 const TONES = {

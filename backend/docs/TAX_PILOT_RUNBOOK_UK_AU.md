@@ -323,6 +323,29 @@ charged, without changing any invoice.
 - the comparisons appear within 15 minutes of issuing;
 - the platform view shows counts only.
 
+## Part 3c: Remediating legacy findings (Phase 7)
+
+Use this only after the product owner has approved remediation for the
+organization. Until then it is preview only.
+
+1. **Ops:** add the organization id to `TAX_REMEDIATION_OVERCOLLECTION_ORGS`
+   and/or `TAX_REMEDIATION_DUPLICATES_ORGS`, then redeploy.
+2. **Org admin** (`/billing/tax/governance/remediation`):
+   - review the previews: credit amounts, and rows to remove or flagged;
+   - select up to 25 invoices;
+   - **Propose batch** with a reason.
+3. **A different finance approver:** **Approve**. This executes the batch.
+4. **For corrective credit notes:** approve and issue each DRAFT credit note
+   on **Credit Notes** as usual.
+5. **Keep the batch's evidence** (Export evidence on the batch).
+6. **To undo a duplicate-row batch:** **Reverse from archive**, with a
+   reason. Credit notes are undone by voiding them in the credit-note flow.
+
+**Check:**
+- the invoices are unchanged;
+- the batch shows Executed, with an evidence SHA-256;
+- the T10 report and the duplicate count drop for the remediated invoices.
+
 ## Part 4: Rollback
 
 Use the smallest step that stops the problem.

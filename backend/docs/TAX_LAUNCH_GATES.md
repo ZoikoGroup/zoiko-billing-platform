@@ -329,6 +329,12 @@ NOT_APPLICABLE (G1, fixed).
       over the original, and per-market zero-tax and rate-mix shifts;
     - outputs: tenant review items and aggregate platform alerts;
     - no invoice is ever changed.
+  - **Phase 7 PR 4, targeted remediation:**
+    - previews only by default; execution is per organization, two-person,
+      capped, never twice, audited and evidence-bundled;
+    - over-collection gets corrective DRAFT credit notes;
+    - duplicate rows are archived, removed and reversible;
+    - quote → invoice repricing waits on product question 1.
   - Still open: QA and a manual WCAG pass.
 
 ### Gate 07: availability registry and visibility

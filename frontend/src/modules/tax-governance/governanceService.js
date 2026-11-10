@@ -171,3 +171,15 @@ export const exportShadowComparisons = ({ seller_entity_id, outcome, cause } = {
   api.get(`${T}/shadow/comparisons`, { params: { format: "csv", seller_entity_id: seller_entity_id || undefined,
     outcome: outcome || undefined, cause: cause || undefined } });
 export const getShadowComparison = (id) => api.get(`${T}/shadow/comparisons/${id}`);
+
+// ── Phase 7 PR 4: targeted remediation (preview by default; two people) ─
+export const getOvercollectionRemediation = () => api.get(`${T}/remediation/overcollection/preview`);
+export const getDuplicateRemediation = () => api.get(`${T}/remediation/duplicates/preview`);
+export const listRemediationBatches = ({ cursor } = {}) => api.get(`${T}/remediation/batches`, page({ cursor }));
+/** kind: OVERCOLLECTION_CREDIT | DUPLICATE_ROWS */
+export const proposeRemediation = (kind, invoiceIds, reason) =>
+  api.post(`${T}/remediation/batches`, { kind, invoice_ids: invoiceIds, reason });
+export const decideRemediation = (id, approve, body = {}) =>
+  api.post(`${T}/remediation/batches/${id}/${approve ? "approve" : "reject"}`, body);
+export const withdrawRemediation = (id) => api.post(`${T}/remediation/batches/${id}/withdraw`);
+export const reverseRemediation = (id, reason) => api.post(`${T}/remediation/batches/${id}/reverse`, { reason });
