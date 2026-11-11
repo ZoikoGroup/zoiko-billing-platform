@@ -361,7 +361,10 @@ NOT_APPLICABLE (G1, fixed).
     - over-collection gets corrective DRAFT credit notes;
     - duplicate rows are archived, removed and reversible;
     - quote → invoice repricing waits on product question 1.
-  - Still open: QA and a manual WCAG pass.
+  - **Phase 8 PR 6:** tenant reference rates (T9) and the reports hub (T10)
+    completed (G-5b-1 closed).
+  - Still open: QA and a manual WCAG 2.2 AA pass, **including the T9
+    reference rates and T10 reports hub screens**.
 
 ### Gate 07: availability registry and visibility
 - **Evidence:**

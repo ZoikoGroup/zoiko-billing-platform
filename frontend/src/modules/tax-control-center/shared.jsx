@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import {
-  AlertCircle, AlertTriangle, Archive, BadgeCheck, CheckCircle2, Circle, Clock, FileEdit, KeyRound,
-  Lock, MinusCircle, ShieldCheck, XCircle,
+  AlertCircle, AlertTriangle, Archive, BadgeCheck, CheckCircle2, Circle, Clock, FileEdit, Info, KeyRound, Lock, MinusCircle, ShieldCheck, XCircle,
 } from "lucide-react";
 
 import { Button, Field, FORM_CONTROL_CLASS, FormModal, Modal } from "../../components/billing-ui";
@@ -25,6 +24,7 @@ const STATUS_STYLES = {
   CAPTURED: { icon: CheckCircle2, label: "Evidence captured", tone: "green" },
   APPROVED: { icon: BadgeCheck, label: "Approved", tone: "blue" },
   SCHEDULED: { icon: Clock, label: "Scheduled", tone: "blue" },
+  REFERENCE_ONLY: { icon: Info, label: "Reference only", tone: "slate" },
   ROLLED_BACK: { icon: XCircle, label: "Rolled back", tone: "red" },
   VALIDATED: { icon: ShieldCheck, label: "Validated", tone: "blue" },
   IN_APPROVAL: { icon: Clock, label: "In approval", tone: "amber" },

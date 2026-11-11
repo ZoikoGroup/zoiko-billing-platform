@@ -8,7 +8,7 @@ import { InlineError, MUTED, STRONG, TaxStatusBadge, humanize, useReferenceList 
  * T9 for tenants and the P4 explorer for tax staff. Read-only. A
  * jurisdiction with no approved rate says so: never an implied 0%. */
 
-export function RateLookup({ listJurisdictions, lookupRates, idPrefix = "rates" }) {
+export function RateLookup({ listJurisdictions, lookupRates, idPrefix = "rates", tenantView = false, onResult, children }) {
   const base = useId();
   const jurisdictions = useReferenceList(listJurisdictions, true);
   const [jurisdictionId, setJurisdictionId] = useState("");
@@ -22,7 +22,9 @@ export function RateLookup({ listJurisdictions, lookupRates, idPrefix = "rates" 
     setBusy(true);
     setError(null);
     try {
-      setResult(await lookupRates({ jurisdiction_id: Number(jurisdictionId), as_of: asOf || undefined }));
+      const found = await lookupRates({ jurisdiction_id: Number(jurisdictionId), as_of: asOf || undefined });
+      setResult(found);
+      onResult?.(found, jurisdictions.find((j) => String(j.id) === String(jurisdictionId)));
     } catch (err) {
       setError(err?.message || "Couldn't look up rates.");
     } finally {
@@ -54,13 +56,14 @@ export function RateLookup({ listJurisdictions, lookupRates, idPrefix = "rates" 
             {approved ? `${result.items.length} approved reference rate(s)` : "no approved rate. This is not 0%: tax is not determined here."}
           </p>
           <p className={`text-xs ${MUTED}`}>{result.disclaimer}</p>
+          {children}
           {approved ? (
             <div className="overflow-x-auto">
               <table className="min-w-full text-left text-sm">
                 <caption className="sr-only">Reference rates</caption>
                 <thead>
                   <tr className={`border-b border-slate-200 text-xs uppercase dark:border-slate-700 ${MUTED}`}>
-                    {["Component", "Tax code", "Scope", "Rate", "Valid", "Status", "Source"].map((h) => (
+                    {["Component", "Tax code", "Scope", "Rate", "Valid", "Status", "Source"].concat(tenantView ? ["Use"] : []).map((h) => (
                       <th key={h} scope="col" className="px-2 py-2 font-semibold">{h}</th>
                     ))}
                   </tr>
@@ -75,11 +78,17 @@ export function RateLookup({ listJurisdictions, lookupRates, idPrefix = "rates" 
                       <td className={`px-2 py-2 ${STRONG}`}>{r.valid_from} → {r.valid_to || "open"}</td>
                       <td className="px-2 py-2"><TaxStatusBadge status={r.status} /></td>
                       <td className={`px-2 py-2 ${MUTED}`}>
+                        {tenantView && r.source?.authority && <span className={`block ${STRONG}`}>{r.source.authority}</span>}
                         {r.source?.permanent_url
                           ? <a href={r.source.permanent_url} target="_blank" rel="noreferrer" className="text-brand-700 underline dark:text-brand-300">{r.source.title}</a>
                           : r.source?.title}
                         {r.source?.citation ? ` (${r.source.citation})` : ""}
+                        {/* Tenants see the team, never a reviewer's name (the API still returns it: TAX_PHASE8.md). */}
+                        {tenantView && r.source?.reviewed_at && (
+                          <span className="block text-xs">Reviewed by Zoiko Tax Review on {String(r.source.reviewed_at).slice(0, 10)}</span>
+                        )}
                       </td>
+                      {tenantView && <td className="px-2 py-2"><TaxStatusBadge status="REFERENCE_ONLY" /></td>}
                     </tr>
                   ))}
                 </tbody>

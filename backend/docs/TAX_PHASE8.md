@@ -14,8 +14,8 @@ e-invoicing, or change legacy invoicing.
 | 3 | Emergency rollback (§10.3) | Merged (#159) |
 | 4 | Retroactive change analysis (§10.3, T04) | Merged (#160) |
 | 4b | Governed tax-only credit and retroactive remediation drafts | Outline below; not built |
-| 5 | Source change detection and review cadence (steps 01–03, §10.2) | This PR |
-| 6 | Tenant reference rates and reports screens (G-5b-1) | Planned |
+| 5 | Source change detection and review cadence (steps 01–03, §10.2) | Merged (#161) |
+| 6 | Tenant reference rates and reports screens (G-5b-1) | This PR |
 
 ## Open product questions (not acted on)
 
@@ -777,6 +777,77 @@ only.
 | `tests/test_tax_phase8_pg.py` (+1) | Observations can't be updated or deleted. |
 | `tests/test_tax_phase8_source_race_pg.py` (1, commits, CI race step) | Two workers: one observation per monitor per cycle and one request to the host. |
 | `frontend/.../TaxControlCenter.test.jsx` (+3) | **Fix B:** a diff with `<script>` and `<img onerror>` renders as text, no element, no execution (axe); flapping and manual reasons; closing reviews, recording checks and revalidations; a different person approves a weakening change. |
+
+**CI result:** _see PR_.
+
+---
+
+## PR 6: tenant reference rates and reports screens (G-5b-1)
+
+Frontend, plus one optional query parameter on an existing endpoint. Both
+screens existed in basic form since Phase 5c; this PR completes G-5b-1.
+
+### Reference rates (T9)
+
+- Every rate row carries a **"Reference only"** badge and a source summary:
+  authority, title (linked to the official page), citation, and
+  **"Reviewed by Zoiko Tax Review on <date>"** (adjustment B).
+- For the chosen jurisdiction, two separate facts (adjustment A); nothing
+  says "cleared" and the existing disclaimer stays:
+  - **Zoiko support:** "Zoiko calculates this market (native rule pack)",
+    "… (provider)", "Calculated from your organization's own approved rate",
+    "Research only" or "Reference only", from the published coverage
+    (`/tax/coverage`) and the jurisdiction's research-only label (PR 5);
+  - **Your entity:** "Activated (<mode>)" or "Not activated" for the
+    selected seller entity: an APPROVED activation in effect on the lookup
+    date, from the tenant activations API (`/tax/activations`). A role that
+    can't read activations sees that, not a guess.
+
+### Reports hub (T10)
+
+One screen for every tax report of the organization (org admins and
+finance approvers). Each card loads on its own, links to its screen, and
+shows amounts with the currency's minor units (`Intl.NumberFormat`: JPY 0,
+GBP 2, KWD 3; adjustment C):
+
+| Card | Source | Not applicable when |
+|---|---|---|
+| Legacy over-collection (CSV) | `/reports/legacy-discount-overcollection` | every entity is governed |
+| Duplicate tax rows (CSV) | `/reports/duplicate-tax-rows` | every entity is governed |
+| Shadow compare → Shadow compare screen | `/shadow/summary` | every entity is governed |
+| Anomaly findings → Review items (`?kind=anomalies`) | `/review-items?kind=TAX_SNAPSHOT_MISMATCH,CREDIT_EXCEEDS_ORIGINAL` | no governed entity |
+| Remediation → Remediation screen | `/remediation/batches` | every entity is governed |
+| Retroactive analyses → its screen | `/retro-analyses` | no governed entity |
+
+- **Not applicable vs no data (adjustment D):** a card that can't apply says
+  so ("Applies once your entity uses governed tax." or "Applies to invoices
+  issued under legacy manual tax"), separately from "no data yet". **Note:**
+  the review listed shadow compare and remediation as governed-only; they
+  apply to **legacy** invoices (shadow compare runs a legacy entity against
+  a governed pack; remediation corrects legacy findings), so their "not
+  applicable" condition is "every entity is governed". Retroactive analyses
+  and anomaly findings are the governed-only cards.
+- **Per-card access (adjustment E):** a 403 from a card's API shows "Your
+  role can't open this report." on that card; an error stays on its card.
+  Today no tenant role can open the hub but be refused one card's API (all
+  six APIs accept org admins and finance approvers), so the test simulates
+  the 403.
+- **Anomaly counts (answer 2):** the card and the Review items screen use
+  the same server-side filter (`kind` on `/review-items`, added here) and
+  the same kind list, so their counts match (tested).
+
+### Finding (adjustment B)
+
+`PublicSourceSummary.reviewed_by` (the public reference API) still returns
+the reviewer's display name. The tenant screen no longer shows it; removing
+it from the API response is a follow-up.
+
+### PR 6 tests
+
+| Test file | Covers |
+|---|---|
+| `frontend/.../ProviderScreens.test.jsx` (+5, 2 updated) | T9: badge, authority, "Zoiko Tax Review" (no person's name), Zoiko support and entity activation, never "cleared" (axe); research only and not activated with the disclaimer; no rate is not 0%. Hub: every card, minor units for JPY and KWD, links (axe); anomaly counts equal Review items for the same filter; not applicable vs no data; a 403 and an error stay on their cards. |
+| `backend/tests/privacy/test_tax_phase8_reports_hub.py` (1) | The `kind` filter returns exactly the anomaly kinds, matches the unfiltered list, and never another organization's. |
 
 **CI result:** _see PR_.
 

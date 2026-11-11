@@ -94,8 +94,8 @@ export const addCertificate = (customerId, body) => api.post(`${T}/customers/${c
 export const revokeCertificate = (id) => api.post(`${T}/exemption-certificates/${id}/revoke`);
 
 // ── T8 review items ────────────────────────────────────────────────────
-export const listReviewItems = ({ include_resolved, cursor } = {}) =>
-  api.get(`${T}/review-items`, page({ include_resolved, cursor }));
+export const listReviewItems = ({ include_resolved, kinds, cursor } = {}) =>
+  api.get(`${T}/review-items`, page({ include_resolved, kind: kinds?.length ? kinds.join(",") : undefined, cursor }));
 export const resolveReviewItem = (id) => api.post(`${T}/review-items/${id}/resolve`);
 
 // ── Phase 5c: T10 reports (org admin, finance approver) ─────────────────
