@@ -838,9 +838,9 @@ GBP 2, KWD 3; adjustment C):
 
 ### Finding (adjustment B)
 
-`PublicSourceSummary.reviewed_by` (the public reference API) still returns
-the reviewer's display name. The tenant screen no longer shows it; removing
-it from the API response is a follow-up.
+`PublicSourceSummary.reviewed_by` (the public reference API) returned the
+reviewer's display name. **Closed** in e051890 (findings burn-down, below):
+the API now says "Zoiko Tax Review".
 
 ### PR 6 tests
 
@@ -897,15 +897,14 @@ activated, reverted, re-checked and monitored; it didn't publish a market.
 | Production egress: if a proxy is used, it must enforce the source-host allowlist | Security owner (+ ops) | PR 5 |
 | MFA hardening (Phase 5d-F) and tenant MFA step-up sign-off | Security owner | Phase 5d |
 | Evidence retention vs erasure (certificates, address resolutions) | DPO | Phase 2 |
-| The reviewer name in the public reference-rates API (see findings) | DPO (+ product) | PR 6 |
 | Provider items: DPA, data residency, minimised payload | DPO | Phase 4 |
 
 ### Unfixed findings
 
 | Finding | Where | Suggested fix |
 |---|---|---|
-| The public reference-rates API (`PublicSourceSummary.reviewed_by`) still returns the reviewer's display name; tenant screens no longer show it | PR 6 | Return a team label (or nothing) from the API |
-| Phase 7 platform aggregates (P10 over-collection and duplicates, anomaly alerts) show exact amounts and counts for one or two organizations | PR 4 (fix B) | Apply the same banding as retroactive analyses |
+| ~~The public reference-rates API (`PublicSourceSummary.reviewed_by`) still returns the reviewer's display name~~ | PR 6 | **Closed** in e051890: returns "Zoiko Tax Review" |
+| ~~Phase 7 platform aggregates show exact amounts for one or two organizations~~ | PR 4 (fix B) | **Closed** in e051890: one shared banding rule (see below) |
 | The governed credit path can't express a tax-only correction, so retroactive remediation is preview only | PR 4 | PR 4b (outline above) |
 | Shared engine code (money path, `engines.py`) is outside the pack hash | PR 1 (decision) | Revisit if engine-core changes become frequent |
 | A deploy with drifted pack code isn't stopped; it fails closed at runtime with P1 | PR 1 (decision) | A deploy-time check needs production database access |
@@ -921,4 +920,46 @@ activated, reverted, re-checked and monitored; it didn't publish a market.
 
 Outlined above ("PR 4b outline"); not built. It needs its own plan and
 approval.
+
+---
+
+## Findings burn-down (after close-out)
+
+Both privacy findings from the close-out are closed in e051890.
+
+### Public reference rates name the team, not a person
+
+- `public_source_summary` returns `reviewed_by: "Zoiko Tax Review"` when the
+  source has been reviewed and `null` otherwise. No name, email or user id
+  reaches the public `/tax/rates` and jurisdiction responses.
+- The privileged `/source-revisions/{id}` view (TAX_REVIEWER /
+  TAX_PUBLISHER) keeps `reviewer_user_id` and the reviewer's name. The only
+  screen that shows the name (the console's source register) reads it from
+  there; the tenant reference-rates screen already showed the team label.
+
+### One banding rule for platform aggregates
+
+`app/modules/tax/aggregate_privacy.py` holds the PR 4 fix B rule: when fewer
+than 3 organizations are affected, platform amounts become magnitude bands
+(< 1k, 1k–10k, 10k–100k, > 100k) and counts stay exact. Every platform
+surface that shows money uses it.
+
+| Surface | Before | Now |
+|---|---|---|
+| Retroactive analysis platform view (PR 4) | Banded (own copy of the rule) | Banded via the shared module; output unchanged |
+| P10 legacy over-collection (Phase 7) | Exact totals | Banded below 3 organizations, with `amounts` ("exact" or "banded (fewer than 3 organizations)"); the Findings screen says when amounts are banded |
+| P10 duplicate tax rows | Counts only | Unchanged; tested to stay counts only |
+| Anomaly runs and alerts | Counts and percentages | Unchanged; alert text tested to carry no amounts or currencies |
+| Remediation | Tenant-only | Unchanged; tested that no platform route exists |
+
+Tenant reports are never banded.
+
+### Tests
+
+| Test file | Covers |
+|---|---|
+| `backend/tests/privacy/test_tax_phase8_findings_burndown.py` (9) | Public rates carry no person identifier and name the team; unreviewed sources claim no reviewer; the privileged view keeps the reviewer; the shared rule's bands and threshold; retroactive banding unchanged and using the shared rule; over-collection banded with 2 organizations and exact with 3; tenant report exact; duplicates counts only; every anomaly alert fires with no amounts in its text; no platform remediation route |
+| `backend/tests/test_tax_phase1_registry.py` (1 updated) | The public blob no longer contains the reviewer's name |
+| `backend/tests/privacy/test_tax_phase3a_reports_access.py`, `backend/tests/test_tax_phase3a_governed.py` (updated) | Platform over-collection with one organization is banded |
+| `frontend/.../ProviderOperations.test.jsx` (+1, 1 updated) | The banded note shows with fewer than 3 organizations and not otherwise |
 
