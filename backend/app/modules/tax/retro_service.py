@@ -58,8 +58,9 @@ BASES = {
     "quarantine": "No comparison: the rules for these dates were quarantined; manual review required",
 }
 FURTHEST_AHEAD = "Etc/GMT-14"          # UTC+14: a date is "past" once it has started anywhere
-BANDS = ((Decimal("1000"), "< 1k"), (Decimal("10000"), "1k–10k"), (Decimal("100000"), "10k–100k"))
-SMALL_POPULATION = 3
+from app.modules.tax.aggregate_privacy import (  # noqa: E402  the one shared banding rule
+    BANDS, SMALL_POPULATION, amounts_note, band, band_net, small,
+)
 CENT = Decimal("0.01")
 
 
@@ -390,26 +391,19 @@ def aggregate(results) -> dict:
                              for k, v in sorted(per_currency.items())}}
 
 
-def band(amount) -> str:
-    value = abs(_dec(amount))
-    for limit, label in BANDS:
-        if value < limit:
-            return label
-    return "> 100k"
-
-
 def platform_view(aggregates: Optional[dict]) -> Optional[dict]:
-    """Fewer than 3 organizations: amounts become magnitude bands (fix B)."""
+    """Fewer than 3 organizations: amounts become magnitude bands (fix B),
+    by the shared rule in aggregate_privacy.py."""
     if not aggregates:
         return aggregates
-    if aggregates.get("organizations_affected", 0) >= SMALL_POPULATION:
-        return {**aggregates, "amounts": "exact"}
+    orgs = aggregates.get("organizations_affected", 0)
+    if not small(orgs):
+        return {**aggregates, "amounts": amounts_note(orgs)}
     banded = {}
     for cur, v in (aggregates.get("per_currency") or {}).items():
-        net = _dec(v.get("net"))
-        banded[cur] = {"net": f"{band(net)} ({'over' if net > 0 else 'under' if net < 0 else 'none'})",
-                       "over": band(v.get("over")), "under": band(v.get("under")), "documents": v.get("documents")}
-    return {**aggregates, "per_currency": banded, "amounts": f"banded (fewer than {SMALL_POPULATION} organizations)"}
+        banded[cur] = {"net": band_net(v.get("net")), "over": band(v.get("over")), "under": band(v.get("under")),
+                       "documents": v.get("documents")}
+    return {**aggregates, "per_currency": banded, "amounts": amounts_note(orgs)}
 
 
 def summary_text(aggregates: dict) -> str:

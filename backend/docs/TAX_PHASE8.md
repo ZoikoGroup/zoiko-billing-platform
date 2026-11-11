@@ -15,7 +15,7 @@ e-invoicing, or change legacy invoicing.
 | 4 | Retroactive change analysis (§10.3, T04) | Merged (#160) |
 | 4b | Governed tax-only credit and retroactive remediation drafts | Outline below; not built |
 | 5 | Source change detection and review cadence (steps 01–03, §10.2) | Merged (#161) |
-| 6 | Tenant reference rates and reports screens (G-5b-1) | This PR |
+| 6 | Tenant reference rates and reports screens (G-5b-1) | Merged (#162) |
 
 ## Open product questions (not acted on)
 
@@ -838,9 +838,9 @@ GBP 2, KWD 3; adjustment C):
 
 ### Finding (adjustment B)
 
-`PublicSourceSummary.reviewed_by` (the public reference API) still returns
-the reviewer's display name. The tenant screen no longer shows it; removing
-it from the API response is a follow-up.
+`PublicSourceSummary.reviewed_by` (the public reference API) returned the
+reviewer's display name. **Closed** in e051890 (findings burn-down, below):
+the API now says "Zoiko Tax Review".
 
 ### PR 6 tests
 
@@ -850,4 +850,116 @@ it from the API response is a follow-up.
 | `backend/tests/privacy/test_tax_phase8_reports_hub.py` (1) | The `kind` filter returns exactly the anomaly kinds, matches the unfiltered list, and never another organization's. |
 
 **CI result:** _see PR_.
+
+---
+
+## Known flaky tests
+
+Tests that have failed without a code fault. Non-tax tests are recorded here
+only; they are not changed by this phase.
+
+| Test | Where it failed | Cause | Status | Telling a real failure from a flake |
+|---|---|---|---|---|
+| `TaxControlCenter.test.jsx` › approvals inbox › "prompts for step-up and retries the approval once with the code" and "shows a wrong code in the prompt…" | CI on 07e2135 (Phase 8 PR 6); once locally on 10 Nov | Timing: the test clicked Confirm as soon as any dialog appeared and waited vitest's default 1 s for the retried approval; a loaded runner exceeded it | **Fixed** in 0a92f1b: waits for the named "Confirm with MFA" dialog, an enabled Confirm button and up to 5 s for the retry. The same hardening was applied to the recovery-code flows in 9f6081e | A real fault fails the same way every run and in isolation (`npx vitest run src/modules/tax-control-center/TaxControlCenter.test.jsx`); a flake passes on re-run and alone |
+| `create-invoice-wizard*.test.jsx` (billing, non-tax) | Phase 0, under a 2-worker local run | vitest's 5 s per-test timeout on a slow, multi-step wizard render under parallel load | **Not changed** (non-tax). Passes 6/6 alone with CI's single-worker settings (`TAX_PHASE0.md`) | A timeout ("Test timed out in 5000ms") under parallel load that passes alone is the flake; an assertion failure, or a failure alone, is real |
+| `backend/tests/test_aggregate_cache.py` (non-tax) | Locally on 10 Nov, on `main` and on the branch alike (1–2 tests: `test_status_change_and_bulk_delete_invalidate`, `test_rollback_keeps_cache_commit_invalidates`); green in CI | Not established. It depends on run order and the local environment: the cache service uses Redis when `REDIS_URL` is set and reachable, otherwise an in-process cache, and query-count assertions are sensitive to what earlier tests left warm | **Not changed** (non-tax) | Reproduce on `main` with the same environment: if `main` fails the same way, it is environmental; CI (no Redis) is the reference |
+
+---
+
+## Phase 8 close-out
+
+### What shipped
+
+| PR | Merged | Merge commit | What it delivers |
+|---|---|---|---|
+| 1. Rule-pack integrity | #157 | e38822b | A code hash per pack version, frozen; quotes refused (`RULE_PACK_INTEGRITY_FAILED`) and P1 when running code differs; each native quote records its pack version and hash; STALE at issue if the version changed |
+| 2. Scheduled activation | #158 | c8f0119 | Effective-dated packs (the tax date picks the version); availability switches at a local time; DST-safe scheduling; an idempotent activation job; P1 when late; two-person, MFA cancellation |
+| 3. Emergency rollback | #159 | ba926ee | Two publishers with MFA; a rollback version runs the restored code from today; the rolled-back range fails closed (`RULE_PACK_ROLLED_BACK`); quarantine for a followed version; immediate availability rollback; code-retention manifest, CI step and publish gate |
+| 4. Retroactive change analysis | #160 | 46d2614 | Past-dated rate and pack versions need a current preview; rollbacks and retroactive publishes run a read-only per-tenant comparison against commit-time facts; tenant-private reports; banded platform aggregates; remediation preview only |
+| 5. Source change detection | #161 | f4e45c0 | Allowlisted official-source monitors by risk tier; DNS-rebinding-safe fetching; robots.txt and courtesy limits; append-only observations; change reviews with escaped diffs; manual-check and re-verification reminders; revalidation due dates; P2/P3 alerts |
+| 6. Tenant rates and reports | #162 | a98e709 | Reference rates with "Reference only" badges, source summaries, Zoiko support and entity activation; a reports hub with the Phase 7 and PR 4 reports |
+
+**No market is live.** Phase 8 changed how approved content is protected,
+activated, reverted, re-checked and monitored; it didn't publish a market.
+
+### Open decisions and their owners
+
+| Decision | Owner | Since |
+|---|---|---|
+| Confirm the six monitored hosts; decide on the EU sources (European Commission, TEDB) | Tax lead | PR 5 |
+| Sign off which sources are monitored, their tiers and cadences (gate 02 stays not passed until then) | Tax lead | PR 5 |
+| Sign off the GB and AU packs and their rates (gates 01, 02, 04) | Tax lead (+ Finance controller, QA for gate 04) | Phase 3b |
+| Under-collection after a retroactive change: recover or not, and how (report only today) | Product owner + tax lead | PR 4 |
+| Repricing legacy quotes on conversion (product question 1) | Product owner | Phase 3a |
+| Which organizations may run remediation (Phase 7 and PR 4b allow-lists; empty today) | Product owner | Phase 7 |
+| Product questions 3, 4 (line items) and 5 | Product owner | Phase 3a |
+| A single-person, time-bound break-glass stop for one native market | Security owner + tax lead | PR 3 |
+| Production egress: if a proxy is used, it must enforce the source-host allowlist | Security owner (+ ops) | PR 5 |
+| MFA hardening (Phase 5d-F) and tenant MFA step-up sign-off | Security owner | Phase 5d |
+| Evidence retention vs erasure (certificates, address resolutions) | DPO | Phase 2 |
+| Provider items: DPA, data residency, minimised payload | DPO | Phase 4 |
+
+### Unfixed findings
+
+| Finding | Where | Suggested fix |
+|---|---|---|
+| ~~The public reference-rates API (`PublicSourceSummary.reviewed_by`) still returns the reviewer's display name~~ | PR 6 | **Closed** in e051890: returns "Zoiko Tax Review" |
+| ~~Phase 7 platform aggregates show exact amounts for one or two organizations~~ | PR 4 (fix B) | **Closed** in e051890: one shared banding rule (see below) |
+| The governed credit path can't express a tax-only correction, so retroactive remediation is preview only | PR 4 | PR 4b (outline above) |
+| Shared engine code (money path, `engines.py`) is outside the pack hash | PR 1 (decision) | Revisit if engine-core changes become frequent |
+| A deploy with drifted pack code isn't stopped; it fails closed at runtime with P1 | PR 1 (decision) | A deploy-time check needs production database access |
+| Quotes committed before PR 1 have no pack hash; before PR 4 no commit-time facts, so pack comparisons of them are manual review | PRs 1, 4 | None (history can't be reconstructed) |
+| Past-dated tenant-configured rates over issued invoices are refused; there is no tenant retroactive analysis | PR 4 | A tenant trigger for retroactive analysis |
+| Flapping sources are only made visible; no ignore patterns | PR 5 | Per-monitor ignore patterns when dismissal data shows the need |
+| Source artifacts are stored in the database (bytea, 25 MB cap) | Phase 1, PR 5 | Object storage with retention controls |
+| The rollback migration's downgrade fails if several versions of a pack are ACTIVE | PR 3 | Documented; supersede first |
+| The staging rehearsals (rollback, source monitoring) haven't been run | PRs 3, 5 | Gate 05/06 item |
+| QA walkthrough and a manual WCAG 2.2 AA pass of the console and tenant screens, including T9 and the T10 hub | Phase 5 onwards | Gate 06 item |
+
+### PR 4b
+
+Outlined above ("PR 4b outline"); not built. It needs its own plan and
+approval.
+
+---
+
+## Findings burn-down (after close-out)
+
+Both privacy findings from the close-out are closed in e051890.
+
+### Public reference rates name the team, not a person
+
+- `public_source_summary` returns `reviewed_by: "Zoiko Tax Review"` when the
+  source has been reviewed and `null` otherwise. No name, email or user id
+  reaches the public `/tax/rates` and jurisdiction responses.
+- The privileged `/source-revisions/{id}` view (TAX_REVIEWER /
+  TAX_PUBLISHER) keeps `reviewer_user_id` and the reviewer's name. The only
+  screen that shows the name (the console's source register) reads it from
+  there; the tenant reference-rates screen already showed the team label.
+
+### One banding rule for platform aggregates
+
+`app/modules/tax/aggregate_privacy.py` holds the PR 4 fix B rule: when fewer
+than 3 organizations are affected, platform amounts become magnitude bands
+(< 1k, 1k–10k, 10k–100k, > 100k) and counts stay exact. Every platform
+surface that shows money uses it.
+
+| Surface | Before | Now |
+|---|---|---|
+| Retroactive analysis platform view (PR 4) | Banded (own copy of the rule) | Banded via the shared module; output unchanged |
+| P10 legacy over-collection (Phase 7) | Exact totals | Banded below 3 organizations, with `amounts` ("exact" or "banded (fewer than 3 organizations)"); the Findings screen says when amounts are banded |
+| P10 duplicate tax rows | Counts only | Unchanged; tested to stay counts only |
+| Anomaly runs and alerts | Counts and percentages | Unchanged; alert text tested to carry no amounts or currencies |
+| Remediation | Tenant-only | Unchanged; tested that no platform route exists |
+
+Tenant reports are never banded.
+
+### Tests
+
+| Test file | Covers |
+|---|---|
+| `backend/tests/privacy/test_tax_phase8_findings_burndown.py` (9) | Public rates carry no person identifier and name the team; unreviewed sources claim no reviewer; the privileged view keeps the reviewer; the shared rule's bands and threshold; retroactive banding unchanged and using the shared rule; over-collection banded with 2 organizations and exact with 3; tenant report exact; duplicates counts only; every anomaly alert fires with no amounts in its text; no platform remediation route |
+| `backend/tests/test_tax_phase1_registry.py` (1 updated) | The public blob no longer contains the reviewer's name |
+| `backend/tests/privacy/test_tax_phase3a_reports_access.py`, `backend/tests/test_tax_phase3a_governed.py` (updated) | Platform over-collection with one organization is banded |
+| `frontend/.../ProviderOperations.test.jsx` (+1, 1 updated) | The banded note shows with fewer than 3 organizations and not otherwise |
 

@@ -957,7 +957,7 @@ def test_reports_tenant_detail_and_platform_aggregate(w):
     assert tenant["invoices"][0]["estimated_overcollected_tax"] == Decimal("2.00")
     platform = reports.platform_overcollection()
     assert platform["organizations_affected"] == 1 and platform["invoice_count"] == 1
-    assert platform["totals_by_currency"][0]["estimated_overcollected_tax"] == Decimal("2.00")
+    assert platform["totals_by_currency"][0]["estimated_overcollected_tax"] == "< 1k"     # one org: banded (Phase 8)
     assert "LEG-1" not in str(platform) and "invoices" not in platform
     assert reports.tenant_duplicates(w["org"].id)["duplicate_rows"] == 2
     dup = reports.platform_duplicates()
@@ -988,7 +988,7 @@ def test_f3_overcollection_includes_fixed_document_discounts(w):
     assert rows["FIXED-1"]["estimated_overcollected_tax"] == Decimal("2.00")     # 40 x 10 / 200
     assert rows["PCT-1"]["estimated_overcollected_tax"] == Decimal("2.00")       # 20 x 10 / 100
     platform = TaxFindingsReportService(db).platform_overcollection()
-    assert platform["invoice_count"] == 2 and platform["totals_by_currency"][0]["estimated_overcollected_tax"] == Decimal("4.00")
+    assert platform["invoice_count"] == 2 and platform["totals_by_currency"][0]["estimated_overcollected_tax"] == "< 1k"
     assert "FIXED-1" not in str(platform) and "invoices" not in platform
     assert "fixed document discounts" in platform["method"]
 
