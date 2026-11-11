@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useState } from "react";
+import { ANOMALY_KINDS } from "./money";
 import { Plus, Search } from "lucide-react";
 
 import { Button, Field, FORM_CONTROL_CLASS, FormGrid, FormModal, Select } from "../../components/billing-ui";
@@ -380,7 +381,11 @@ export function CustomerEvidenceScreen({ user }) {
 
 export function ReviewItemsScreen({ user }) {
   const [includeResolved, setIncludeResolved] = useState(false);
-  const list = useCursorList(({ cursor }) => listReviewItems({ include_resolved: includeResolved || undefined, cursor }), [includeResolved]);
+  // Phase 8 PR 6: ?kind=anomalies opens the same filter the Reports hub counts.
+  const [onlyAnomalies, setOnlyAnomalies] = useState(
+    () => new URLSearchParams(window.location.search).get("kind") === "anomalies");
+  const list = useCursorList(({ cursor }) => listReviewItems({ include_resolved: includeResolved || undefined,
+    kinds: onlyAnomalies ? ANOMALY_KINDS : undefined, cursor }), [includeResolved, onlyAnomalies]);
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState(null);
   const resolve = async (item) => {
@@ -396,6 +401,10 @@ export function ReviewItemsScreen({ user }) {
       <label className={`mb-3 flex items-center gap-2 text-sm ${STRONG}`}>
         <input type="checkbox" checked={includeResolved} onChange={(e) => setIncludeResolved(e.target.checked)} />
         Include resolved items
+      </label>
+      <label className={`mb-3 flex items-center gap-2 text-sm ${STRONG}`}>
+        <input type="checkbox" checked={onlyAnomalies} onChange={(e) => setOnlyAnomalies(e.target.checked)} />
+        Only anomaly findings (snapshot mismatch, credit over original)
       </label>
       <InlineError message={error || list.error} />
       {list.items.length === 0 && !list.loading && <p className={`py-4 text-sm ${MUTED}`}>Nothing needs review.</p>}

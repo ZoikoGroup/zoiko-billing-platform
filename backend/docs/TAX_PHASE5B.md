@@ -100,7 +100,7 @@ These mirror the backend dependencies:
 
 | # | Gap | Effect today |
 |---|---|---|
-| G-5b-1 | Tenant **reference rates (T9)** and **reports (T10)** screens | Not built (not in this PR's scope); the APIs exist |
+| G-5b-1 | Tenant **reference rates (T9)** and **reports (T10)** screens | **Closed:** built in Phase 5c, completed in Phase 8 PR 6 (badges, source summaries, support and activation facts; the reports hub with the Phase 7 and Phase 8 PR 4 reports). `TAX_PHASE8.md` |
 | G-5b-2 | No **provider-connection or stuck-transaction screens** for tenants | Provider activations pick an existing connection; connections are managed through the API |
 | G-5b-3 | **No product names on classifications** | The classification view carries only `product_id`, so the list shows "Product #5". The proposal picker shows names. A `product_name` field on the view would fix it. |
 | G-5b-4 | **Customer search uses the billing customers list** | Needs `search_term`; fine for now, and no tax-specific customer index |

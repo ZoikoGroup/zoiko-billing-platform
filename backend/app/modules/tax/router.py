@@ -900,9 +900,15 @@ def revoke_exemption_certificate(certificate_id: int, db: Session = Depends(get_
 # ── Review items (T14) and tax context ──────────────────────────────────
 
 @router.get("/review-items", summary="Tax evidence review queue")
-def list_review_items(include_resolved: bool = Query(False), page: PageParams = Depends(),
+def list_review_items(include_resolved: bool = Query(False),
+                      kind: Optional[str] = Query(None, max_length=300,
+                                                  description="Phase 8 PR 6: comma-separated kinds to filter by"),
+                      page: PageParams = Depends(),
                       db: Session = Depends(get_db), organization_id: int = Depends(get_organization_id)):
     items = TaxReviewService(db).list_items(organization_id, None if include_resolved else ReviewItemStatus.OPEN)
+    if kind:
+        wanted = {k.strip().upper() for k in kind.split(",") if k.strip()}
+        items = [i for i in items if getattr(i.kind, "name", i.kind) in wanted]
     rows, next_cursor = paginate(items, page)
     return {"items": [view_review_item(i) for i in rows], "next_cursor": next_cursor}
 

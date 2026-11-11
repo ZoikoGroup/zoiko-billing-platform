@@ -24,6 +24,7 @@ const { svc, current } = vi.hoisted(() => ({
     "getShadowComparison", "getOvercollectionRemediation", "getDuplicateRemediation", "listRemediationBatches",
     "proposeRemediation", "decideRemediation", "withdrawRemediation", "reverseRemediation",
     "listRetroAnalyses", "listRetroDocuments", "exportRetroDocuments",
+    "listCoverage", "listActivations", "listReviewItems",
   ].map((k) => [k, vi.fn()])),
 }));
 vi.mock("../../api/client", async (importOriginal) => ({ ...(await importOriginal()), getStoredUser: () => current.user }));
@@ -80,6 +81,11 @@ afterEach(() => { cleanup(); click.mockRestore(); delete URL.createObjectURL; de
 
 describe("T10 reports", () => {
   beforeEach(() => {
+    svc.listLegalEntities.mockImplementation(() => page([{ id: 10, legal_name: "Acme Ltd", tax_regime: "LEGACY_MANUAL" }]));
+    svc.getShadowSummary.mockResolvedValue({ compared: 0 });
+    svc.listReviewItems.mockImplementation(() => page([]));
+    svc.listRemediationBatches.mockImplementation(() => page([]));
+    svc.listRetroAnalyses.mockResolvedValue({ items: [] });
     svc.getOvercollectionReport.mockImplementation((format) => (format === "csv"
       ? Promise.resolve("invoice_number,issue_date\nINV-7,2026-01-01\n")
       : Promise.resolve({ method: "Estimate = tax x discount share.",
@@ -99,8 +105,8 @@ describe("T10 reports", () => {
     URL.createObjectURL = vi.fn(() => "blob:csv");
     URL.revokeObjectURL = vi.fn();
     const { container } = renderAt("reports");
-    expect(await screen.findByText("5.00 (fixed)")).toBeInTheDocument();
-    expect(screen.getByText("10.00 (10%)")).toBeInTheDocument();
+    expect(await screen.findByText("£5.00 (fixed)")).toBeInTheDocument();
+    expect(screen.getByText("£10.00 (10%)")).toBeInTheDocument();
     expect(screen.getByText(/1 duplicate row\(s\)/)).toBeInTheDocument();
     fireEvent.click(screen.getAllByRole("button", { name: "Export CSV" })[0]);
     await waitFor(() => expect(svc.getOvercollectionReport).toHaveBeenCalledWith("csv"));
@@ -346,7 +352,15 @@ describe("connection mode change", () => {
 
 describe("T9 reference rates", () => {
   beforeEach(() => {
-    svc.listJurisdictions.mockImplementation(() => page([{ id: 1, code: "GB", name: "United Kingdom" }, { id: 2, code: "FR", name: "France" }]));
+    svc.listJurisdictions.mockImplementation(() => page([
+      { id: 1, code: "GB", name: "United Kingdom", billing_clearance: "Cleared for billing in published markets" },
+      { id: 2, code: "FR", name: "France", billing_clearance: "Not cleared for billing" },
+      { id: 3, code: "NZ", name: "New Zealand", billing_clearance: "Research only: not cleared for billing" }]));
+    svc.listCoverage.mockImplementation(() => page([{ jurisdiction_code: "GB", tax_type: "VAT", transaction_class: "B2B_SERVICES",
+      mode: "NATIVE_RULEPACK_APPROVED", state: "SUPPORTED" }]));
+    svc.listLegalEntities.mockImplementation(() => page([{ id: 10, legal_name: "Acme Ltd", is_default: true }]));
+    svc.listActivations.mockImplementation(() => page([{ id: 4, jurisdiction_id: 1, status: "APPROVED", mode: "NATIVE_RULEPACK_APPROVED",
+      effective_from: "2025-01-01", effective_to: null }]));
   });
 
   it("shows published rates with their source", async () => {
@@ -354,7 +368,8 @@ describe("T9 reference rates", () => {
       coverage: "APPROVED_REFERENCE_RATES", disclaimer: "Reference only; not an amount owed.",
       items: [{ id: 5, component_code: "GB-VAT", tax_type: "VAT", tax_code: "standard", product_scope: "GENERAL", rate_percent: "20",
         valid_from: "2011-01-04", valid_to: null, status: "ACTIVE",
-        source: { title: "VAT rates", permanent_url: "https://www.gov.uk/vat-rates", citation: "HMRC" } }] });
+        source: { authority: "HM Revenue & Customs", title: "VAT rates", permanent_url: "https://www.gov.uk/vat-rates",
+          citation: "HMRC", reviewed_by: "Mara Maker", reviewed_at: "2026-11-01T10:00:00Z" } }] });
     const { container } = renderAt("rates");
     await waitFor(() => expect(screen.getByRole("option", { name: "GB — United Kingdom" })).toBeInTheDocument());
     fireEvent.change(screen.getByLabelText(/^Jurisdiction/), { target: { value: "1" } });
@@ -362,7 +377,26 @@ describe("T9 reference rates", () => {
     expect(await screen.findByText("20%")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "VAT rates" })).toHaveAttribute("href", "https://www.gov.uk/vat-rates");
     expect(svc.lookupReferenceRates).toHaveBeenCalledWith({ jurisdiction_id: 1, as_of: undefined });
+    expect(screen.getByText("Reference only")).toBeInTheDocument();                                  // badge per rate
+    expect(screen.getByText("HM Revenue & Customs")).toBeInTheDocument();
+    expect(screen.getByText("Reviewed by Zoiko Tax Review on 2026-11-01")).toBeInTheDocument();
+    expect(screen.queryByText(/Mara Maker/)).not.toBeInTheDocument();                                // no person's name (B)
+    expect(await screen.findByText("Zoiko calculates this market (native rule pack)")).toBeInTheDocument();
+    expect(await screen.findByText("Activated (Native rulepack approved)")).toBeInTheDocument();
+    expect(screen.queryByText(/Cleared for billing/)).not.toBeInTheDocument();                       // (A) never shown
     expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it("separates Zoiko support from the entity's activation (research only, not activated)", async () => {
+    svc.lookupReferenceRates.mockResolvedValue({ jurisdiction: { id: 3, code: "NZ", name: "New Zealand" }, as_of: "2026-11-06",
+      coverage: "NO_APPROVED_RATE", disclaimer: "Reference only.", items: [] });
+    renderAt("rates");
+    await waitFor(() => expect(screen.getByRole("option", { name: "NZ — New Zealand" })).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText(/^Jurisdiction/), { target: { value: "3" } });
+    fireEvent.click(screen.getByRole("button", { name: "Look up" }));
+    expect(await screen.findByText("Research only")).toBeInTheDocument();
+    expect(await screen.findByText("Not activated")).toBeInTheDocument();
+    expect(screen.getByText("Reference only.")).toBeInTheDocument();                                  // disclaimer kept
   });
 
   it("says a missing rate is not 0%", async () => {
@@ -374,6 +408,7 @@ describe("T9 reference rates", () => {
     fireEvent.click(screen.getByRole("button", { name: "Look up" }));
     expect(await screen.findByText(/no approved rate. This is not 0%/)).toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(await screen.findByText("Reference only")).toBeInTheDocument();                           // FR: no market
   });
 });
 
@@ -683,6 +718,85 @@ describe("retroactive analysis", () => {
     renderAt("retro");
     expect(await screen.findByText(/Retroactive analysis is for organization admins and finance approvers/)).toBeInTheDocument();
     expect(svc.listRetroAnalyses).not.toHaveBeenCalled();
+  });
+});
+
+
+// ── Phase 8 PR 6: the Reports hub ───────────────────────────────────────
+
+describe("reports hub", () => {
+  const governedAndLegacy = [{ id: 10, legal_name: "Acme Ltd", tax_regime: "LEGACY_MANUAL" },
+                             { id: 11, legal_name: "Acme Governed", tax_regime: "GOVERNED" }];
+  const anomalies = [
+    { id: 1, kind: "TAX_SNAPSHOT_MISMATCH", status: "OPEN", detail: "a", subject_type: "Invoice", subject_id: 7 },
+    { id: 2, kind: "CREDIT_EXCEEDS_ORIGINAL", status: "OPEN", detail: "b", subject_type: "Invoice", subject_id: 8 },
+    { id: 3, kind: "TAX_SNAPSHOT_MISMATCH", status: "OPEN", detail: "c", subject_type: "Invoice", subject_id: 9 },
+  ];
+  beforeEach(() => {
+    current.user = ADMIN;
+    svc.listLegalEntities.mockImplementation(() => page(governedAndLegacy));
+    svc.getOvercollectionReport.mockResolvedValue({ method: "m", totals_by_currency: [
+      { currency: "JPY", invoice_count: 1, tax_amount: "1000", estimated_overcollected_tax: "100" },
+      { currency: "KWD", invoice_count: 1, tax_amount: "12.345", estimated_overcollected_tax: "1.234" }], invoices: [] });
+    svc.getDuplicateRowsReport.mockResolvedValue({ duplicate_rows: 0, note: "", invoices: [] });
+    svc.getShadowSummary.mockResolvedValue({ compared: 40, match_rate: 0.95, would_have_been_blocked: 1, unexplained: 0,
+      differences_by_cause: { RATE: 2 } });
+    svc.listReviewItems.mockImplementation(({ kinds }) => page(kinds ? anomalies.filter((i) => kinds.includes(i.kind)) : anomalies));
+    svc.listRemediationBatches.mockImplementation(() => page([{ id: 4, state: "EXECUTED" }, { id: 5, state: "PROPOSED" }]));
+    svc.listRetroAnalyses.mockResolvedValue({ items: [{ id: 3, trigger_kind: "rate", documents: 2,
+      per_currency: { JPY: { net: "100", over: "100", under: "0" } } }] });
+  });
+
+  it("shows every card with minor-unit amounts and links to each screen", async () => {
+    const { container } = renderAt("reports");
+    expect(await screen.findByText("JP¥1,000")).toBeInTheDocument();                                 // JPY: 0 decimals
+    expect(screen.getByText("KWD 12.345")).toBeInTheDocument();                                      // KWD: 3 decimals
+    expect(await screen.findByText(/40 invoice\(s\) compared; match rate 95%/)).toBeInTheDocument();
+    expect(await screen.findByText(/3 open finding\(s\): 2 tax snapshot mismatch, 1 credit exceeds original/)).toBeInTheDocument();
+    expect(await screen.findByText(/1 executed, 1 proposed batch/)).toBeInTheDocument();
+    expect(await screen.findByText(/JPY: over-collected JP¥100, under-collected JP¥0/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open shadow compare" })).toHaveAttribute("href", "/billing/tax/governance/shadow");
+    expect(screen.getByRole("link", { name: "Open remediation" })).toHaveAttribute("href", "/billing/tax/governance/remediation");
+    expect(screen.getByRole("link", { name: "Open retroactive analysis" })).toHaveAttribute("href", "/billing/tax/governance/retro");
+    expect(screen.getByRole("link", { name: "Open in review items" })).toHaveAttribute("href", "/billing/tax/governance/review?kind=anomalies");
+    expect(svc.listReviewItems).toHaveBeenCalledWith(expect.objectContaining({ kinds: ["TAX_SNAPSHOT_MISMATCH", "CREDIT_EXCEEDS_ORIGINAL"] }));
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it("anomaly counts equal what Review items shows for the same filter", async () => {
+    renderAt("reports");
+    expect(await screen.findByText(/3 open finding\(s\)/)).toBeInTheDocument();
+    cleanup();
+    window.history.pushState({}, "", "/billing/tax/governance/review?kind=anomalies");
+    renderAt("review");
+    expect(await screen.findByRole("checkbox", { name: /Only anomaly findings/ })).toBeChecked();
+    await waitFor(() => expect(screen.getAllByText(/^Tax snapshot mismatch$|^Credit exceeds original$/)).toHaveLength(3));
+    window.history.pushState({}, "", "/");
+  });
+
+  it("distinguishes not applicable from no data yet", async () => {
+    svc.listLegalEntities.mockImplementation(() => page([{ id: 10, legal_name: "Acme Ltd", tax_regime: "LEGACY_MANUAL" }]));
+    svc.getShadowSummary.mockResolvedValue({ compared: 0 });
+    svc.listRemediationBatches.mockImplementation(() => page([]));
+    renderAt("reports");
+    expect(await screen.findAllByText("Applies once your entity uses governed tax.")).toHaveLength(2);   // anomalies, retro
+    expect(await screen.findByText(/No shadow comparison yet/)).toBeInTheDocument();                     // legacy: no data yet
+    expect(await screen.findByText("No remediation batches yet.")).toBeInTheDocument();
+    cleanup();
+    svc.listLegalEntities.mockImplementation(() => page([{ id: 11, legal_name: "Acme Governed", tax_regime: "GOVERNED" }]));
+    svc.listRetroAnalyses.mockResolvedValue({ items: [] });
+    renderAt("reports");
+    expect(await screen.findByText("No retroactive analysis has affected your organization yet.")).toBeInTheDocument();
+    expect(screen.getAllByText(/Applies to invoices issued under legacy manual tax/).length).toBeGreaterThan(0);
+  });
+
+  it("a refused or failing card stays on its card", async () => {
+    svc.listRemediationBatches.mockRejectedValue(Object.assign(new Error("Forbidden"), { status: 403 }));
+    svc.getShadowSummary.mockRejectedValue(new Error("Shadow summary unavailable"));
+    renderAt("reports");
+    expect(await screen.findByText("Your role can't open this report.")).toBeInTheDocument();
+    expect(await screen.findByText("Shadow summary unavailable")).toBeInTheDocument();
+    expect(await screen.findByText(/3 open finding\(s\)/)).toBeInTheDocument();                         // others still render
   });
 });
 
