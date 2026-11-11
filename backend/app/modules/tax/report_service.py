@@ -109,12 +109,18 @@ class TaxFindingsReportService:
         }
 
     def platform_overcollection(self) -> dict:
+        """Aggregate only. Fewer than 3 organizations: amounts are magnitude
+        bands (aggregate_privacy, the Phase 8 shared rule); counts stay exact."""
+        from app.modules.tax.aggregate_privacy import amounts_note, band_rows
+
         rows = list(_overcollection_rows(self.db))
+        orgs = len({inv.organization_id for inv, _d, _e in rows})
         return {
             "method": METHOD_NOTE,
-            "organizations_affected": len({inv.organization_id for inv, _d, _e in rows}),
+            "organizations_affected": orgs,
             "invoice_count": len(rows),
-            "totals_by_currency": _currency_totals(rows),
+            "totals_by_currency": band_rows(orgs, _currency_totals(rows), ("tax_amount", "estimated_overcollected_tax")),
+            "amounts": amounts_note(orgs),
         }
 
     # ── duplicate snapshot rows ──

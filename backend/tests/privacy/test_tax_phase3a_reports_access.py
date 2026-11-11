@@ -86,7 +86,8 @@ def test_platform_reports_are_aggregate_only(db_session, client_for, tenant, rol
     assert over.status_code == 200 and dup.status_code == 200
     body = over.json()
     assert body["organizations_affected"] == 1 and body["invoice_count"] == 1
-    assert set(body) == {"method", "organizations_affected", "invoice_count", "totals_by_currency"}
+    assert set(body) == {"method", "organizations_affected", "invoice_count", "totals_by_currency", "amounts"}
+    assert body["amounts"].startswith("banded")                      # Phase 8: one organization -> bands
     assert set(dup.json()) == {"organizations_affected", "invoices_affected", "duplicate_rows", "note"}
     for text in (over.text, dup.text):
         for secret in (SECRET_ORG, SECRET_NUMBER, SECRET_CUSTOMER_EMAIL, "P3AREP", "invoice_id", "organization_id"):

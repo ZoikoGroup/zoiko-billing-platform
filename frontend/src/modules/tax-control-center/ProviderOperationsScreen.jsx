@@ -172,6 +172,7 @@ export function FindingsScreen() {
               </li>
             ))}
           </ul>
+          {over.amounts && over.amounts !== "exact" && <p className={`mt-1 text-xs ${MUTED}`}>Amounts {over.amounts}.</p>}
           <p className={`mt-1 text-xs ${MUTED}`}>{over.method}</p>
         </div>
       )}

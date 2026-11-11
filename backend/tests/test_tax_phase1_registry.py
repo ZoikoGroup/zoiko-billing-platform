@@ -583,7 +583,8 @@ def test_registry_endpoints_carry_no_tenant_data(db_session, registry, people):
     # Public source summary: no artifact, hash, storage location or internal notes.
     for private in (registry["source"].sha256, "db://", "internal_notes", "sha256", "artifact"):
         assert private not in blob
-    assert "Mara Maker" in blob                          # reviewed-by is part of the public summary
+    assert "Mara" not in blob and "Maker" not in blob    # Phase 8 burn-down: the team, never a person
+    assert "Zoiko Tax Review" in blob
 
 
 def test_public_source_summary_is_an_allow_list(registry):

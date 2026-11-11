@@ -117,7 +117,19 @@ describe("P10 findings", () => {
     expect(screen.getByText(/GBP: 12 invoice\(s\), tax charged 240.00, estimated over-collected 24.00/)).toBeInTheDocument();
     expect(screen.getByText(/7 duplicate row\(s\) on 5 invoice\(s\) in 2 organization\(s\)/)).toBeInTheDocument();
     expect(container.textContent).not.toMatch(/INV-|organization_id|Invoice #/);
+    expect(screen.queryByText(/^Amounts banded/)).not.toBeInTheDocument();          // 3 organizations: exact
     expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it("shows magnitude bands, and says so, when fewer than 3 organizations are affected", async () => {
+    svc.getPlatformOvercollection.mockResolvedValue({
+      method: "Estimate = tax x discount share.", organizations_affected: 2, invoice_count: 2,
+      amounts: "banded (fewer than 3 organizations)",
+      totals_by_currency: [{ currency: "GBP", invoice_count: 2, tax_amount: "< 1k", estimated_overcollected_tax: "< 1k" }],
+    });
+    renderAt("/super-admin/tax/findings");
+    expect(await screen.findByText(/GBP: 2 invoice\(s\), tax charged < 1k, estimated over-collected < 1k/)).toBeInTheDocument();
+    expect(screen.getByText("Amounts banded (fewer than 3 organizations).")).toBeInTheDocument();
   });
 });
 

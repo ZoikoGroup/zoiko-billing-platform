@@ -183,17 +183,23 @@ def _user_display_name(user) -> Optional[str]:
     return name or None
 
 
+#: Who reviewed a source, as the public reference API says it (Phase 8
+#: findings burn-down): the team, never a person.
+PUBLIC_REVIEWER = "Zoiko Tax Review"
+
+
 def public_source_summary(revision: TaxLegalSourceRevision) -> dict:
-    """The tenant-safe view of a source: where to read it and who reviewed
-    it. Never includes the captured artifact, its hash, storage location or
-    internal notes — those stay on the privileged /source-revisions route,
-    whatever the artifact's redistribution permission."""
+    """The tenant-safe view of a source: where to read it and that the Zoiko
+    tax review team reviewed it. Never includes a person's name or id, the
+    captured artifact, its hash, storage location or internal notes — those
+    stay on the privileged /source-revisions route, whatever the artifact's
+    redistribution permission."""
     return {
         "authority": revision.authority.name if revision.authority else None,
         "title": revision.title,
         "permanent_url": revision.permanent_url,
         "citation": revision.citation,
-        "reviewed_by": _user_display_name(revision.reviewer),
+        "reviewed_by": PUBLIC_REVIEWER if revision.reviewed_at else None,
         "reviewed_at": revision.reviewed_at,
     }
 
