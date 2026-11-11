@@ -238,6 +238,13 @@ def get_job_definitions() -> list[tuple[str, int, str, str]]:
             "Financial Integrity Check",
         ),
         (
+            # ZB-TAX-ARCH-001 Phase 8 PR 5: official source change detection and review cadence.
+            "app.modules.tax.source_monitor_service:run_tax_source_monitor_job",
+            getattr(settings, "TAX_SOURCE_MONITOR_INTERVAL_MINUTES", 60),
+            "tax_source_monitor_job",
+            "Tax Source Monitoring",
+        ),
+        (
             # ZB-TAX-ARCH-001 Phase 8 PR 4: retroactive change analysis (batched, resumable).
             "app.modules.tax.retro_service:run_tax_retro_analysis_job",
             getattr(settings, "TAX_RETRO_ANALYSIS_INTERVAL_MINUTES", 5),

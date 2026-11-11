@@ -104,6 +104,19 @@ export const cancelScheduledActivation = (kind, id, reason) =>
 export const decideActivationCancellation = (id, approve, body = {}) =>
   api.post(`${BASE}/activation-cancellations/${id}/${approve ? "approve" : "reject"}`, body);
 
+// ── Phase 8 PR 5: source monitoring (platform data; detection only) ──
+export const listSourceMonitors = () => api.get(`${BASE}/source-monitors`);
+export const createSourceMonitor = (body) => api.post(`${BASE}/source-monitors`, body);
+export const raiseMonitorTier = (id, risk_tier) => api.post(`${BASE}/source-monitors/${id}/raise-tier`, { risk_tier });
+export const checkSourceNow = (id) => api.post(`${BASE}/source-monitors/${id}/check`);
+export const proposeMonitorChange = (id, body) => api.post(`${BASE}/source-monitors/${id}/changes`, body);
+export const decideMonitorChange = (id, approve, body = {}) =>
+  api.post(`${BASE}/source-monitor-changes/${id}/${approve ? "approve" : "reject"}`, body);
+export const listSourceReviews = ({ status } = {}) => api.get(`${BASE}/source-reviews`, { params: { status } });
+export const closeSourceReview = (id, body) => api.post(`${BASE}/source-reviews/${id}/close`, body);
+export const listReviewDues = () => api.get(`${BASE}/review-dues`);
+export const markDueReviewed = (id, note) => api.post(`${BASE}/review-dues/${id}/reviewed`, { note });
+
 // ── Phase 8 PR 4: retroactive analysis (aggregates only) ──
 export const getRetroPreview = (kind, id) => api.get(`${BASE}/retro-previews/${kind}/${id}`);
 export const runRetroPreview = (kind, id) => api.post(`${BASE}/retro-previews/${kind}/${id}`);

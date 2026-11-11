@@ -34,6 +34,7 @@ class RegistryJurisdiction(BaseModel):
     production_calculation: str = Field(..., description="Always NOT_ACTIVATED in Phase 1")
     published_rate_versions: int
     last_published_at: Optional[datetime] = None
+    billing_clearance: Optional[str] = Field(None, description="Phase 8 PR 5: e.g. 'Research only: not cleared for billing'")
 
 
 class RegistryJurisdictionListResponse(BaseModel):

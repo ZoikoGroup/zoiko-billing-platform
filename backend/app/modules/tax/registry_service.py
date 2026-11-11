@@ -263,6 +263,9 @@ class RegistryReadService:
         jurisdictions = query.order_by(TaxJurisdiction.code).all()
 
         now = utcnow()
+        from app.modules.tax.source_monitor_service import billing_clearance
+
+        clearance = billing_clearance(self.db)
         known = self._known_filter(self.db.query(TaxRateVersion), now).all()
         by_jurisdiction: dict[int, list[TaxRateVersion]] = {}
         for version in known:
@@ -288,6 +291,10 @@ class RegistryReadService:
                 "production_calculation": "NOT_ACTIVATED",
                 "published_rate_versions": len(versions),
                 "last_published_at": last_published,
+                # Phase 8 PR 5: research-only jurisdictions are labelled.
+                "billing_clearance": clearance["research_only"].get(j.id) or (
+                    "Cleared for billing in published markets" if j.id in clearance["cleared"]
+                    else "Not cleared for billing"),
             })
         return items
 
@@ -915,4 +922,8 @@ class TaxRegistryPipeline:
             from app.modules.tax import retro_service
 
             retro_service.enqueue(self.db, retro_service.rate_trigger(self.db, version=version), actor_id)
+        # Phase 8 PR 5: published already inside the re-verification window -> remind at once.
+        from app.modules.tax.source_monitor_service import pre_effective_reminders
+
+        pre_effective_reminders(self.db)
         return version

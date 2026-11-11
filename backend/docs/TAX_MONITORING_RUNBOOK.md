@@ -299,6 +299,45 @@ text gives organization and document counts and per-currency amounts
 
 ---
 
+## tax.source_fetch_failing (P3)
+
+**Fires when:** a monitored source failed `TAX_SOURCE_FAIL_ALERT_AFTER` (3)
+checks in a row (network error, 5xx, or a policy refusal such as a
+redirect off the allowlist or a non-public address).
+
+**Do:**
+1. Open `/super-admin/tax/source-monitoring`; read the monitor's last
+   outcome and its observations.
+2. A moved page: propose "Change the URL" (a second person approves).
+3. A policy refusal: don't widen the allowlist in a hurry; check the host
+   with the security owner.
+4. It clears after a successful check.
+
+---
+
+## tax.source_stale:\<tier\> (P2)
+
+**Fires when:** a monitor's next check is more than one cadence overdue
+(it keeps failing, it is backing off, or the source monitor job isn't
+running), aggregated per tier.
+
+**Do:**
+1. Check the "Tax Source Monitoring" job is running.
+2. For each listed source: fix the failure, or check it by hand and record
+   the check.
+3. It clears once the sources are within their cadence.
+
+---
+
+## tax.review_overdue (P2)
+
+**Fires when:** a source or market revalidation is past its due date.
+
+**Do:** revalidate (re-read the source; confirm the market's gates still
+hold) and "Mark reviewed" with a note. It clears when nothing is overdue.
+
+---
+
 ## Daily anomaly checks (Phase 7 PR 3)
 
 These come from the daily `tax_anomaly_job`. No invoice is ever changed by

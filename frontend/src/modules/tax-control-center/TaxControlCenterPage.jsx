@@ -1,6 +1,6 @@
 import { NavLink, Navigate, useParams } from "react-router-dom";
 import {
-  Activity, BookOpenCheck, Copy, FileSearch, FileStack, Globe2, History, Inbox, Landmark, LayoutDashboard, ListTree, Map, Percent,
+  Activity, BookOpenCheck, Copy, FileSearch, FileStack, Globe2, History, Inbox, Landmark, LayoutDashboard, ListTree, Map, Percent, Radar,
 } from "lucide-react";
 
 import { getStoredUser } from "../../api/client";
@@ -16,6 +16,7 @@ import ProviderOperationsScreen, { FindingsScreen } from "./ProviderOperationsSc
 import { ExplorerScreen, OverviewScreen, TaxCodeCatalogueScreen } from "./ReadOnlyScreens";
 import ShadowSelectionScreen from "./ShadowSelectionScreen";
 import RetroAnalysesScreen from "./RetroScreens";
+import SourceMonitoringScreen from "./SourceMonitoringScreen";
 
 /* Tax Control Center (ZB-TAX-ARCH-001 Phase 5a): the platform tax-ops
  * console's sign-off screens. Zoiko tax staff only (TAX_REVIEWER,
@@ -26,6 +27,7 @@ export const TAX_SECTIONS = [
   { key: "overview", label: "Overview", icon: LayoutDashboard, element: OverviewScreen },
   { key: "inbox", label: "Approvals inbox", icon: Inbox, element: ApprovalsInboxScreen },
   { key: "sources", label: "Source register", icon: Landmark, element: SourceRegisterScreen },
+  { key: "source-monitoring", label: "Source monitoring", icon: Radar, element: SourceMonitoringScreen },
   { key: "rates", label: "Rates & change review", icon: Percent, element: RatesScreen },
   { key: "availability", label: "Market availability", icon: Map, element: MarketAvailabilityScreen },
   { key: "rule-packs", label: "Rule packs", icon: BookOpenCheck, element: RulePacksScreen },

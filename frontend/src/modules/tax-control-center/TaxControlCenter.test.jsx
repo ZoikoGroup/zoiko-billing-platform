@@ -17,6 +17,8 @@ const { svc, current } = vi.hoisted(() => ({
     "cancelScheduledActivation", "decideActivationCancellation",
     "listRollbackCandidates", "proposeRollback", "decideRollback",
     "getRetroPreview", "runRetroPreview", "listRetroAnalyses",
+    "listSourceMonitors", "createSourceMonitor", "raiseMonitorTier", "checkSourceNow", "proposeMonitorChange",
+    "decideMonitorChange", "listSourceReviews", "closeSourceReview", "listReviewDues", "markDueReviewed",
   ].map((k) => [k, vi.fn()])),
 }));
 vi.mock("../../api/client", async (importOriginal) => ({
@@ -780,6 +782,70 @@ describe("retroactive analysis", () => {
     fireEvent.click(within(panel).getByRole("button", { name: "Run preview" }));
     await waitFor(() => expect(svc.runRetroPreview).toHaveBeenCalledWith("rule_pack", 12));
     expect(await within(panel).findByText(/1 organization\(s\), 2 document\(s\)/)).toBeInTheDocument();
+  });
+});
+
+
+// ── Phase 8 PR 5: source monitoring ─────────────────────────────────────
+
+describe("source monitoring", () => {
+  const monitor = { id: 1, title: "HMRC VAT rates", handoff_ref: "S11", host: "www.gov.uk", risk_tier: "NATIONAL_VAT_GST",
+                    cadence_hours: 168, access_mode: "AUTOMATED", manual_reason: null, enabled: true, last_outcome: "UNCHANGED",
+                    last_checked_at: "2026-11-10T09:00:00Z", next_check_due: "2026-11-17T09:00:00Z", dismissals: 0,
+                    recent_dismissal_reasons: [], flapping: false, pending_change: null };
+  const manual = { ...monitor, id: 2, title: "ATO GST", host: "www.ato.gov.au", access_mode: "MANUAL_CHECK",
+                   manual_reason: "the source refused automated access (HTTP 403)", dismissals: 3, flapping: true,
+                   recent_dismissal_reasons: ["timestamp only"],
+                   pending_change: { id: 7, action: "LOWER_TIER", value: "RESEARCH_ONLY", reason: "quiet", proposed_by: 9 } };
+  const changed = { id: 11, kind: "SOURCE_CHANGED", monitor_id: 1, created_at: "2026-11-10T09:00:00Z",
+                    diff: "-VAT 20%\n+VAT 21%\n+<script>window.__pwned = true</script><img src=x onerror=alert(1)>" };
+  beforeEach(() => {
+    svc.listSourceMonitors.mockResolvedValue({ items: [monitor, manual] });
+    svc.listSourceReviews.mockResolvedValue({ items: [changed, { id: 12, kind: "MANUAL_CHECK_DUE", monitor_id: 2, created_at: "2026-11-10T09:00:00Z", diff: null }] });
+    svc.listReviewDues.mockResolvedValue({ items: [{ id: 5, label: "Source S11: HMRC VAT", tier: "NATIONAL_VAT_GST",
+      next_review_due: "2026-11-01T00:00:00Z", overdue: true }] });
+  });
+
+  it("renders a fetched diff as escaped plain text, never as HTML", async () => {
+    const { container } = renderAt("/super-admin/tax/source-monitoring");
+    const pre = await screen.findByLabelText("Changes in review 11");
+    expect(pre.textContent).toContain("<script>window.__pwned = true</script>");
+    expect(container.querySelector("script")).toBeNull();
+    expect(container.querySelector("img")).toBeNull();
+    expect(window.__pwned).toBeUndefined();
+    expect(screen.getByText(/Manual checks: the source refused automated access \(HTTP 403\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Flapping: 3 change\(s\) dismissed. Recent reasons: timestamp only/)).toBeInTheDocument();
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it("a reviewer closes reviews, records checks and revalidations", async () => {
+    current.user = { id: 9, role: "super_admin", platform_role: "tax_reviewer" };
+    svc.closeSourceReview.mockResolvedValue({});
+    svc.markDueReviewed.mockResolvedValue({});
+    renderAt("/super-admin/tax/source-monitoring");
+    fireEvent.change(await screen.findByLabelText("Source revision for review 11"), { target: { value: "42" } });
+    fireEvent.click(screen.getByRole("button", { name: "Evidence captured" }));
+    await waitFor(() => expect(svc.closeSourceReview).toHaveBeenCalledWith(11, { outcome: "EVIDENCE_CAPTURED", reason: undefined, source_revision_id: 42 }));
+    fireEvent.click(screen.getByRole("button", { name: "Record check" }));
+    let dialog = await screen.findByRole("dialog", { name: "Record the check" });
+    fireEvent.change(within(dialog).getByLabelText(/Reason/), { target: { value: "Checked the ATO page by hand" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Record" }));
+    await waitFor(() => expect(svc.closeSourceReview).toHaveBeenCalledWith(12, { outcome: "CHECKED", reason: "Checked the ATO page by hand" }));
+    fireEvent.click(screen.getByRole("button", { name: "Mark reviewed" }));
+    dialog = await screen.findByRole("dialog", { name: "Record the revalidation" });
+    fireEvent.change(within(dialog).getByLabelText(/Reason/), { target: { value: "Re-read S11" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Mark reviewed" }));
+    await waitFor(() => expect(svc.markDueReviewed).toHaveBeenCalledWith(5, "Re-read S11"));
+    expect(screen.queryByRole("button", { name: "Approve change" })).not.toBeInTheDocument();     // own proposal
+  });
+
+  it("a different person decides a change that weakens detection", async () => {
+    svc.decideMonitorChange.mockResolvedValue({});
+    renderAt("/super-admin/tax/source-monitoring");                                         // publisher, id 7
+    expect(await screen.findByText(/Proposed by Mara Maker.*Lower tier → RESEARCH_ONLY \(quiet\)/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Approve change" }));
+    await waitFor(() => expect(svc.decideMonitorChange).toHaveBeenCalledWith(7, true));
+    expect(screen.queryByRole("button", { name: "Check now" })).not.toBeInTheDocument();      // reviewers check
   });
 });
 

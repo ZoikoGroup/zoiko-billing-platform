@@ -12,9 +12,9 @@ e-invoicing, or change legacy invoicing.
 | 1 | Rule-pack integrity (step 07) | Merged (#157) |
 | 2 | Scheduled activation (step 07) | Merged (#158) |
 | 3 | Emergency rollback (§10.3) | Merged (#159) |
-| 4 | Retroactive change analysis (§10.3, T04) | This PR |
+| 4 | Retroactive change analysis (§10.3, T04) | Merged (#160) |
 | 4b | Governed tax-only credit and retroactive remediation drafts | Outline below; not built |
-| 5 | Source change detection and review cadence (steps 01–03, §10.2) | Planned |
+| 5 | Source change detection and review cadence (steps 01–03, §10.2) | This PR |
 | 6 | Tenant reference rates and reports screens (G-5b-1) | Planned |
 
 ## Open product questions (not acted on)
@@ -28,6 +28,13 @@ e-invoicing, or change legacy invoicing.
   lead): the analysis reports under-collected tax only. No debit notes or
   extra charges are created. Whether and how to recover under-collected tax
   is a product and tax-lead decision.
+- **Source allowlist** (PR 5, tax lead): confirm the six official hosts
+  (`www.gov.uk`, `www.legislation.gov.uk`, `www.ato.gov.au`,
+  `www.legislation.gov.au`, `www.canada.ca`, `www.revenuquebec.ca`) and decide
+  on the EU sources registered in Phase 1 (European Commission pages, TEDB
+  for cross-checks), whose hosts are **not** allowlisted until then.
+- **Sources, tiers and cadences** (PR 5, tax lead): sign off which sources are
+  monitored, at which tier.
 - **Single-person break-glass market stop** (PR 3, for the tax lead and the
   security owner): there is no market-scoped stop that one person can apply
   to a native market. Today a native market stops through a two-person
@@ -640,4 +647,136 @@ Needs its own plan and approval.
 4. **Tests:** reconciliation to the cent with earlier partial credits;
    allow-list; the latest-analysis rule; two-person approval; T04 for the
    original invoice.
+
+---
+
+## PR 5: source change detection and review cadence
+
+`source_fetch.py`, `source_normalize.py`, `source_monitor_service.py`,
+`source_parsers.py`, `source_monitor_models.py`. Platform data only.
+**Detection only:** nothing creates a source revision, a staged rate or a
+publication. Formal evidence is still captured by a reviewer through the
+Phase 1 evidence-attach flow.
+
+### Monitors and change control (answer 1)
+
+A monitor is an official source's URL on an allowlisted host, a risk tier
+(sets the cadence) and an access mode.
+
+| Tier | Cadence |
+|---|---|
+| `HIGH_VOLATILITY` | daily (`TAX_SOURCE_CADENCE_HIGH_HOURS` 24) |
+| `NATIONAL_VAT_GST` | weekly (`TAX_SOURCE_CADENCE_NATIONAL_HOURS` 168) |
+| `RESEARCH_ONLY` | quarterly (`TAX_SOURCE_CADENCE_RESEARCH_DAYS` 91) |
+
+- **One TAX_REVIEWER, audited:** create a monitor, raise its tier (more
+  frequent), "check now", record manual checks, close reviews.
+- **A different TAX_REVIEWER or TAX_PUBLISHER decides** anything that can
+  weaken detection: disable, delete (the monitor is retired; its history is
+  kept), lower the tier, switch to manual by hand, change the URL.
+- **Automatic switch to manual checks** (raises reminders, so it stays
+  automatic): HTTP 401/403 at once; three consecutive 429s; robots.txt
+  disallowing the path.
+
+### Fetching (fixes A, C, D)
+
+- **Hosts:** https only, the standard port, no credentials, on the code
+  allowlist `OFFICIAL_SOURCE_HOSTS` (see open questions).
+- **DNS rebinding:** each hop resolves the host **once**; every address must
+  be public (not private, loopback, link-local, multicast, reserved or
+  unspecified). The request goes to that validated IP with TLS SNI and the
+  Host header set to the hostname (`sni_hostname`), so the certificate is
+  verified for the hostname and no second lookup happens. Redirects (at
+  most 3) repeat the checks and must stay on the allowlist.
+- **Egress proxy:** the fetcher ignores environment proxies
+  (`trust_env=False`) so the pinned address is the one connected to. If
+  production must egress through a proxy, the proxy itself has to enforce
+  the same host allowlist (CONNECT allowlist); that is a deployment item,
+  not configured here.
+- **Courtesy:** robots.txt per host, cached a day (4xx = no robots.txt; 5xx =
+  not fetched this time, per RFC 9309); at most one request per host per
+  minute (a robots.txt refresh defers the page to the next run); User-Agent
+  `ZoikoBillingTaxMonitor/1.0 (+TAX_SOURCE_MONITOR_CONTACT_URL)`, an
+  organisational URL and no personal data.
+- **429:** back off honouring Retry-After (seconds or a date), bounded to
+  1 minute to 24 hours; manual checks after three in a row.
+- **Limits:** 20-second timeout, 5 MB.
+
+### Normalization and storage (fix F, answer 4)
+
+| Content type | Normalization | Change signal |
+|---|---|---|
+| `text/html`, `application/xhtml+xml` | `html-text-v1`: visible text only (script, style, noscript, template, head dropped), whitespace collapsed | normalized hash |
+| `application/pdf` | `pdf-text-v1 (pypdf 5.1.0)`: text of every page, whitespace collapsed; **pypdf pinned** in requirements.txt | normalized hash |
+| other `text/*` | `plain-text-v1` | normalized hash |
+| anything else (or an unreadable PDF) | `raw-bytes`: no text | raw hash; a change still opens a review, labelled raw |
+
+- Every check is an **append-only** observation (ORM guard and Postgres
+  trigger): time, URL, HTTP status, raw and normalized hashes.
+- The raw artifact is stored (in `tax_source_artifacts`, de-duplicated)
+  **only for the first observation and when the normalized hash changes**.
+
+### Reviews and reminders
+
+- **SOURCE_CHANGED:** a unified text diff (2,000 lines at most) against the
+  last stored artifact. Closed as **evidence captured** (linking the new
+  source revision) or **dismissed** with a reason; dismissals are counted per
+  monitor and a monitor with 3 or more shows as **flapping** with its recent
+  reasons (answer 3; ignore patterns come later).
+- **MANUAL_CHECK_DUE:** for manual monitors, once per cycle; closed by
+  recording the check (a note), which moves the next check a cadence on.
+- **PRE_EFFECTIVE_CHECK:** a published rate whose `valid_from` is within
+  `TAX_RATE_REVERIFY_DAYS` (14) of its jurisdiction's legal date gets one
+  reminder; a rate published already inside the window gets it at once
+  (answer 5).
+- **Untrusted content (fix B):** fetched text and diffs are shown as escaped
+  plain text in the console, never as HTML, and are never sent to any AI
+  model.
+
+### Revalidation due dates (answer 6)
+
+- Every approved source and every ACTIVE availability version has a due
+  date: sources by their monitor's tier (weekly if unmonitored);
+  availability by the most volatile monitored tier of its jurisdiction,
+  otherwise weekly for calculating modes and quarterly for reference-only.
+- "Mark reviewed" (a TAX_REVIEWER with a note) moves it a cadence on.
+- **Research-only jurisdictions** (every monitored source RESEARCH_ONLY and
+  no calculating market) show "Research only: not cleared for billing" in
+  `GET /tax/jurisdictions` and the console.
+
+### Parser plugins
+
+`SourceParser.parse(monitor, text) -> [ProposedRate]`; `SOURCE_PARSERS` is
+**empty**. A registered parser's proposals become staged rates with origin
+`OFFICIAL_FEED`, which still need validation and two people.
+
+### Job and alerts (fix E)
+
+`tax_source_monitor_job` (hourly): due monitors (each locked `FOR UPDATE
+SKIP LOCKED`, the host row locked for the courtesy rules), manual
+reminders, re-verification reminders, review dues, alerts. Platform data
+only.
+
+| Alert | Severity | When |
+|---|---|---|
+| `tax.source_fetch_failing` | P3 | a monitor failed 3 times in a row (network, 5xx, policy) |
+| `tax.source_stale:<tier>` | P2 | a monitor's next check is more than one cadence overdue (failing, refused, backing off or the job down), aggregated per tier |
+| `tax.review_overdue` | P2 | a revalidation is past due |
+
+### Migration
+
+`b6e0a4c8d2f9`: `tax_source_monitors`, `tax_source_monitor_changes`,
+`tax_source_observations` (append-only trigger), `tax_source_reviews`,
+`tax_review_dues`, `tax_source_hosts`.
+
+### PR 5 tests
+
+| Test file | Covers |
+|---|---|
+| `tests/privacy/test_tax_phase8_source_monitoring.py` (26) | Only https on allowlisted hosts and the standard port, no credentials. **Fix A:** one lookup, connection to the validated IP with SNI and Host, a resolver turning private later is never used; private, loopback, link-local, multicast, unspecified, IPv6 and reserved addresses refused; every redirect hop checked (private resolution, host off the allowlist). Size cap; Retry-After bounds. **Fix F:** HTML text (markup churn gives the same hash), PDF text, raw. **Detection:** baseline, unchanged, markup churn, change with a diff; artifacts only first and on change; no source revision, staged rate or rate created; raw-only types still open reviews; observations append-only. **Fix C/D:** 403 switches to manual at once and reminds at the cadence without retries; 429 backs off then switches after three; robots.txt disallow and one request per host per minute. **Answer 1:** weakening changes need a second person; raising alone; URL checks. **Answer 3:** dismissals counted, flapping. **Answer 5:** reminder at once when published inside the window, once only. **Fix E:** dues by tier, P2 overdue and stale, P3 failing, cleared by review. Research-only label. A test parser stages an OFFICIAL_FEED draft; none registered. HTTP roles. |
+| `tests/test_tax_phase8_pg.py` (+1) | Observations can't be updated or deleted. |
+| `tests/test_tax_phase8_source_race_pg.py` (1, commits, CI race step) | Two workers: one observation per monitor per cycle and one request to the host. |
+| `frontend/.../TaxControlCenter.test.jsx` (+3) | **Fix B:** a diff with `<script>` and `<img onerror>` renders as text, no element, no execution (axe); flapping and manual reasons; closing reviews, recording checks and revalidations; a different person approves a weakening change. |
+
+**CI result:** _see PR_.
 

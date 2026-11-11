@@ -184,3 +184,19 @@ def test_retro_results_are_frozen_and_not_deletable(uk):
     _rejects(pg, "UPDATE tax_retro_results SET difference = 0 WHERE id = :i", {"i": rid})
     _rejects(pg, "DELETE FROM tax_retro_results WHERE id = :i", {"i": rid})
     _rejects(pg, "UPDATE tax_quotes SET decision_facts = '{}' WHERE id = :i", {"i": q.id})        # frozen with the quote
+
+
+# ── PR 5: source observations are append-only ───────────────────────────
+
+def test_source_observations_are_append_only(pg):
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc)
+    mid = pg.execute(text(
+        "INSERT INTO tax_source_monitors (title, monitoring_url, host, risk_tier, access_mode, enabled, next_check_due, "
+        "consecutive_failures, consecutive_429, dismissals, created_at) VALUES ('t', 'https://www.gov.uk/x', "
+        "'www.gov.uk', 'NATIONAL_VAT_GST', 'AUTOMATED', true, :n, 0, 0, 0, :n) RETURNING id"), {"n": now}).scalar()
+    oid = pg.execute(text("INSERT INTO tax_source_observations (monitor_id, fetched_at, outcome) "
+                          "VALUES (:m, :n, 'UNCHANGED') RETURNING id"), {"m": mid, "n": now}).scalar()
+    _rejects(pg, "UPDATE tax_source_observations SET outcome = 'CHANGED' WHERE id = :i", {"i": oid})
+    _rejects(pg, "DELETE FROM tax_source_observations WHERE id = :i", {"i": oid})
