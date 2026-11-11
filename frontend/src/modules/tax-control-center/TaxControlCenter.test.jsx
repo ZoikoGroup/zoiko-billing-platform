@@ -114,10 +114,14 @@ describe("approvals inbox", () => {
     svc.approveInboxItem.mockRejectedValueOnce(STEP_UP).mockResolvedValueOnce({ id: 31, status: "APPROVED" });
     renderAt("/super-admin/tax/inbox");
     fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
-    const dialog = await screen.findByRole("dialog");
-    fireEvent.change(within(dialog).getByLabelText(/Authenticator code/), { target: { value: "123456" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Confirm" }));
-    await waitFor(() => expect(svc.approveInboxItem).toHaveBeenCalledTimes(2));
+    // Under CI load the dialog and the retried call can take longer than the
+    // 1 s defaults: wait for the MFA dialog itself and allow 5 s.
+    const dialog = await screen.findByRole("dialog", { name: "Confirm with MFA" }, { timeout: 5000 });
+    fireEvent.change(await within(dialog).findByLabelText(/Authenticator code/), { target: { value: "123456" } });
+    const confirm = within(dialog).getByRole("button", { name: "Confirm" });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    fireEvent.click(confirm);
+    await waitFor(() => expect(svc.approveInboxItem).toHaveBeenCalledTimes(2), { timeout: 5000 });
     expect(svc.approveInboxItem.mock.calls[0]).toEqual(["staged_rate", 31, {}]);
     expect(svc.approveInboxItem.mock.calls[1]).toEqual(["staged_rate", 31, { code: "123456" }]);
     expect(await screen.findByRole("status")).toHaveTextContent("Approved");
@@ -129,10 +133,12 @@ describe("approvals inbox", () => {
     svc.approveInboxItem.mockRejectedValueOnce(STEP_UP).mockRejectedValueOnce(new Error("Invalid MFA code."));
     renderAt("/super-admin/tax/inbox");
     fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
-    const dialog = await screen.findByRole("dialog");
-    fireEvent.change(within(dialog).getByLabelText(/Authenticator code/), { target: { value: "000000" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Confirm" }));
-    expect(await within(dialog).findByText("Invalid MFA code.")).toBeInTheDocument();
+    const dialog = await screen.findByRole("dialog", { name: "Confirm with MFA" }, { timeout: 5000 });
+    fireEvent.change(await within(dialog).findByLabelText(/Authenticator code/), { target: { value: "000000" } });
+    const confirm = within(dialog).getByRole("button", { name: "Confirm" });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    fireEvent.click(confirm);
+    expect(await within(dialog).findByText("Invalid MFA code.", {}, { timeout: 5000 })).toBeInTheDocument();
     expect(svc.approveInboxItem).toHaveBeenCalledTimes(2);
   });
 
