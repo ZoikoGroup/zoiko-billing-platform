@@ -15,37 +15,58 @@
 const TOKEN_KEY = "zoiko_billing_access";
 const REFRESH_KEY = "zoiko_billing_refresh";
 const USER_KEY = "zoiko_billing_user";
+const KEYS = [TOKEN_KEY, REFRESH_KEY, USER_KEY];
+
+// "Remember me" unticked at login keeps the session in sessionStorage instead:
+// it survives reloads but ends when the tab/browser is closed. Reads check
+// both stores; writes go to whichever store currently holds the session.
+function read(key) {
+  return localStorage.getItem(key) ?? sessionStorage.getItem(key);
+}
+
+function activeStore() {
+  return sessionStorage.getItem(TOKEN_KEY) && !localStorage.getItem(TOKEN_KEY) ? sessionStorage : localStorage;
+}
 
 export function getAccessToken() {
-  return localStorage.getItem(TOKEN_KEY);
+  return read(TOKEN_KEY);
 }
 
 export function getRefreshToken() {
-  return localStorage.getItem(REFRESH_KEY);
+  return read(REFRESH_KEY);
 }
 
 export function getStoredUser() {
   try {
-    return JSON.parse(localStorage.getItem(USER_KEY) || "null");
+    return JSON.parse(read(USER_KEY) || "null");
   } catch {
     return null;
   }
 }
 
 export function setStoredUser(user) {
-  localStorage.setItem(USER_KEY, JSON.stringify(user));
+  activeStore().setItem(USER_KEY, JSON.stringify(user));
 }
 
 /** Canonical write path. Only supplied fields are written — a partial refresh
- * (e.g. access token only) never blanks out an existing refresh token or user. */
-export function setStoredSession({ accessToken, refreshToken, user } = {}) {
-  if (accessToken) localStorage.setItem(TOKEN_KEY, accessToken);
-  if (refreshToken) localStorage.setItem(REFRESH_KEY, refreshToken);
-  if (user) localStorage.setItem(USER_KEY, JSON.stringify(user));
+ * (e.g. access token only) never blanks out an existing refresh token or user.
+ * `persist` is only passed at login: true = localStorage (remembered),
+ * false = sessionStorage (this tab only); omitted = keep the current store. */
+export function setStoredSession({ accessToken, refreshToken, user, persist } = {}) {
+  let store = activeStore();
+  if (persist !== undefined) {
+    store = persist ? localStorage : sessionStorage;
+    const other = persist ? sessionStorage : localStorage;
+    KEYS.forEach((key) => other.removeItem(key));
+  }
+  if (accessToken) store.setItem(TOKEN_KEY, accessToken);
+  if (refreshToken) store.setItem(REFRESH_KEY, refreshToken);
+  if (user) store.setItem(USER_KEY, JSON.stringify(user));
 }
 
 export function clearStoredSession() {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(REFRESH_KEY);
-  localStorage.removeItem(USER_KEY);
+  KEYS.forEach((key) => {
+    localStorage.removeItem(key);
+    sessionStorage.removeItem(key);
+  });
 }
