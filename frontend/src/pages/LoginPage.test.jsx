@@ -33,7 +33,7 @@ function renderLogin() {
 
 function fillForm({ email, password }) {
   if (email !== undefined) {
-    fireEvent.change(screen.getByLabelText("Email address"), {
+    fireEvent.change(screen.getByLabelText("Work email"), {
       target: { value: email },
     });
   }
@@ -336,25 +336,44 @@ describe("LoginPage — layout", () => {
     const img = container.querySelector('img[src="/login-hero.webp"]');
     expect(img).toBeInTheDocument();
     expect(img).toHaveAttribute("alt", "");
-    expect(screen.getByText("Billing clarity. From quote to payment.")).toBeInTheDocument();
+    expect(screen.getByText("Billing clarity. From invoice to payment.")).toBeInTheDocument();
   });
 
-  it("offers Login / Register / Reset Password tabs and only real sign-in options", () => {
+  it("offers Login / Register / Reset Password tabs and the four sign-in options", () => {
     renderLogin();
     const tabs = screen.getByRole("navigation", { name: "Account" });
     expect(tabs).toHaveTextContent("Login");
     expect(screen.getAllByRole("link", { name: "Register" })[0]).toHaveAttribute("href", "/register");
     expect(screen.getByRole("link", { name: "Reset Password" })).toHaveAttribute("href", "/forgot-password");
-    expect(screen.getByRole("button", { name: /continue with google/i })).toBeInTheDocument();
-    // No backend support: these must not be offered as dead controls.
-    expect(screen.queryByRole("button", { name: /microsoft/i })).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(/remember me/i)).not.toBeInTheDocument();
+    for (const name of [/microsoft/i, /google/i, /apple/i, /company sso/i]) {
+      expect(screen.getByRole("button", { name })).toBeInTheDocument();
+    }
   });
 
-  it("lets the whole page scroll (no fixed-height, overflow-hidden root)", () => {
+  it("says a provider without a backend flow isn't available instead of acting as a dead control", () => {
+    renderLogin();
+    fireEvent.click(screen.getByRole("button", { name: /continue with microsoft/i }));
+    expect(screen.getByRole("alert")).toHaveTextContent(/microsoft sign-in isn't available yet/i);
+    fireEvent.click(screen.getByRole("button", { name: /company sso/i }));
+    expect(screen.getByRole("alert")).toHaveTextContent(/company sso isn't set up/i);
+  });
+
+  it("keeps the session for this tab only when Remember me is unticked", async () => {
+    apiFetch.mockResolvedValue({ access_token: "a", refresh_token: "r", user: { role: "org_admin" } });
+    renderLogin();
+    fireEvent.click(screen.getByLabelText(/remember me/i));
+    fillForm({ email: "user@example.com", password: "CorrectPass123!" });
+    submit();
+    await waitFor(() => expect(setSession).toHaveBeenCalledWith(expect.any(Object), { persist: false }));
+  });
+
+  it("fits one viewport on desktop while the form column can still scroll", () => {
     const { container } = renderLogin();
     const root = container.firstElementChild;
+    // Below lg the whole page scrolls; only from lg up is the root pinned.
     expect(root.className).toMatch(/min-h-dvh/);
-    expect(root.className).not.toMatch(/(^|\s)h-screen(\s|$)|overflow-hidden/);
+    expect(root.className).not.toMatch(/(^|\s)(h-screen|h-dvh|overflow-hidden)(\s|$)/);
+    expect(root.className).toMatch(/lg:h-dvh/);
+    expect(container.querySelector("main").className).toMatch(/lg:overflow-y-auto/);
   });
 });

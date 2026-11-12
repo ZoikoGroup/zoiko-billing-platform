@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Loader2, Eye, EyeOff, AlertCircle, ArrowRight } from "lucide-react";
+import { Loader2, Eye, EyeOff, AlertCircle, ChevronRight, Building2 } from "lucide-react";
 import { apiFetch, setSession } from "../api/client";
 import { ROLE_DEFAULT_REDIRECT, VALID_ROLES } from "../config/roles";
 import { apiUrl } from "../config/apiBase";
@@ -63,6 +63,85 @@ const GoogleIcon = () => (
   </svg>
 );
 
+const MicrosoftIcon = () => (
+  <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true">
+    <rect x="0" y="0" width="10" height="10" fill="#F25022" />
+    <rect x="12" y="0" width="10" height="10" fill="#7FBA00" />
+    <rect x="0" y="12" width="10" height="10" fill="#00A4EF" />
+    <rect x="12" y="12" width="10" height="10" fill="#FFB900" />
+  </svg>
+);
+
+const AppleIcon = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="#111827" aria-hidden="true">
+    <path d="M16.37 12.6c-.02-2.3 1.88-3.4 1.96-3.46-1.07-1.56-2.73-1.78-3.32-1.8-1.41-.14-2.76.83-3.48.83-.72 0-1.83-.81-3-.79-1.55.02-2.97.9-3.77 2.28-1.6 2.78-.41 6.9 1.15 9.15.76 1.1 1.67 2.34 2.86 2.3 1.15-.05 1.58-.74 2.97-.74 1.38 0 1.78.74 2.99.72 1.24-.02 2.02-1.12 2.77-2.23.87-1.28 1.23-2.52 1.25-2.58-.03-.01-2.4-.92-2.38-3.68zM14.1 5.86c.63-.77 1.06-1.83.94-2.89-.91.04-2.01.61-2.67 1.37-.58.67-1.1 1.76-.96 2.8 1.02.08 2.06-.52 2.69-1.28z" />
+  </svg>
+);
+
+const CompanySsoIcon = () => <Building2 size={22} className="text-slate-800" aria-hidden="true" />;
+
+// Order and labels follow the approved design. Only Google has a backend
+// flow today (auth/google_oauth.py); the others say so honestly on click
+// instead of pretending to start a sign-in.
+const PROVIDERS = [
+  { key: "microsoft", label: "Continue with Microsoft", Icon: MicrosoftIcon },
+  { key: "google", label: "Continue with Google", Icon: GoogleIcon },
+  { key: "apple", label: "Continue with Apple", Icon: AppleIcon },
+  { key: "sso", label: "Continue with Company SSO", Icon: CompanySsoIcon },
+];
+
+const PROVIDER_UNAVAILABLE = {
+  microsoft: "Microsoft sign-in isn't available yet. Continue with Google or sign in with your work email.",
+  apple: "Apple sign-in isn't available yet. Continue with Google or sign in with your work email.",
+  sso: "Company SSO isn't set up for this workspace yet. Continue with Google or sign in with your work email.",
+};
+
+// Desktop fit: after the height-based spacing has shrunk, scale the whole card
+// uniformly (CSS zoom, so layout and centering follow) until it fits the
+// column — the page never scrolls and nothing is cut off. Floor at 0.72 so
+// text stays readable; on very short windows the column scrolls instead.
+// Below lg the page scrolls normally and no zoom is applied.
+const MIN_CARD_ZOOM = 0.72;
+
+function useFitToHeight(containerRef, contentRef) {
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    const content = contentRef.current;
+    if (!container || !content || typeof ResizeObserver === "undefined") return undefined;
+    const desktop = window.matchMedia("(min-width: 1024px)");
+    let frame = 0;
+
+    const fit = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        content.style.zoom = "";
+        if (!desktop.matches) return;
+        const styles = getComputedStyle(container);
+        // -4px absorbs sub-pixel rounding of the zoomed layout.
+        const available =
+          container.clientHeight - parseFloat(styles.paddingTop) - parseFloat(styles.paddingBottom) - 4;
+        const natural = content.offsetHeight;
+        if (natural > available && available > 0) {
+          content.style.zoom = String(Math.max(MIN_CARD_ZOOM, available / natural));
+        }
+      });
+    };
+
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(container);
+    desktop.addEventListener?.("change", fit);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      desktop.removeEventListener?.("change", fit);
+    };
+  }, [containerRef, contentRef]);
+}
+
+// Survives the Google redirect round-trip so "Remember me" applies there too.
+const REMEMBER_FLAG_KEY = "zoiko_login_remember";
+
 export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -75,10 +154,14 @@ export default function LoginPage() {
   const [localError, setLocalError] = useState(null);
   const [fieldErrors, setFieldErrors] = useState({});
   const [oauthNotice, setOauthNotice] = useState(null);
+  const [remember, setRemember] = useState(true);
 
   // Ref-based in-flight guard: the disabled attribute alone leaves a window
   // between two synchronous clicks before React re-renders with disabled=true.
   const submittingRef = useRef(false);
+  const mainRef = useRef(null);
+  const cardRef = useRef(null);
+  useFitToHeight(mainRef, cardRef);
 
   function defaultRedirectFor(role) {
     return VALID_ROLES.includes(role)
@@ -86,8 +169,9 @@ export default function LoginPage() {
       : "/login";
   }
 
-  function completeLogin(data) {
-    setSession(data);
+  function completeLogin(data, { persist = true } = {}) {
+    if (persist) setSession(data);
+    else setSession(data, { persist: false });
     login(data.user).then(() => {
       const fallback = defaultRedirectFor(data.user?.role);
       const from = location.state?.from?.pathname || fallback;
@@ -100,14 +184,19 @@ export default function LoginPage() {
   useEffect(() => {
     const frag = new URLSearchParams(window.location.hash.replace(/^#/, ""));
     const query = new URLSearchParams(window.location.search);
+    const rememberedChoice = sessionStorage.getItem(REMEMBER_FLAG_KEY);
+    sessionStorage.removeItem(REMEMBER_FLAG_KEY);
     if (frag.get("access_token")) {
       window.history.replaceState(null, "", window.location.pathname);
       try {
-        completeLogin({
-          access_token: frag.get("access_token"),
-          refresh_token: frag.get("refresh_token"),
-          user: JSON.parse(frag.get("user")),
-        });
+        completeLogin(
+          {
+            access_token: frag.get("access_token"),
+            refresh_token: frag.get("refresh_token"),
+            user: JSON.parse(frag.get("user")),
+          },
+          { persist: rememberedChoice !== "0" }
+        );
       } catch {
         setLocalError(MESSAGES.serverError);
       }
@@ -170,7 +259,7 @@ export default function LoginPage() {
         // never as bad credentials.
         throw { status: 502 };
       }
-      completeLogin(data);
+      completeLogin(data, { persist: remember });
     } catch (err) {
       setLocalError(messageForAuthError(err));
     } finally {
@@ -179,15 +268,20 @@ export default function LoginPage() {
     }
   }
 
-  function handleGoogleSignIn() {
+  function handleProviderSignIn(provider) {
     setLocalError(null);
     setFieldErrors({});
+    if (provider !== "google") {
+      setOauthNotice(PROVIDER_UNAVAILABLE[provider]);
+      return;
+    }
     setOauthNotice(null);
+    sessionStorage.setItem(REMEMBER_FLAG_KEY, remember ? "1" : "0");
     window.location.href = apiUrl("/api/auth/google/login");
   }
 
   const inputClass = (hasError) =>
-    `block w-full rounded-xl border bg-white px-4 py-3 text-[length:var(--input-font-size,15px)] text-slate-900 placeholder:text-slate-400 shadow-sm transition focus:outline-none focus:ring-4 ${
+    `block w-full rounded-xl border bg-white px-4 py-3 text-[length:var(--input-font-size,15px)] text-slate-900 placeholder:text-slate-400 transition autofill:shadow-[inset_0_0_0_1000px_#fff] autofill:[-webkit-text-fill-color:#0f172a] focus:outline-none focus:ring-4 lg:py-[clamp(7px,1.25vh,12px)] ${
       hasError ? "border-red-500 focus:border-red-500 focus:ring-red-100" : "border-slate-200 hover:border-slate-300 focus:border-sky-500 focus:ring-sky-100"
     }`;
 
@@ -198,154 +292,196 @@ export default function LoginPage() {
       </p>
     ) : null;
 
+  const providerButtonClass =
+    "group flex w-full items-center gap-4 rounded-xl border border-slate-200 bg-white px-5 py-3 text-[15px] font-semibold text-slate-800 transition hover:border-slate-300 hover:bg-slate-50 focus:outline-none focus-visible:ring-4 focus-visible:ring-sky-100 disabled:cursor-not-allowed disabled:opacity-60 lg:py-[clamp(6px,1.15vh,12px)]";
+
   return (
-    // The whole page scrolls as one document (no fixed-height panes): on
-    // wide screens the artwork column stretches with the form; on small
-    // screens the artwork stacks above the form.
-    <div className="min-h-dvh bg-slate-100 font-sans lg:grid lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
-      {/* ── Left: brand artwork (cropped from the approved design) ── */}
-      <aside className="relative h-[52vh] min-h-[340px] overflow-hidden bg-[#0B1F4B] lg:h-auto lg:min-h-dvh">
-        <img
-          src="/login-hero.webp"
-          alt=""
-          width="1498"
-          height="1800"
-          decoding="async"
-          fetchPriority="high"
-          className="absolute inset-0 h-full w-full object-cover object-left-top"
-        />
-        {/* The artwork's words, for screen readers (the image is decorative). */}
-        <div className="sr-only">
-          <p>Zoiko Billing</p>
-          <p>Billing clarity. From quote to payment.</p>
-          <p>Create invoices, manage customers, track payments and gain real-time financial insights — all in one secure platform.</p>
-          <ul>
-            <li>Professional invoicing</li>
-            <li>Financial insights</li>
-            <li>Payments and reconciliation</li>
-            <li>Secure and reliable</li>
-          </ul>
-        </div>
-      </aside>
+    // Desktop: exactly one viewport tall with no page scroll. Artwork and a
+    // fixed-width form column sit in one rounded frame, centred and inset from
+    // the window edges. The artwork column is sized from the frame height so
+    // the image is shown whole, and only the form column scrolls if a short
+    // window can't fit the card.
+    // Below lg the artwork stacks above the form and the page scrolls.
+    <div className="min-h-dvh bg-[#EEF2F8] font-sans lg:flex lg:h-dvh lg:p-[clamp(10px,2.6vh,40px)] xl:px-[clamp(24px,5vw,120px)]">
+      <div className="lg:mx-auto lg:flex lg:h-full lg:max-w-full lg:overflow-hidden lg:rounded-[28px] lg:bg-white lg:shadow-[0_30px_80px_-40px_rgba(15,23,42,0.45)] lg:ring-1 lg:ring-slate-200/70">
+        {/* ── Left: brand artwork, cropped as-is from the approved design ── */}
+        <aside className="relative overflow-hidden bg-[#06122B] lg:h-full lg:shrink-0">
+          <img
+            src="/login-hero.webp"
+            alt=""
+            width="828"
+            height="1024"
+            decoding="async"
+            fetchPriority="high"
+            className="block max-h-[48vh] w-full object-cover object-top lg:h-full lg:max-h-none lg:w-auto lg:max-w-[56vw] lg:object-left-top"
+          />
+          {/* The artwork's words, for screen readers (the image is decorative). */}
+          <div className="sr-only">
+            <p>Zoiko Billing</p>
+            <p>Billing clarity. From invoice to payment.</p>
+            <p>Invoices, payments, reconciliation and financial records — all in one secure platform.</p>
+            <ul>
+              <li>Create and send invoices</li>
+              <li>Collect payments</li>
+              <li>Reconciliation and reporting</li>
+              <li>Enterprise-grade security</li>
+            </ul>
+          </div>
+        </aside>
 
-      {/* ── Right: sign-in ── */}
-      <main className="flex justify-center px-4 py-10 sm:px-8 lg:items-center lg:py-12">
-        <div className="w-full max-w-[480px] rounded-[28px] bg-white p-3 shadow-[0_24px_60px_-28px_rgba(15,23,42,0.35)] sm:p-4">
-          <nav aria-label="Account" className="grid grid-cols-3 border-b border-slate-100 px-2 text-center text-sm font-semibold">
-            <span aria-current="page" className="border-b-[3px] border-sky-600 py-3.5 text-sky-700">Login</span>
-            <Link to="/register" className="border-b-[3px] border-transparent py-3.5 text-slate-700 transition hover:text-sky-700">Register</Link>
-            <Link to="/forgot-password" className="border-b-[3px] border-transparent py-3.5 text-slate-700 transition hover:text-sky-700">Reset Password</Link>
-          </nav>
+        {/* ── Right: sign-in ── */}
+        <main ref={mainRef} className="flex min-w-0 flex-1 flex-col items-center px-4 py-8 sm:px-8 lg:h-full lg:w-[clamp(460px,36vw,660px)] lg:flex-none lg:overflow-y-auto lg:px-[clamp(24px,2.8vw,52px)] lg:py-[clamp(8px,1.6vh,24px)]">
+          <div ref={cardRef} className="my-auto w-full max-w-[600px]">
+            <div className="rounded-[28px] border border-slate-200/70 bg-[#F7F9FC] p-2.5 shadow-[0_24px_60px_-30px_rgba(15,23,42,0.35)] sm:p-3 lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none">
+              <nav aria-label="Account" className="grid grid-cols-3 whitespace-nowrap lg:border-b lg:border-slate-200 text-center text-[15px] font-medium sm:text-[17px]">
+                <span aria-current="page" className="relative py-4 font-semibold text-sky-600 lg:py-[clamp(9px,1.7vh,16px)]">
+                  Login
+                  <span className="absolute inset-x-6 bottom-0 h-1 rounded-full bg-linear-to-r from-blue-600 to-sky-400" aria-hidden="true" />
+                </span>
+                <Link to="/register" className="py-4 text-slate-800 transition hover:text-sky-600 lg:py-[clamp(9px,1.7vh,16px)]">Register</Link>
+                <Link to="/forgot-password" className="py-4 text-slate-800 transition hover:text-sky-600 lg:py-[clamp(9px,1.7vh,16px)]">Reset Password</Link>
+              </nav>
 
-          <div className="mt-3 rounded-[22px] border border-slate-100 px-5 py-7 sm:px-8 sm:py-9">
-            <h1 className="text-[34px] font-extrabold leading-tight tracking-tight text-[#0B1F4B] sm:text-4xl">Welcome back!</h1>
-            <p className="mt-1.5 text-[15px] text-slate-500">Sign in to your Zoiko Billing account.</p>
+              <div className="mt-1 rounded-[22px] bg-white px-5 py-7 sm:px-8 lg:mt-0 lg:px-0 sm:py-8 lg:pt-[clamp(14px,2.8vh,30px)] lg:pb-[clamp(6px,1.2vh,16px)]">
+                {/* No logo here: the artwork beside (or above) the form already
+                    carries it large, and repeating it cost the form the height
+                    it needs to show at full size on common laptop screens. */}
+                <h1 className="text-center text-[32px] font-extrabold leading-tight tracking-tight text-slate-950 sm:text-[38px] lg:text-[clamp(30px,3.8vh,40px)]">
+                  Welcome back!
+                </h1>
+                <p className="mt-1 text-center text-[16px] text-slate-500 sm:text-[17px] lg:text-[clamp(14px,1.6vh,17px)]">Sign in to your Zoiko Billing workspace.</p>
 
-            {(localError || oauthNotice) && (
-              <div
-                role="alert"
-                className={`mt-6 flex items-start gap-2.5 rounded-xl border px-4 py-3 text-sm ${
-                  localError ? "border-red-200 bg-red-50 text-red-700" : "border-sky-200 bg-sky-50 text-sky-800"
-                }`}
-              >
-                <AlertCircle size={16} className="mt-0.5 shrink-0" />
-                <span>{localError || oauthNotice}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleSubmit} noValidate className="mt-7 space-y-5">
-              <div>
-                <label htmlFor="email" className="mb-2 block text-sm font-semibold text-slate-800">
-                  Email address
-                </label>
-                <input
-                  id="email"
-                  type="email"
-                  autoComplete="email"
-                  value={email}
-                  onChange={handleEmailChange}
-                  placeholder="name@company.com"
-                  aria-invalid={Boolean(fieldErrors.email)}
-                  aria-describedby={fieldErrors.email ? "email-error" : undefined}
-                  className={inputClass(fieldErrors.email)}
-                />
-                {fieldErrorText(fieldErrors.email, "email-error")}
-              </div>
-
-              <div>
-                <label htmlFor="password" className="mb-2 block text-sm font-semibold text-slate-800">
-                  Password
-                </label>
-                <div className="relative">
-                  <input
-                    id="password"
-                    type={showPassword ? "text" : "password"}
-                    autoComplete="current-password"
-                    value={password}
-                    onChange={handlePasswordChange}
-                    placeholder="Enter your password"
-                    aria-invalid={Boolean(fieldErrors.password)}
-                    aria-describedby={fieldErrors.password ? "password-error" : undefined}
-                    className={`${inputClass(fieldErrors.password)} pr-12`}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword((v) => !v)}
-                    aria-label={showPassword ? "Hide password" : "Show password"}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+                {(localError || oauthNotice) && (
+                  <div
+                    role="alert"
+                    className={`mt-5 flex items-start gap-2.5 rounded-xl border px-4 py-3 text-sm ${
+                      localError ? "border-red-200 bg-red-50 text-red-700" : "border-sky-200 bg-sky-50 text-sky-800"
+                    }`}
                   >
-                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    <AlertCircle size={16} className="mt-0.5 shrink-0" />
+                    <span>{localError || oauthNotice}</span>
+                  </div>
+                )}
+
+                <div className="mt-6 space-y-3 lg:mt-[clamp(12px,2.4vh,24px)] lg:space-y-[clamp(6px,1.1vh,12px)]">
+                  {PROVIDERS.map(({ key, label, Icon }) => (
+                    <button
+                      key={key}
+                      type="button"
+                      disabled={submitting}
+                      onClick={() => handleProviderSignIn(key)}
+                      className={providerButtonClass}
+                    >
+                      <Icon />
+                      <span className="flex-1 text-left">{label}</span>
+                      <ChevronRight size={18} className="text-slate-500 transition group-hover:translate-x-0.5 group-hover:text-slate-700" />
+                    </button>
+                  ))}
+                </div>
+
+                <div className="my-6 flex items-center gap-4 text-[15px] text-slate-500 lg:my-[clamp(10px,2.2vh,24px)]">
+                  <span className="h-px flex-1 bg-slate-200" />
+                  or sign in with email
+                  <span className="h-px flex-1 bg-slate-200" />
+                </div>
+
+                <form onSubmit={handleSubmit} noValidate className="space-y-5 lg:space-y-[clamp(10px,2vh,20px)]">
+                  <div>
+                    <label htmlFor="email" className="mb-2 block text-[15px] font-semibold text-slate-900 lg:mb-[clamp(4px,0.8vh,8px)]">
+                      Work email
+                    </label>
+                    <input
+                      id="email"
+                      type="email"
+                      autoComplete="email"
+                      value={email}
+                      onChange={handleEmailChange}
+                      placeholder="name@company.com"
+                      aria-invalid={Boolean(fieldErrors.email)}
+                      aria-describedby={fieldErrors.email ? "email-error" : undefined}
+                      className={inputClass(fieldErrors.email)}
+                    />
+                    {fieldErrorText(fieldErrors.email, "email-error")}
+                  </div>
+
+                  <div>
+                    <label htmlFor="password" className="mb-2 block text-[15px] font-semibold text-slate-900 lg:mb-[clamp(4px,0.8vh,8px)]">
+                      Password
+                    </label>
+                    <div className="relative">
+                      <input
+                        id="password"
+                        type={showPassword ? "text" : "password"}
+                        autoComplete="current-password"
+                        value={password}
+                        onChange={handlePasswordChange}
+                        placeholder="Enter your password"
+                        aria-invalid={Boolean(fieldErrors.password)}
+                        aria-describedby={fieldErrors.password ? "password-error" : undefined}
+                        className={`${inputClass(fieldErrors.password)} pr-12`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword((v) => !v)}
+                        aria-label={showPassword ? "Hide password" : "Show password"}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-2 text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
+                      >
+                        {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                      </button>
+                    </div>
+                    {fieldErrorText(fieldErrors.password, "password-error")}
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <label htmlFor="remember" className="inline-flex cursor-pointer items-center gap-3 text-[15px] text-slate-800">
+                      <input
+                        id="remember"
+                        type="checkbox"
+                        checked={remember}
+                        onChange={(e) => setRemember(e.target.checked)}
+                        className="h-5 w-5 cursor-pointer rounded border-slate-300 accent-blue-600"
+                      />
+                      Remember me
+                    </label>
+                    <Link to="/forgot-password" className="text-[15px] font-semibold text-sky-600 hover:text-sky-700 hover:underline">
+                      Forgot password?
+                    </Link>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    aria-busy={submitting}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-linear-to-r from-blue-600 via-sky-500 to-cyan-400 px-4 py-3.5 text-lg font-semibold text-white shadow-[0_12px_28px_-12px_rgba(14,116,244,0.8)] transition hover:brightness-105 focus:outline-none focus-visible:ring-4 focus-visible:ring-sky-200 disabled:cursor-not-allowed disabled:opacity-60 lg:py-[clamp(9px,1.5vh,14px)]"
+                  >
+                    {submitting && <Loader2 size={18} className="animate-spin" />}
+                    {submitting ? "Signing in…" : "Log In"}
                   </button>
-                </div>
-                {fieldErrorText(fieldErrors.password, "password-error")}
-                <div className="mt-3 flex justify-end">
-                  <Link to="/forgot-password" className="text-sm font-semibold text-sky-700 hover:text-sky-800 hover:underline">
-                    Forgot password?
+                </form>
+
+                <p className="mt-6 text-center text-[16px] text-slate-700 lg:mt-[clamp(10px,2.2vh,24px)]">
+                  New to Zoiko Billing?{" "}
+                  <Link to="/register" className="font-bold text-sky-600 hover:text-sky-700 hover:underline">
+                    Register
                   </Link>
-                </div>
+                </p>
               </div>
-
-              <button
-                type="submit"
-                disabled={submitting}
-                aria-busy={submitting}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-linear-to-r from-sky-600 to-blue-600 px-4 py-3.5 text-base font-bold text-white shadow-[0_10px_24px_-10px_rgba(2,132,199,0.75)] transition hover:from-sky-700 hover:to-blue-700 focus:outline-none focus-visible:ring-4 focus-visible:ring-sky-200 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {submitting && <Loader2 size={18} className="animate-spin" />}
-                {submitting ? "Signing in…" : "Log In"}
-              </button>
-            </form>
-
-            <div className="my-7 flex items-center gap-3 text-xs text-slate-500">
-              <span className="h-px flex-1 bg-slate-200" />
-              or continue with
-              <span className="h-px flex-1 bg-slate-200" />
             </div>
 
-            <button
-              type="button"
-              disabled={submitting}
-              onClick={handleGoogleSignIn}
-              className="group flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3.5 text-[15px] font-semibold text-slate-800 transition hover:border-slate-300 hover:bg-slate-50 focus:outline-none focus-visible:ring-4 focus-visible:ring-sky-100 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <GoogleIcon />
-              <span className="flex-1 text-left">Continue with Google</span>
-              <ArrowRight size={16} className="text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-slate-600" />
-            </button>
-
-            <p className="mt-7 text-center text-[15px] text-slate-700">
-              New to Zoiko Billing?{" "}
-              <Link to="/register" className="font-bold text-sky-700 hover:text-sky-800 hover:underline">
-                Register
-              </Link>
-            </p>
+            <footer className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 px-4 pt-5 text-sm text-slate-500 lg:pt-[clamp(8px,1.8vh,20px)]">
+              <ul className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                {["Privacy", "Terms", "Accessibility", "Help"].map((item, idx) => (
+                  <li key={item} className="flex items-center gap-2">
+                    {idx > 0 && <span aria-hidden="true">•</span>}
+                    {item}
+                  </li>
+                ))}
+              </ul>
+              <p>© {new Date().getFullYear()} Zoiko Tech Inc.</p>
+            </footer>
           </div>
-
-          <p className="px-4 py-5 text-center text-xs text-slate-500">
-            © {new Date().getFullYear()} Zoiko Tech Inc.
-          </p>
-        </div>
-      </main>
+        </main>
+      </div>
     </div>
   );
 }

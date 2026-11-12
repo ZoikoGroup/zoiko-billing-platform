@@ -15,8 +15,9 @@ import { API_BASE_URL, apiUrl } from "../config/apiBase";
 // since every caller in this codebase already depends on it.
 export { getAccessToken, getRefreshToken, getStoredUser, setStoredUser };
 
-export function setSession(data) {
-  setStoredSession({ accessToken: data.access_token, refreshToken: data.refresh_token, user: data.user });
+// `options.persist` (login only): false keeps the session for this tab only.
+export function setSession(data, options = {}) {
+  setStoredSession({ accessToken: data.access_token, refreshToken: data.refresh_token, user: data.user, persist: options.persist });
 }
 
 export function clearSession() {
